@@ -55,13 +55,13 @@ export async function POST(request: NextRequest) {
 
         // Map module IDs to entity types and API endpoints
         const moduleMap: Record<string, { entityType: string; endpoint: string }> = {
-            'organizations': { entityType: 'organizations', endpoint: 'organizations' },
-            'jobs': { entityType: 'jobs', endpoint: 'jobs' },
-            'leads': { entityType: 'leads', endpoint: 'leads' },
+            organizations: { entityType: 'organizations', endpoint: 'organizations' },
+            jobs: { entityType: 'jobs', endpoint: 'jobs' },
+            leads: { entityType: 'leads', endpoint: 'leads' },
             'job-seekers': { entityType: 'job-seekers', endpoint: 'job-seekers' },
             'hiring-managers': { entityType: 'hiring-managers', endpoint: 'hiring-managers' },
-            'placements': { entityType: 'placements', endpoint: 'placements' },
-            'tasks': { entityType: 'tasks', endpoint: 'tasks' },
+            placements: { entityType: 'placements', endpoint: 'placements' },
+            tasks: { entityType: 'tasks', endpoint: 'tasks' },
         };
 
         // For full-record fetch by ID: which field(s) hold the id on list items, and which key in GET-by-id response holds the record
@@ -117,12 +117,31 @@ export async function POST(request: NextRequest) {
                 errors[moduleId] = errorData.message || `Failed to fetch ${moduleId}`;
             } else {
                 const data = await response.json();
-                
-                // Extract data array (handle different response structures)
-                let moduleData = data[moduleConfig.endpoint] || 
-                               data.data || 
-                               data[moduleId] ||
-                               (Array.isArray(data) ? data : []);
+
+                // Extract data array (handle different response structures and naming conventions)
+                const listKeyMap: Record<string, string[]> = {
+                    organizations: ['organizations'],
+                    jobs: ['jobs'],
+                    leads: ['leads'],
+                    'job-seekers': ['jobSeekers', 'job_seekers', 'job-seekers'],
+                    'hiring-managers': ['hiringManagers', 'hiring_managers', 'hiring-managers'],
+                    placements: ['placements'],
+                    tasks: ['tasks'],
+                };
+
+                const preferredKeys = listKeyMap[moduleId] || [];
+
+                let moduleData: any[] =
+                    // 1) Module-specific preferred keys (e.g. jobSeekers, hiringManagers)
+                    (preferredKeys
+                        .map((k) => (Array.isArray((data as any)[k]) ? (data as any)[k] : null))
+                        .find((v) => v !== null) as any[] | null) ||
+                    // 2) Generic keys based on endpoint / module id / data wrapper
+                    (Array.isArray((data as any)[moduleConfig.endpoint]) ? (data as any)[moduleConfig.endpoint] : null) ||
+                    (Array.isArray((data as any)[moduleId]) ? (data as any)[moduleId] : null) ||
+                    (Array.isArray((data as any).data) ? (data as any).data : null) ||
+                    // 3) Top-level array
+                    (Array.isArray(data) ? (data as any[]) : []);
 
                 if (isDebug) {
                     const first = moduleData[0];
@@ -297,10 +316,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Return data as array for single module (backward compatible format)
+        const hasErrors = Object.keys(errors).length > 0;
         const payload: Record<string, unknown> = {
-            success: true,
-            data: Object.keys(errors).length === 0 ? exportData[moduleId] || [] : {},
-            errors: Object.keys(errors).length > 0 ? errors : undefined,
+            success: !hasErrors,
+            data: hasErrors ? [] : exportData[moduleId] || [],
+            errors: hasErrors ? errors : undefined,
         };
         if (isDebug && Object.keys(debugInfo).length > 0) payload.debug = debugInfo;
         return NextResponse.json(payload);

@@ -8,7 +8,6 @@ import {
   buildCustomFieldPromptInfo,
   fetchEntityCustomFields,
   findClosestOption,
-  normalizeOptions,
   normalizeStr,
 } from "@/lib/aiParsing";
 
@@ -25,74 +24,80 @@ function debugLog(label: string, data?: unknown) {
   if (data !== undefined) console.dir(data, { depth: 5 });
 }
 
-const BASE_SYSTEM_PROMPT = `You are an intelligent resume parsing and field-normalization engine.
+const BASE_SYSTEM_PROMPT = `You are a high speed document data extraction engine.
 
-Your job has TWO responsibilities:
+Your task is to extract values from the provided document text and map them to the given fields.
 
-STEP 1 — Extract Data
-Extract structured information from the resume and return clean, normalized JSON that matches the schema exactly.
+Rules:
+- Return ONLY valid JSON.
+- Do not include explanations.
+- Do not include markdown.
+- If a value cannot be found return null.
+- Never invent or guess data.
+- Match the field names exactly.
+- Output must be under 300 tokens.`;
 
-STEP 2 — Match Selectable Fields
-For fields that are SELECT or RADIO type (with provided allowed options):
-1. Compare the extracted resume value against the provided allowed options list.
-2. Return ONLY one value from the allowed options.
-3. Choose the closest semantic match.
-4. If an exact match exists → return exact match.
-5. If no exact match exists → return the most semantically similar option.
-6. If nothing reasonably matches → return "" (empty string).
-7. Never invent new values for select fields.
+function optimizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 3500);
+}
 
-General Rules:
-- Return ONLY valid JSON. No markdown, no explanation, no text before or after.
-- If a field is missing, return "" for string fields, [] for list fields.
-- Never invent data. Only extract information present in the text.
-- Non-select fields: clean, trimmed values.
-- Dates: ISO format (YYYY-MM-DD) if possible.
-- Phone numbers: normalize to (XXX) XXX-XXXX format for US numbers.
-- Emails: return as-is if valid.
-
-ADDRESS PARSING:
-- Split location/address into components:
-  - "address": street line 1
-  - "address_2": line 2 if any
-  - "city": city
-  - "state": 2-letter code
-- "zip": postal code
-- If only one line like "San Francisco, CA", put city in "city" and state in "state".
-`;
+function buildRegexPreExtraction(text: string): {
+  email: string | null;
+  phone: string | null;
+  linkedin: string | null;
+} {
+  const emailMatch = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? null;
+  const phoneMatch = text.match(/\+?\d[\d\s\-()]{7,}/)?.[0] ?? null;
+  const linkedinMatch = text.match(/linkedin\.com\/[^\s]+/i)?.[0] ?? null;
+  return {
+    email: emailMatch,
+    phone: phoneMatch,
+    linkedin: linkedinMatch,
+  };
+}
 
 function buildSystemPrompt(customFields: CustomFieldDef[]): string {
   const { selectBlock, customBlock } = buildCustomFieldPromptInfo(customFields);
 
-  return `${BASE_SYSTEM_PROMPT}${selectBlock}
+  const fieldSchema: Record<string, string> = {
+    full_name: "string",
+    first_name: "string",
+    last_name: "string",
+    email: "string",
+    phone: "string",
+    mobile_phone: "string",
+    address: "string",
+    address_2: "string",
+    city: "string",
+    state: "string",
+    zip: "string",
+    location: "string",
+    linkedin: "string",
+    portfolio: "string",
+    current_job_title: "string",
+    total_experience_years: "string",
+    skills: "string[]",
+    education: "string",
+    work_experience: "string",
+  };
 
-Return JSON in this exact structure:
-{
-  "full_name": "",
-  "first_name": "",
-  "last_name": "",
-  "email": "",
-  "phone": "",
-  "mobile_phone": "",
-  "address": "",
-  "address_2": "",
-  "city": "",
-  "state": "",
-  "zip": "",
-  "location": "",
-  "linkedin": "",
-  "portfolio": "",
-  "current_job_title": "",
-  "total_experience_years": "",
-  "skills": [],
-  "education": [
-    { "degree": "", "institution": "", "year": "" }
-  ],
-  "work_experience": [
-    { "company": "", "job_title": "", "start_date": "", "end_date": "", "description": "" }
-  ]${customBlock}
-}
-If a section does not exist, return an empty array.`;
+  for (const f of customFields) {
+    fieldSchema[f.field_name] = "string";
+  }
+
+  const schemaJson = JSON.stringify(fieldSchema, null, 2);
+
+  return `${BASE_SYSTEM_PROMPT}
+
+Fields Schema:
+${schemaJson}
+
+Additional rules for selectable fields:
+- For fields that are SELECT or RADIO type (with provided allowed options), only return one value from the allowed options list.
+- If no reasonable match exists, return null for that field.
+
+Selectable field options (for reference only, do not repeat in output):
+${selectBlock}${customBlock}`;
 }
 
 // ---------------- Helper functions ----------------
@@ -205,6 +210,8 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
 
+  const optimized = optimizeText(extractedText);
+
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -216,9 +223,15 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
       model: MODEL,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Extract structured information from the following resume text:\n\n${extractedText}` },
+        {
+          role: "user",
+          content: `Document Text:\n${optimized}`,
+        },
       ],
       temperature: 0,
+      top_p: 0.1,
+      max_tokens: 300,
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -249,7 +262,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." }, { status: 400 });
 
     const text = await extractTextFromFile(file);
-    if (!text || !text.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+    if (!text || !text.trim()) {
+      return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+    }
+
+    const pre = buildRegexPreExtraction(text);
 
     const customFields = await fetchEntityCustomFields("job-seekers", token);
     const { customFieldNames, selectFieldMeta } = buildCustomFieldMeta(customFields);
@@ -271,6 +288,10 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       );
     }
+
+    if (!parsed.email && pre.email) parsed.email = pre.email;
+    if (!parsed.phone && pre.phone) parsed.phone = pre.phone;
+    if (!parsed.linkedin && pre.linkedin) parsed.linkedin = pre.linkedin;
 
     debugLog("Final Parsed Resume", parsed);
     return NextResponse.json({ success: true, parsed });

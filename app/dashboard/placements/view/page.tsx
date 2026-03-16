@@ -965,7 +965,7 @@ export default function PlacementView() {
             const direct = j.billing_contact_id ?? j.billingContactId;
             if (direct != null && String(direct).trim() !== "") return direct;
             for (const [key, val] of Object.entries(customFieldsObj)) {
-              if (!/billing\s*contact/i.test(key)) continue;
+              if (!/billing\s*contacts?/i.test(key)) continue;
               if (val == null) continue;
               if (typeof val === "number") return val;
               if (typeof val === "object" && val !== null && "id" in (val as object)) return (val as { id: number }).id;
@@ -982,7 +982,14 @@ export default function PlacementView() {
             const direct = j.timecard_approver_id ?? j.timecardApproverId;
             if (direct != null && String(direct).trim() !== "") return direct;
             for (const [key, val] of Object.entries(customFieldsObj)) {
-              if (!/timecard|timesheet|approver/i.test(key)) continue;
+              const keyLower = key.toLowerCase();
+              const hasTimeLike = keyLower.includes("time") || keyLower.includes("timer");
+              const hasCardLike = keyLower.includes("card") || keyLower.includes("sheet");
+              const hasCombined =
+                keyLower.includes("timecard") || keyLower.includes("timercard");
+              const isTimecardKey =
+                (hasCombined || (hasTimeLike && hasCardLike)) && keyLower.includes("approver");
+              if (!isTimecardKey) continue;
               if (val == null) continue;
               if (typeof val === "number") return val;
               if (typeof val === "object" && val !== null && "id" in (val as object)) return (val as { id: number }).id;
@@ -991,7 +998,10 @@ export default function PlacementView() {
             if (Array.isArray(j.contacts)) {
               const approver = j.contacts.find((c: any) => {
                 const t = String(c?.type ?? c?.contact_type ?? "").toLowerCase();
-                return t.includes("timecard") || t.includes("approver");
+                const hasTimeLike = t.includes("time") || t.includes("timer");
+                const hasCardLike = t.includes("card") || t.includes("sheet");
+                const hasCombined = t.includes("timecard") || t.includes("timercard");
+                return (hasCombined || (hasTimeLike && hasCardLike)) && t.includes("approver");
               });
               const id = approver?.id ?? approver?.hiring_manager_id ?? approver?.contact_id;
               if (id != null) return id;
@@ -1048,21 +1058,187 @@ export default function PlacementView() {
             setBillingContact(null);
             setTimesheetApprover(null);
           }
-
-          // Fallback: when no billing contact id was resolved, show display name from job custom_fields if present (e.g. "Billing contacts" = "Doura, Gregory")
-          if (!billingId) {
-            for (const [key, val] of Object.entries(customFieldsObj)) {
-              if (!/billing\s*contact/i.test(key)) continue;
-              if (typeof val === "string" && val.trim() !== "") {
-                setBillingContact({ id: null, full_name: val.trim(), status: "", address: "", company_phone: "", customFields: {} });
-                break;
-              }
-            }
-          }
         } else {
           setJob(null);
           setBillingContact(null);
           setTimesheetApprover(null);
+        }
+
+        // Override billing contact and time card approver from PLACEMENT custom fields if present.
+        try {
+          const placementCustom = (placement as any)?.customFields;
+          if (placementCustom && typeof placementCustom === "object") {
+            const entries = Object.entries(placementCustom as Record<string, unknown>);
+
+            const findHmIdAndName = (matcher: (keyLower: string) => boolean) => {
+              let id: string | number | null = null;
+              let name: string | null = null;
+              for (const [key, val] of entries) {
+                const keyLower = key.toLowerCase();
+                if (!matcher(keyLower) || val == null) continue;
+
+                if (typeof val === "number") {
+                  id = val;
+                  break;
+                }
+                if (typeof val === "string") {
+                  const trimmed = val.trim();
+                  if (!trimmed) continue;
+                  if (/^\d+$/.test(trimmed)) {
+                    id = trimmed;
+                    break;
+                  }
+                  if (!name) name = trimmed;
+                } else if (typeof val === "object") {
+                  const obj = val as { id?: string | number; name?: string; full_name?: string };
+                  if (obj.id != null) {
+                    id = obj.id;
+                    break;
+                  }
+                  if (!name && (obj.full_name || obj.name)) {
+                    name = String(obj.full_name || obj.name);
+                  }
+                }
+              }
+              return { id, name };
+            };
+
+            const { id: placementBillingId, name: placementBillingName } =
+              findHmIdAndName(
+                (k) => k.includes("billing") && (k.includes("contact") || k.includes("contacts"))
+              );
+
+            const { id: placementTimecardId, name: placementTimecardName } =
+              findHmIdAndName((k) => {
+                const hasTimeLike = k.includes("time") || k.includes("timer");
+                const hasCardLike = k.includes("card") || k.includes("sheet");
+                const hasCombined =
+                  k.includes("timecard") || k.includes("timercard");
+                return (hasCombined || (hasTimeLike && hasCardLike)) && k.includes("approver");
+              });
+
+            // eslint-disable-next-line no-console
+            console.log("PlacementView override from placement.customFields", {
+              placementId: placement?.id,
+              customFieldKeys: Object.keys(placementCustom),
+              placementBillingId,
+              placementBillingName,
+              placementTimecardId,
+              placementTimecardName,
+            });
+
+            const idsToFetch = Array.from(
+              new Set(
+                [placementBillingId, placementTimecardId]
+                  .filter((v): v is string | number => v != null)
+                  .map((v) => String(v))
+              )
+            );
+
+            if (idsToFetch.length > 0) {
+              // eslint-disable-next-line no-console
+              console.log("PlacementView hiring-managers IDs to fetch", { idsToFetch });
+              const hmResults = await Promise.all(
+                idsToFetch.map(async (id) => {
+                  try {
+                    const r = await fetch(`/api/hiring-managers/${id}`, { headers });
+                    if (!r.ok) return null;
+                    const d = await r.json();
+                    const hm = d.hiringManager ?? d.hiring_manager ?? d;
+                    return {
+                      id: hm.id,
+                      full_name:
+                        hm.full_name ||
+                        [hm.first_name, hm.last_name].filter(Boolean).join(" ") ||
+                        "—",
+                      status: hm.status,
+                      address: hm.address,
+                      company_phone: hm.company_phone ?? hm.phone,
+                      customFields:
+                        typeof hm.custom_fields === "string"
+                          ? (() => {
+                              try {
+                                return JSON.parse(hm.custom_fields);
+                              } catch {
+                                return {};
+                              }
+                            })()
+                          : hm.custom_fields || {},
+                    };
+                  } catch {
+                    return null;
+                  }
+                })
+              );
+
+              const byId: Record<string, any> = {};
+              idsToFetch.forEach((id, i) => {
+                if (hmResults[i]) byId[id] = hmResults[i];
+              });
+
+              if (placementBillingId != null || placementBillingName) {
+                const resolved =
+                  placementBillingId != null ? byId[String(placementBillingId)] : null;
+                setBillingContact(
+                  resolved ??
+                    (placementBillingName
+                      ? {
+                          id: null,
+                          full_name: placementBillingName,
+                          status: "",
+                          address: "",
+                          company_phone: "",
+                          customFields: {},
+                        }
+                      : null)
+                );
+              }
+
+              if (placementTimecardId != null || placementTimecardName) {
+                const resolved =
+                  placementTimecardId != null ? byId[String(placementTimecardId)] : null;
+                setTimesheetApprover(
+                  resolved ??
+                    (placementTimecardName
+                      ? {
+                          id: null,
+                          full_name: placementTimecardName,
+                          status: "",
+                          address: "",
+                          company_phone: "",
+                          customFields: {},
+                        }
+                      : null)
+                );
+              }
+            } else {
+              if (placementBillingName) {
+                setBillingContact({
+                  id: null,
+                  full_name: placementBillingName,
+                  status: "",
+                  address: "",
+                  company_phone: "",
+                  customFields: {},
+                });
+              }
+              if (placementTimecardName) {
+                setTimesheetApprover({
+                  id: null,
+                  full_name: placementTimecardName,
+                  status: "",
+                  address: "",
+                  company_phone: "",
+                  customFields: {},
+                });
+              }
+            }
+          }
+        } catch (overrideError) {
+          console.error(
+            "Error overriding billing/timecard approver from placement.customFields",
+            overrideError
+          );
         }
       } catch (err) {
         console.error("Error fetching related entities:", err);
@@ -3865,6 +4041,37 @@ export default function PlacementView() {
   const renderBillingContactDetailsPanel = () => {
     const keys = Array.from(new Set(visibleFields.billingContactDetails || []));
     const allFields = hiringManagerAvailableFields || [];
+    // Derive a display-only billing contact name from PLACEMENT custom fields
+    // in case we did not resolve a concrete billingContact record.
+    let fallbackBillingContactName: string | null = null;
+    if (!billingContact && placement?.customFields) {
+      try {
+        for (const [k, v] of Object.entries(
+          placement.customFields as Record<string, unknown>
+        )) {
+          const keyLower = k.toLowerCase();
+          if (
+            !(
+              keyLower.includes("billing") &&
+              (keyLower.includes("contact") || keyLower.includes("contacts"))
+            )
+          ) {
+            continue;
+          }
+          if (typeof v === "string" && v.trim() !== "") {
+            fallbackBillingContactName = v.trim();
+            break;
+          }
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(
+          "PlacementView error scanning placement.customFields for billing contact",
+          e,
+          placement?.customFields
+        );
+      }
+    }
     return (
       <PanelWithHeader
         title="Contact - Details (Billing Contact)"
@@ -3872,7 +4079,14 @@ export default function PlacementView() {
       >
         <div className="space-y-0 border border-gray-200 rounded">
           {!billingContact ? (
-            <div className="p-4 text-gray-500 text-sm">No billing contact linked.</div>
+            fallbackBillingContactName ? (
+              <div className="p-4 text-gray-700 text-sm">
+                <span className="font-medium">Billing contact:</span>{" "}
+                <span>{fallbackBillingContactName}</span>
+              </div>
+            ) : (
+              <div className="p-4 text-gray-500 text-sm">No billing contact linked.</div>
+            )
           ) : keys.length === 0 ? (
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
@@ -3893,7 +4107,7 @@ export default function PlacementView() {
     const allFields = hiringManagerAvailableFields || [];
     return (
       <PanelWithHeader
-        title="Contact - Details (Timesheet Approver)"
+        title="Contact - Details (Time Card Approver)"
         onEdit={() => handleEditPanel("timesheetApproverDetails")}
       >
         <div className="space-y-0 border border-gray-200 rounded">
