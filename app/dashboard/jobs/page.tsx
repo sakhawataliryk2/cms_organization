@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX, FiFileText } from "react-icons/fi";
+import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import BulkActionsButton from "@/components/BulkActionsButton";
@@ -245,6 +245,7 @@ function SortableColumnHeader({
 
 export default function JobList() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const FAVORITES_STORAGE_KEY = "jobsFavorites";
 
@@ -1224,6 +1225,13 @@ export default function JobList() {
     setShowXmlFeedModal(true);
   };
 
+  useEffect(() => {
+    if (searchParams && searchParams.get("xmlImport") === "true") {
+      handleOpenXmlFeedModal();
+      router.replace("/dashboard/jobs", { scroll: false });
+    }
+  }, [searchParams]);
+
   const handleXmlFeedNext = () => {
     let xml = xmlFeedInput.trim();
     if (!xml) {
@@ -1503,10 +1511,6 @@ export default function JobList() {
             />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
-          <button onClick={handleOpenXmlFeedModal} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2" title="Import jobs from XML feed">
-            <FiFileText size={18} />
-            XML Feed In
-          </button>
           <button onClick={handleViewArchived} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
             Archived
           </button>
@@ -1560,11 +1564,6 @@ export default function JobList() {
         )}
         <div className="w-full md:hidden">
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
-        </div>
-        <div className="w-full md:hidden">
-          <button onClick={handleOpenXmlFeedModal} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center gap-2">
-            <FiFileText size={18} /> XML Feed In
-          </button>
         </div>
         <div className="w-full md:hidden">
           <button onClick={handleViewArchived} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">

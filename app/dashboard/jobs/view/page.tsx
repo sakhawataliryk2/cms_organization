@@ -361,6 +361,8 @@ export default function JobView() {
     }
   }, [tabFromUrl]);
   const [activeQuickTab, setActiveQuickTab] = useState("applied");
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<string>("");
+  const [appliedTabTitle, setAppliedTabTitle] = useState<string>("Applied");
   const [quickTabCounts, setQuickTabCounts] = useState({
     applied: 0,
     clientSubmissions: 0,
@@ -4709,13 +4711,22 @@ export default function JobView() {
 
   // Applied tab content – static XML-style applications + live submissions
   const renderAppliedTab = () => {
-    const totalApplied = submittedCandidates.length;
+    const filteredSubmittedCandidates = appliedStatusFilter
+      ? submittedCandidates.filter((c: any) => {
+          const statusNorm = String(c?.status || "").trim().toLowerCase();
+          const filterNorm = appliedStatusFilter.trim().toLowerCase();
+          return statusNorm === filterNorm;
+        })
+      : submittedCandidates;
+    const totalApplied = filteredSubmittedCandidates.length;
 
     return (
       <div className="bg-white p-4 rounded shadow-sm border border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-baseline gap-2">
-            <h2 className="text-lg font-semibold text-gray-800">Applied</h2>
+            <h2 className="text-lg font-semibold text-gray-800">
+              {appliedTabTitle}
+            </h2>
             <span className="text-sm text-gray-500">
               ({totalApplied})
             </span>
@@ -4757,7 +4768,7 @@ export default function JobView() {
             </thead>
             <tbody>
               {/* Live submissions from job_seeker_applications table */}
-              {submittedCandidates.map((c: any) => {
+              {filteredSubmittedCandidates.map((c: any) => {
                 const appliedDate = c.appliedAt
                   ? new Date(c.appliedAt)
                   : null;
@@ -4809,13 +4820,15 @@ export default function JobView() {
                   </tr>
                 );
               })}
-              {submittedCandidates.length === 0 && (
+              {filteredSubmittedCandidates.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}
                     className="px-3 py-6 text-center text-sm text-gray-500"
                   >
-                    No applications have been received yet.
+                    {appliedStatusFilter
+                      ? `No applications found with status "${appliedStatusFilter}".`
+                      : "No applications have been received yet."}
                   </td>
                 </tr>
               )}
@@ -5506,7 +5519,21 @@ export default function JobView() {
             const count =
               action.id === "applied"
                 ? submittedCandidates.length
-                : quickTabCounts[action.countKey] ?? 0;
+                : action.id === "client-submissions"
+                  ? submittedCandidates.filter((c: any) => {
+                      const statusNorm = String(c?.status || "")
+                        .trim()
+                        .toLowerCase();
+                      return statusNorm === "client submission";
+                    }).length
+                  : action.id === "interviews"
+                    ? submittedCandidates.filter((c: any) => {
+                        const statusNorm = String(c?.status || "")
+                          .trim()
+                          .toLowerCase();
+                        return statusNorm === "interview";
+                      }).length
+                    : quickTabCounts[action.countKey] ?? 0;
 
             return (
               <button
@@ -5516,11 +5543,34 @@ export default function JobView() {
                     ? "bg-white text-blue-600 font-medium"
                     : "bg-white text-gray-700 hover:bg-gray-100"
                 } px-4 py-1 rounded-full shadow`}
-                onClick={() =>
-                  action.id === "applied"
-                    ? setActiveTab("applied")
-                    : setActiveQuickTab(action.id)
-                }
+                onClick={() => {
+                  if (action.id === "applied") {
+                    setActiveQuickTab("applied");
+                    setAppliedStatusFilter("");
+                    setAppliedTabTitle("Applied");
+                    setActiveTab("applied");
+                    return;
+                  }
+
+                  if (action.id === "client-submissions") {
+                    setActiveQuickTab("client-submissions");
+                    setAppliedStatusFilter("Client Submission");
+                    setAppliedTabTitle("Client Submissions");
+                    setActiveTab("applied");
+                    return;
+                  }
+
+                  if (action.id === "interviews") {
+                    setActiveQuickTab("interviews");
+                    setAppliedStatusFilter("Interview");
+                    setAppliedTabTitle("Interviews");
+                    setActiveTab("applied");
+                    return;
+                  }
+
+                  // Keep existing behavior for other quick tabs for now
+                  setActiveQuickTab(action.id);
+                }}
               >
                 <span className="flex items-center gap-2">
                   <span>{action.label}</span>
@@ -5530,20 +5580,6 @@ export default function JobView() {
             );
           })}
         </div>
-
-        {/* {activeTab === "summary" && (
-          <button
-            onClick={togglePin}
-            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-            title={isPinned ? "Unpin panel" : "Pin panel"}
-          >
-            {isPinned ? (
-              <FiLock className="w-5 h-5 text-blue-600" />
-            ) : (
-              <FiUnlock className="w-5 h-5 text-gray-600" />
-            )}
-          </button>
-        )} */}
       </div>
 
 

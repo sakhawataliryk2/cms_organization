@@ -42,6 +42,20 @@ type PlacementRecord = {
   [key: string]: unknown;
 };
 
+type AuditEvent = {
+  id: number;
+  action: string;
+  performed_at: string;
+  performed_by_name?: string | null;
+  details?: unknown;
+};
+
+type BillingContactSummary = {
+  id: number | string | null;
+  label: string;
+  email?: string | null;
+};
+
 function toPlacementRecord(item: unknown): PlacementRecord | null {
   if (!item || typeof item !== "object") return null;
   const raw = item as Record<string, unknown>;
@@ -367,6 +381,16 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
   const [placementsPage, setPlacementsPage] = useState(1);
   const [selectedPlacementIds, setSelectedPlacementIds] = useState<Set<string>>(new Set());
 
+  // Audit trail state for this organization
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  // Billing contact state for this organization
+  const [billingContacts, setBillingContacts] = useState<BillingContactSummary[]>([]);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+
   const togglePlacementSelection = (id: number | string) => {
     const key = String(id);
     setSelectedPlacementIds((prev) => {
@@ -591,6 +615,209 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
       setPlacementsPage(placementsPageCount);
     }
   }, [placementsPage, placementsPageCount]);
+
+  // Load audit trail when switching to the Audit tab or when organization changes
+  useEffect(() => {
+    if (activeTab !== "audit" || !organization.id) {
+      return;
+    }
+    let cancelled = false;
+    setAuditLoading(true);
+    setAuditError(null);
+
+    fetch(`/api/organizations/${organization.id}/history`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to fetch history");
+        }
+        const data = await res.json();
+        return data;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setAuditLoading(false);
+        if (Array.isArray(data?.history)) {
+          setAuditEvents(data.history as AuditEvent[]);
+        } else {
+          setAuditEvents([]);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Error fetching history:", err);
+        setAuditLoading(false);
+        setAuditError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching history"
+        );
+        setAuditEvents([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, organization.id]);
+
+  // Load billing contacts when switching to the Billing tab
+  useEffect(() => {
+    if (activeTab !== "billing" || !organization.id) {
+      return;
+    }
+
+    const cfRaw = organization.custom_fields;
+    let cfObj: Record<string, unknown> = {};
+    if (cfRaw) {
+      try {
+        cfObj =
+          typeof cfRaw === "string"
+            ? JSON.parse(cfRaw)
+            : (cfRaw as Record<string, unknown>);
+      } catch {
+        cfObj = (cfRaw as Record<string, unknown>) ?? {};
+      }
+    }
+
+    const idCandidates: Array<number | string> = [];
+    const fallbackNames: string[] = [];
+
+    for (const [key, val] of Object.entries(cfObj)) {
+      const keyLower = key.toLowerCase();
+      if (
+        !(
+          keyLower.includes("billing") &&
+          (keyLower.includes("contact") || keyLower.includes("contacts"))
+        )
+      ) {
+        continue;
+      }
+
+      if (val == null) continue;
+      if (typeof val === "number") {
+        idCandidates.push(val);
+        continue;
+      }
+      if (typeof val === "string") {
+        const trimmed = val.trim();
+        if (!trimmed) continue;
+        if (/^\d+$/.test(trimmed)) {
+          idCandidates.push(trimmed);
+        } else {
+          fallbackNames.push(trimmed);
+        }
+        continue;
+      }
+      if (typeof val === "object") {
+        const maybeObj = val as { id?: number | string; name?: string };
+        if (maybeObj.id != null) {
+          idCandidates.push(maybeObj.id);
+        } else if (maybeObj.name) {
+          fallbackNames.push(String(maybeObj.name));
+        }
+      }
+    }
+
+    if (idCandidates.length === 0 && fallbackNames.length === 0) {
+      setBillingContacts([]);
+      setBillingLoading(false);
+      setBillingError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBillingLoading(true);
+    setBillingError(null);
+
+    const uniqueIds = Array.from(new Set(idCandidates.map((v) => String(v))));
+
+    (async () => {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1",
+        );
+        const headers =
+          token && token.trim() !== ""
+            ? { Authorization: `Bearer ${token}` }
+            : undefined;
+
+        const results = await Promise.allSettled(
+          uniqueIds.map((id) =>
+            fetch(`/api/hiring-managers/${encodeURIComponent(id)}`, {
+              headers,
+            }),
+          ),
+        );
+
+        const summaries: BillingContactSummary[] = [];
+
+        for (let i = 0; i < results.length; i++) {
+          const res = results[i];
+          const rawId = uniqueIds[i];
+          if (res.status === "fulfilled" && res.value.ok) {
+            try {
+              const data = await res.value.json();
+              const hm = data.hiringManager ?? data.hiring_manager ?? data;
+              const id = hm.id ?? rawId;
+              const name =
+                (hm.full_name ??
+                  hm.name ??
+                  [hm.first_name, hm.last_name].filter(Boolean).join(" ")) ||
+                `Hiring Manager #${id}`;
+              const email =
+                hm.email ??
+                hm.email1 ??
+                hm.email_address ??
+                null;
+              summaries.push({
+                id,
+                label: name,
+                email,
+              });
+            } catch {
+              summaries.push({
+                id: rawId,
+                label: `Hiring Manager #${rawId}`,
+              });
+            }
+          } else {
+            summaries.push({
+              id: rawId,
+              label: `Hiring Manager #${rawId}`,
+            });
+          }
+        }
+
+        // Add any fallback name-only contacts
+        for (const name of fallbackNames) {
+          summaries.push({
+            id: null,
+            label: name,
+          });
+        }
+
+        if (cancelled) return;
+        setBillingContacts(summaries);
+        setBillingLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.error("Error loading billing contacts:", err);
+        setBillingError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching billing contacts",
+        );
+        setBillingLoading(false);
+        setBillingContacts([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, organization.id]);
 
   const tabItems: { id: TabId; label: string }[] = [
     { id: "edit", label: "EDIT" },
@@ -1157,10 +1384,218 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
             </div>
           )}
 
-          {activeTab !== "edit" && activeTab !== "placements" && (
-            <div className="px-6 py-8 text-center text-gray-500 text-sm">
-              {activeTab === "audit" && "Audit trail — coming soon."}
-              {activeTab === "billing" && "Billing contact — coming soon."}
+          {activeTab === "audit" && (
+            <div className="px-6 py-6 space-y-4 text-sm">
+              {auditLoading && (
+                <div className="text-gray-500 text-center">
+                  Loading organization history...
+                </div>
+              )}
+              {auditError && (
+                <div className="text-red-600 text-center">{auditError}</div>
+              )}
+              {!auditLoading && !auditError && auditEvents.length === 0 && (
+                <div className="text-gray-500 text-center">
+                  No history records available.
+                </div>
+              )}
+              {!auditLoading &&
+                !auditError &&
+                auditEvents.map((item) => {
+                  let actionDisplay = "";
+                  let detailsDisplay: React.ReactNode = "";
+
+                  try {
+                    const details =
+                      typeof (item as any).details === "string"
+                        ? JSON.parse((item as any).details as string)
+                        : (item as any).details;
+
+                    switch (item.action) {
+                      case "CREATE":
+                        actionDisplay = "Organization Created";
+                        detailsDisplay = `Created by ${
+                          (item as any).performed_by_name || "Unknown"
+                        }`;
+                        break;
+                      case "UPDATE":
+                        actionDisplay = "Organization Updated";
+                        if (details && (details as any).before && (details as any).after) {
+                          const changes: React.ReactNode[] = [];
+                          const before = (details as any).before;
+                          const after = (details as any).after;
+
+                          const formatValue = (val: any): string => {
+                            if (val === null || val === undefined) return "Empty";
+                            if (typeof val === "string" && val.trim() === "") return "Empty";
+                            if (typeof val === "object") return JSON.stringify(val);
+                            return String(val);
+                          };
+
+                          for (const key in after) {
+                            if (key === "updated_at") continue;
+                            let beforeVal = before[key];
+                            let afterVal = after[key];
+
+                            if (key === "custom_fields") {
+                              let beforeObj =
+                                typeof beforeVal === "string"
+                                  ? JSON.parse(beforeVal)
+                                  : beforeVal;
+                              let afterObj =
+                                typeof afterVal === "string"
+                                  ? JSON.parse(afterVal)
+                                  : afterVal;
+                              beforeObj = beforeObj || {};
+                              afterObj = afterObj || {};
+                              if (
+                                typeof beforeObj === "object" &&
+                                typeof afterObj === "object"
+                              ) {
+                                const allKeys = Array.from(
+                                  new Set([
+                                    ...Object.keys(beforeObj),
+                                    ...Object.keys(afterObj),
+                                  ]),
+                                );
+                                allKeys.forEach((cfKey) => {
+                                  const beforeCfVal = beforeObj[cfKey];
+                                  const afterCfVal = afterObj[cfKey];
+                                  if (beforeCfVal !== afterCfVal) {
+                                    changes.push(
+                                      <div
+                                        key={`cf-${cfKey}`}
+                                        className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm"
+                                      >
+                                        <span className="font-semibold text-gray-700 min-w-[120px]">
+                                          {cfKey}:
+                                        </span>
+                                        <div className="flex flex-wrap gap-2 items-center">
+                                          <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                            {formatValue(beforeCfVal)}
+                                          </span>
+                                          <span className="text-gray-400">→</span>
+                                          <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                            {formatValue(afterCfVal)}
+                                          </span>
+                                        </div>
+                                      </div>,
+                                    );
+                                  }
+                                });
+                                continue;
+                              }
+                            }
+
+                            if (
+                              JSON.stringify(beforeVal) !==
+                              JSON.stringify(afterVal)
+                            ) {
+                              // For now, only show custom_fields changes like the main org page.
+                              continue;
+                            }
+                          }
+
+                          if (changes.length > 0) {
+                            detailsDisplay = (
+                              <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                                {changes}
+                              </div>
+                            );
+                          } else {
+                            detailsDisplay = (
+                              <span className="text-gray-500 italic">
+                                No visible changes detected
+                              </span>
+                            );
+                          }
+                        }
+                        break;
+                      case "ADD_NOTE":
+                        actionDisplay = "Note Added";
+                        detailsDisplay = (details as any)?.text || "";
+                        break;
+                      default:
+                        actionDisplay = item.action;
+                        detailsDisplay = JSON.stringify(details);
+                    }
+                  } catch (e) {
+                    // eslint-disable-next-line no-console
+                    console.error("Error parsing history details:", e);
+                    detailsDisplay = "Error displaying details";
+                  }
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3 border rounded hover:bg-gray-50"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-medium text-blue-600">
+                          {actionDisplay}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {item.performed_at
+                            ? new Date(item.performed_at).toLocaleString()
+                            : "Unknown date"}
+                        </span>
+                      </div>
+                      <div className="mb-2">{detailsDisplay}</div>
+                      <div className="text-sm text-gray-600">
+                        By: {item.performed_by_name || "Unknown"}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
+          {activeTab === "billing" && (
+            <div className="px-6 py-6 space-y-4 text-sm">
+              {billingLoading && (
+                <div className="text-gray-500 text-center">
+                  Loading billing contacts...
+                </div>
+              )}
+              {billingError && (
+                <div className="text-red-600 text-center">{billingError}</div>
+              )}
+              {!billingLoading && !billingError && billingContacts.length === 0 && (
+                <div className="text-gray-500 text-center">
+                  No billing contact linked.
+                </div>
+              )}
+              {!billingLoading &&
+                !billingError &&
+                billingContacts.map((bc, index) => (
+                  <div
+                    key={`${bc.id ?? "name"}-${index}`}
+                    className="p-3 border rounded hover:bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                  >
+                    <div>
+                      <div className="font-medium text-gray-800">
+                        {bc.label}
+                      </div>
+                      {bc.email && (
+                        <div className="text-xs text-gray-600">{bc.email}</div>
+                      )}
+                    </div>
+                    {bc.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          router.push(
+                            `/dashboard/hiring-managers/view?id=${bc.id}`,
+                          );
+                        }}
+                        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        View profile
+                      </button>
+                    )}
+                  </div>
+                ))}
             </div>
           )}
         </div>

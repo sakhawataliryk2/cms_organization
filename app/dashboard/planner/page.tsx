@@ -40,6 +40,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import DocumentViewer from "@/components/DocumentViewer";
 
 interface Appointment {
   id: number;
@@ -63,6 +64,7 @@ interface Appointment {
   zoom_join_url?: string;
   zoom_start_url?: string;
   zoom_password?: string;
+  document_urls?: string[];
 }
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -289,32 +291,33 @@ function OwnerSearchSelect({
   onChange,
   placeholder = "Search and select...",
 }: {
-  value: "all" | number;
+  value: number[]; // empty => all internal users
   options: { id: number; name: string; email?: string }[];
-  onChange: (v: "all" | number) => void;
+  onChange: (ids: number[]) => void;
   placeholder?: string;
 }) {
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const allOptions = useMemo(
-    () => [
-      { id: "all" as const, name: "All internal users' appointments" },
-      ...options.map((u) => ({
-        id: u.id as number,
+    () =>
+      options.map((u) => ({
+        id: u.id,
         name: `${u.name}${u.email ? ` (${u.email})` : ""}`,
+        email: u.email,
       })),
-    ],
     [options],
   );
 
-  const selectedOption = allOptions.find(
-    (o) => o.id === (value === "all" ? "all" : value),
-  );
-  const displayValue = selectedOption?.name ?? "";
+  const displayValue = useMemo(() => {
+    if (!value.length) return "All internal users' appointments";
+    if (value.length === 1) {
+      const u = allOptions.find((o) => o.id === value[0]);
+      return u?.name ?? `User #${value[0]}`;
+    }
+    return `${value.length} users selected`;
+  }, [value, allOptions]);
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -322,8 +325,7 @@ function OwnerSearchSelect({
     return allOptions.filter(
       (opt) =>
         opt.name.toLowerCase().includes(q) ||
-        (typeof opt.id === "number" &&
-          options.find((u) => u.id === opt.id)?.email?.toLowerCase().includes(q)),
+        opt.email?.toLowerCase().includes(q),
     );
   }, [search, allOptions, options]);
 
@@ -340,57 +342,8 @@ function OwnerSearchSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    setHighlightIndex(0);
-  }, [search, isOpen]);
-
-  useEffect(() => {
-    if (!isOpen || !listRef.current) return;
-    const el = listRef.current.querySelector(
-      `[data-index="${highlightIndex}"]`,
-    );
-    el?.scrollIntoView({ block: "nearest" });
-  }, [highlightIndex, isOpen]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isOpen) {
-      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-        e.preventDefault();
-        setIsOpen(true);
-      }
-      return;
-    }
-    if (e.key === "Escape") {
-      setIsOpen(false);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlightIndex((i) =>
-        Math.min(i + 1, filteredOptions.length - 1),
-      );
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.max(i - 1, 0));
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const opt = filteredOptions[highlightIndex];
-      if (opt) {
-        onChange(opt.id === "all" ? "all" : opt.id);
-        setIsOpen(false);
-        setSearch("");
-      }
-    }
-  };
-
-  const handleSelect = (opt: (typeof allOptions)[number]) => {
-    onChange(opt.id === "all" ? "all" : opt.id);
-    setIsOpen(false);
-    setSearch("");
+  const toggleId = (id: number) => {
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
   };
 
   return (
@@ -405,7 +358,9 @@ function OwnerSearchSelect({
             setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setIsOpen(false);
+          }}
           placeholder={displayValue ? "" : placeholder}
           className="flex-1 min-w-0 outline-none bg-transparent"
           autoComplete="off"
@@ -413,9 +368,21 @@ function OwnerSearchSelect({
       </div>
       {isOpen && (
         <div
-          ref={listRef}
           className="absolute z-20 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto"
         >
+          <button
+            type="button"
+            onClick={() => {
+              onChange([]);
+              setSearch("");
+              setIsOpen(false);
+            }}
+            className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 ${
+              value.length === 0 ? "font-medium text-blue-700 bg-blue-50" : "text-gray-800"
+            }`}
+          >
+            All internal users' appointments
+          </button>
           {filteredOptions.length === 0 ? (
             <div className="px-3 py-4 text-sm text-gray-500 text-center">
               No users match your search.
@@ -423,20 +390,123 @@ function OwnerSearchSelect({
           ) : (
             filteredOptions.map((opt, idx) => (
               <button
-                key={opt.id === "all" ? "all" : `user-${opt.id}`}
+                key={`user-${opt.id}`}
                 type="button"
-                data-index={idx}
-                onClick={() => handleSelect(opt)}
+                onClick={() => toggleId(opt.id)}
                 className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${
-                  idx === highlightIndex ? "bg-blue-50" : ""
-                } ${
-                  (value === "all" && opt.id === "all") ||
-                  (typeof value === "number" && opt.id === value)
-                    ? "font-medium text-blue-700"
-                    : ""
+                  value.includes(opt.id) ? "font-medium text-blue-700 bg-blue-50" : ""
                 }`}
               >
-                {opt.name}
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    readOnly
+                    checked={value.includes(opt.id)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="truncate">{opt.name}</span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InviteeSearchAdd({
+  jobSeekers,
+  hiringManagers,
+  internalUsers,
+  disabled,
+  onAdd,
+}: {
+  jobSeekers: any[];
+  hiringManagers: any[];
+  internalUsers: { id: number; name: string; email?: string }[];
+  disabled?: boolean;
+  onAdd: (inv: { type: InviteeType; id: number }) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const options = useMemo(() => {
+    const js = (jobSeekers || []).map((r: any) => {
+      const name =
+        r.full_name ||
+        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
+        `Job Seeker #${r.id}`;
+      const label = `${name}${r.email ? ` (${r.email})` : ""}`;
+      return { type: "job_seeker" as const, id: Number(r.id), label };
+    });
+    const hm = (hiringManagers || []).map((r: any) => {
+      const name =
+        r.full_name ||
+        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
+        `Hiring Manager #${r.id}`;
+      const label = `${name}${r.email ? ` (${r.email})` : ""}`;
+      return { type: "hiring_manager" as const, id: Number(r.id), label };
+    });
+    const iu = (internalUsers || []).map((u) => ({
+      type: "internal" as const,
+      id: Number(u.id),
+      label: `${u.name}${u.email ? ` (${u.email})` : ""}`,
+    }));
+    return [...js, ...hm, ...iu].filter((o) => Number.isFinite(o.id));
+  }, [jobSeekers, hiringManagers, internalUsers]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, search]);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        placeholder="Search and select invitee..."
+        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+        disabled={disabled}
+        autoComplete="off"
+      />
+      {isOpen && (
+        <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-gray-500 text-center">
+              No matches.
+            </div>
+          ) : (
+            filtered.map((opt) => (
+              <button
+                key={`${opt.type}-${opt.id}`}
+                type="button"
+                onClick={() => {
+                  onAdd({ type: opt.type, id: opt.id });
+                  setSearch("");
+                  setIsOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+              >
+                {opt.label}
               </button>
             ))
           )}
@@ -476,6 +546,11 @@ const Planners = () => {
     { type: InviteeType; id: number }[]
   >([]);
   const [isSavingAppointment, setIsSavingAppointment] = useState(false);
+  const [appointmentDocuments, setAppointmentDocuments] = useState<File[]>([]);
+  const [documentViewer, setDocumentViewer] = useState<{
+    url: string;
+    name?: string;
+  } | null>(null);
 
   // Lookup data for participants
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
@@ -488,7 +563,7 @@ const Planners = () => {
   const [internalUsers, setInternalUsers] = useState<
     { id: number; name: string; email?: string }[]
   >([]);
-  const [ownerFilter, setOwnerFilter] = useState<"all" | number>("all");
+  const [ownerFilter, setOwnerFilter] = useState<number[]>([]); // empty => all
 
   // Column management for List view
   const [columnFields, setColumnFields] = useState<string[]>([
@@ -500,6 +575,7 @@ const Planners = () => {
     "job",
     "duration",
     "zoom",
+    "documents",
   ]);
   const [columnSorts, setColumnSorts] = useState<
     Record<string, ColumnSortState>
@@ -511,7 +587,7 @@ const Planners = () => {
   // Column management for Month view table (below calendar)
   const [monthTableColumnFields, setMonthTableColumnFields] = useState<
     string[]
-  >(["time", "type", "status", "participant", "job", "zoom", "duration"]);
+  >(["time", "type", "status", "participant", "job", "zoom", "documents", "duration"]);
   const [monthTableColumnSorts, setMonthTableColumnSorts] = useState<
     Record<string, ColumnSortState>
   >({});
@@ -703,7 +779,20 @@ const Planners = () => {
           });
           if (jobResponse.ok) {
             const jobData = await jobResponse.json();
-            setJobs(jobData.jobs || jobData.data || []);
+            const list = jobData.jobs || jobData.data || [];
+            const activeOnly = Array.isArray(list)
+              ? list.filter((j: any) => {
+                  const status = String(j?.status ?? "").toLowerCase();
+                  const archivedAt = j?.archived_at ?? j?.archivedAt ?? null;
+                  const reason = String(j?.archive_reason ?? j?.archiveReason ?? "").toLowerCase();
+                  // Active = not archived (covers deleted & transferred which are archived with reason)
+                  if (status === "archived") return false;
+                  if (archivedAt) return false;
+                  if (reason === "transfer") return false;
+                  return true;
+                })
+              : [];
+            setJobs(activeOnly);
           }
         } catch (jobError) {
           console.error("Error fetching jobs:", jobError);
@@ -772,9 +861,10 @@ const Planners = () => {
         startDate: startOfMonth.toISOString().split("T")[0],
         endDate: endOfMonth.toISOString().split("T")[0],
       });
-      if (ownerFilter !== "all" && typeof ownerFilter === "number") {
-        queryParams.set("ownerId", String(ownerFilter));
+      if (ownerFilter.length > 0) {
+        queryParams.set("ownerId", ownerFilter.join(","));
       }
+      queryParams.set("_ts", String(Date.now()));
 
       const response = await fetch(
         `/api/planner/appointments?${queryParams.toString()}`,
@@ -782,6 +872,7 @@ const Planners = () => {
           headers: {
             Authorization: `Bearer ${token}`,
           },
+          cache: "no-store",
         },
       );
 
@@ -881,6 +972,11 @@ const Planners = () => {
               zoom_join_url: apt.zoom_join_url || null,
               zoom_start_url: apt.zoom_start_url || null,
               zoom_password: apt.zoom_password || null,
+              document_urls: Array.isArray(apt.document_urls)
+                ? apt.document_urls
+                : Array.isArray(apt.documentUrls)
+                  ? apt.documentUrls
+                  : [],
             };
           } catch (mapError) {
             console.error("Error mapping appointment:", mapError, apt);
@@ -921,6 +1017,22 @@ const Planners = () => {
     setCurrentPage(1);
   }, [columnFilters, columnSorts]);
 
+  // Local date helpers (avoid timezone shifts from `new Date("YYYY-MM-DD")`)
+  const toYmdLocal = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  const toYmdFromUnknown = (dateStr: string): string => {
+    if (!dateStr) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const dt = new Date(dateStr);
+    if (Number.isNaN(dt.getTime())) return dateStr;
+    return toYmdLocal(dt);
+  };
+
   // Calendar data generation
   const getCalendarData = (currentMonth: Date) => {
     const year = currentMonth.getFullYear();
@@ -954,11 +1066,7 @@ const Planners = () => {
 
     // Helper function to normalize appointment date
     const normalizeAppointmentDate = (dateStr: string): string => {
-      if (!dateStr) return "";
-      // Handle various date formats
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return dateStr; // Return as-is if invalid
-      return normalizeDateString(date);
+      return toYmdFromUnknown(dateStr);
     };
 
     // Add days from previous month
@@ -1027,8 +1135,7 @@ const Planners = () => {
 
   const calendarData = getCalendarData(currentMonth);
   const selectedDayAppointments = appointments.filter((apt) => {
-    const aptDate = new Date(apt.date);
-    return aptDate.toDateString() === selectedDate.toDateString();
+    return toYmdFromUnknown(apt.date) === toYmdLocal(selectedDate);
   });
 
   // Column info helper
@@ -1045,6 +1152,7 @@ const Planners = () => {
       job: { filterType: "text", label: "Job" },
       duration: { filterType: "number", label: "Duration" },
       zoom: { filterType: "select", label: "Zoom" },
+      documents: { filterType: "select", label: "Docs" },
     };
     return columnMap[key];
   };
@@ -1082,6 +1190,8 @@ const Planners = () => {
         return apt.duration ? `${apt.duration} min` : "—";
       case "zoom":
         return apt.zoom_join_url ? "Yes" : "No";
+      case "documents":
+        return apt.document_urls && apt.document_urls.length > 0 ? "Yes" : "No";
       default:
         return "—";
     }
@@ -1229,6 +1339,7 @@ const Planners = () => {
       sendInvites: true,
     });
     setInvitees([]);
+    setAppointmentDocuments([]);
     setShowAddModal(true);
   };
 
@@ -1378,13 +1489,34 @@ const Planners = () => {
         requestBody.invitee_emails = inviteeEmailsForBackend;
       }
 
+      const hasDocs = appointmentDocuments.length > 0;
       const response = await fetch("/api/planner/appointments", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(requestBody),
+        headers: hasDocs
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+        body: hasDocs
+          ? (() => {
+              const fd = new FormData();
+              Object.entries(requestBody).forEach(([k, v]) => {
+                if (v === undefined || v === null) return;
+                if (Array.isArray(v) || typeof v === "object") {
+                  fd.append(k, JSON.stringify(v));
+                } else {
+                  fd.append(k, String(v));
+                }
+              });
+              for (const f of appointmentDocuments) {
+                fd.append("documents", f);
+              }
+              return fd;
+            })()
+          : JSON.stringify(requestBody),
       });
 
       const responseText = await response.text();
@@ -1408,6 +1540,11 @@ const Planners = () => {
 
       toast.success("Appointment created successfully!");
       closeAddModal();
+      // Update selected day to the appointment date so it shows immediately in Month view table
+      if (appointmentForm.date) {
+        const d = new Date(appointmentForm.date);
+        if (!Number.isNaN(d.getTime())) setSelectedDate(d);
+      }
 
       // If user chose to send calendar invites and Office 365 is authenticated, send invite to all invitees + primary participant
       if (appointmentForm.sendInvites && isOffice365Authenticated()) {
@@ -1572,6 +1709,7 @@ const Planners = () => {
         sendInvites: true,
       });
       setInvitees([]);
+      setAppointmentDocuments([]);
 
       fetchAppointments();
     } catch (err) {
@@ -1958,6 +2096,10 @@ const Planners = () => {
       { label: "Yes", value: "Yes" },
       { label: "No", value: "No" },
     ];
+    const docsOptions = [
+      { label: "Yes", value: "Yes" },
+      { label: "No", value: "No" },
+    ];
 
     return (
       <div className="px-6 pb-6">
@@ -2012,6 +2154,8 @@ const Planners = () => {
                                   ? statusOptions
                                   : key === "zoom"
                                     ? zoomOptions
+                                    : key === "documents"
+                                      ? docsOptions
                                     : undefined
                             }
                           />
@@ -2087,6 +2231,23 @@ const Planners = () => {
                                   >
                                     Join
                                   </a>
+                                ) : key === "documents" &&
+                                  appointment.document_urls &&
+                                  appointment.document_urls.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const url = appointment.document_urls?.[0];
+                                      if (!url) return;
+                                      const name =
+                                        url.split("/").pop() || "Document";
+                                      setDocumentViewer({ url, name });
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 underline"
+                                  >
+                                    View
+                                  </button>
                                 ) : key === "type" ? (
                                   <span className="capitalize">{value}</span>
                                 ) : (
@@ -2436,14 +2597,20 @@ const Planners = () => {
 
             {/* Calendar Days */}
             <div className="grid grid-cols-7 gap-1">
-              {calendarData.map((dayData, index) => (
-                <div
-                  key={index}
-                  className={`min-h-[80px] border border-gray-200 p-2 cursor-pointer hover:bg-gray-50 ${
-                    dayData.isToday ? "bg-blue-100 border-blue-300" : ""
-                  }`}
-                  onClick={() => setSelectedDate(dayData.date)}
-                >
+              {calendarData.map((dayData, index) => {
+                const isSelected =
+                  toYmdLocal(dayData.date) === toYmdLocal(selectedDate);
+
+                return (
+                  <div
+                    key={index}
+                    className={`min-h-[80px] border p-2 cursor-pointer hover:bg-gray-50 ${
+                      dayData.isToday ? "bg-blue-50 border-blue-300" : "border-gray-200"
+                    } ${
+                      isSelected ? "ring-2 ring-blue-600 bg-blue-100" : ""
+                    }`}
+                    onClick={() => setSelectedDate(dayData.date)}
+                  >
                   <div className="flex flex-col h-full">
                     <div
                       className={`text-sm ${
@@ -2468,8 +2635,9 @@ const Planners = () => {
                       {dayData.appointmentCount || 0}
                     </div>
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -2502,7 +2670,7 @@ const Planners = () => {
                     {
                       appointments.filter(
                         (apt) =>
-                          apt.date === selectedDate.toISOString().split("T")[0],
+                          toYmdFromUnknown(apt.date) === toYmdLocal(selectedDate),
                       ).length
                     }{" "}
                     appointment(s) this day
@@ -2580,6 +2748,10 @@ const Planners = () => {
                               { label: "Yes", value: "Yes" },
                               { label: "No", value: "No" },
                             ];
+                            const docsOptions = [
+                              { label: "Yes", value: "Yes" },
+                              { label: "No", value: "No" },
+                            ];
 
                             return (
                               <SortableColumnHeader
@@ -2603,6 +2775,8 @@ const Planners = () => {
                                       ? statusOptions
                                       : key === "zoom"
                                         ? zoomOptions
+                                        : key === "documents"
+                                          ? docsOptions
                                         : undefined
                                 }
                               />
@@ -2709,6 +2883,23 @@ const Planners = () => {
                                         </a>
                                       )}
                                     </div>
+                                  ) : key === "documents" &&
+                                    appointment.document_urls &&
+                                    appointment.document_urls.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const url = appointment.document_urls?.[0];
+                                        if (!url) return;
+                                        const name =
+                                          url.split("/").pop() || "Document";
+                                        setDocumentViewer({ url, name });
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                    >
+                                      View
+                                    </button>
                                   ) : key === "type" ? (
                                     <span className="capitalize">{value}</span>
                                   ) : (
@@ -2881,6 +3072,34 @@ const Planners = () => {
           </div>
         )}
       </div>
+
+      {/* Document Viewer Modal */}
+      {documentViewer && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center px-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="text-lg font-semibold text-gray-800 truncate">
+                {documentViewer.name || "Document"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDocumentViewer(null)}
+                className="text-gray-500 hover:text-gray-700"
+                aria-label="Close document viewer"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            <div className="p-4 overflow-auto">
+              <DocumentViewer
+                filePath={documentViewer.url}
+                documentName={documentViewer.name || ""}
+                onOpenInNewTab={() => window.open(documentViewer.url, "_blank")}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Appointment Modal */}
       {showAddModal && (
@@ -3123,86 +3342,17 @@ const Planners = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Invite to calendar (emails will receive the invite)
                   </label>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      e.target.value = "";
-                      if (!v) return;
-                      const [type, idStr] = v.split(":");
-                      const id = parseInt(idStr, 10);
-                      if (!id || !type) return;
-                      const t = type as InviteeType;
-                      if (
-                        invitees.some((i) => i.type === t && i.id === id)
-                      )
-                        return;
-                      setInvitees((prev) => [...prev, { type: t, id }]);
-                    }}
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <InviteeSearchAdd
+                    jobSeekers={jobSeekers}
+                    hiringManagers={hiringManagers}
+                    internalUsers={internalUsers}
                     disabled={isLoadingLookups}
-                  >
-                    <option value="">Add person to invite...</option>
-                    <optgroup label="Job Seekers">
-                      {jobSeekers.map((js: any) => {
-                        const name =
-                          js.full_name ||
-                          [js.first_name, js.last_name]
-                            .filter(Boolean)
-                            .join(" ") ||
-                          `#${js.id}`;
-                        const recNum = formatDisplayRecordNumber(
-                          "jobSeeker",
-                          js.record_number,
-                          js.id,
-                        );
-                        return (
-                          <option
-                            key={`inv-js-${js.id}`}
-                            value={`job_seeker:${js.id}`}
-                          >
-                            {recNum} - {name}
-                            {js.email ? ` (${js.email})` : ""}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                    <optgroup label="Hiring Managers">
-                      {hiringManagers.map((hm: any) => {
-                        const name =
-                          hm.full_name ||
-                          [hm.first_name, hm.last_name]
-                            .filter(Boolean)
-                            .join(" ") ||
-                          `#${hm.id}`;
-                        const recNum = formatDisplayRecordNumber(
-                          "hiringManager",
-                          hm.record_number,
-                          hm.id,
-                        );
-                        return (
-                          <option
-                            key={`inv-hm-${hm.id}`}
-                            value={`hiring_manager:${hm.id}`}
-                          >
-                            {recNum} - {name}
-                            {hm.email ? ` (${hm.email})` : ""}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                    <optgroup label="Internal users">
-                      {internalUsers.map((u) => (
-                        <option
-                          key={`inv-internal-${u.id}`}
-                          value={`internal:${u.id}`}
-                        >
-                          {u.name}
-                          {u.email ? ` (${u.email})` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
+                    onAdd={(inv) => {
+                      if (invitees.some((i) => i.type === inv.type && i.id === inv.id))
+                        return;
+                      setInvitees((prev) => [...prev, inv]);
+                    }}
+                  />
                   {invitees.length > 0 && (
                     <ul className="mt-2 space-y-1 max-h-32 overflow-y-auto">
                       {invitees.map((inv, idx) => {
@@ -3333,6 +3483,27 @@ const Planners = () => {
               {!appointmentForm.sendInvites && (
                 <p className="text-xs text-gray-500 mt-1">
                   Not sending to participants
+                </p>
+              )}
+            </div>
+
+            {/* Documents */}
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Documents (optional)
+              </label>
+              <input
+                type="file"
+                multiple
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  setAppointmentDocuments(files);
+                }}
+                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+              {appointmentDocuments.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {appointmentDocuments.length} file(s) selected
                 </p>
               )}
             </div>

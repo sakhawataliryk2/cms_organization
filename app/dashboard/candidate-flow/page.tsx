@@ -12,6 +12,7 @@ import AddNoteModal from '@/components/AddNoteModal';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { toast } from 'sonner';
 import { getRecordNumberFromId } from '@/lib/getRecordNumberFromId';
+import RecordNameResolver from '@/components/RecordNameResolver';
 
 interface PrescreenedCandidate {
   id: number;
@@ -112,6 +113,8 @@ export default function CandidateFlowDashboard() {
     }[];
   } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [selectedJobSeekerId, setSelectedJobSeekerId] = useState<number | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
   const getToken = () =>
     document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
@@ -429,7 +432,14 @@ export default function CandidateFlowDashboard() {
   const handleClose = () => router.push('/home');
 
   const handleViewCandidate = (id: number) => {
-    router.push(`/dashboard/job-seekers/view?id=${id}`);
+    setSelectedJobSeekerId(id);
+  };
+
+  const handleViewJob = (jobNumericId?: number | string | null) => {
+    if (!jobNumericId) return;
+    const numericId = Number(jobNumericId);
+    if (!Number.isFinite(numericId)) return;
+    setSelectedJobId(numericId);
   };
 
   const openSubmissionModalFor = (c: PrescreenedCandidate) => {
@@ -561,25 +571,23 @@ export default function CandidateFlowDashboard() {
         }
         className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between cursor-move"
       >
-        <div>
+        <button
+          type="button"
+          className="text-left"
+          onClick={() => handleViewCandidate(c.id)}
+        >
           <div className="text-slate-800 font-medium truncate">
             {c.name || `Record #${c.record_number ?? c.id}`}
           </div>
-  
+
           <div className="text-slate-500 text-xs mt-0.5 truncate">
             {formatRecordId(c.record_number ?? c.id, 'jobSeeker')}
           </div>
-        </div>
+        </button>
   
         <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
           <FiEye size={14} />
-          <button
-            type="button"
-            onClick={() => handleViewCandidate(c.id)}
-            className="hover:underline"
-          >
-            View record
-          </button>
+          <span>Preview</span>
         </div>
       </div>
     );
@@ -598,22 +606,28 @@ export default function CandidateFlowDashboard() {
       className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between cursor-move"
     >
       <div>
-        <div className="text-slate-800 font-medium truncate">{candidate.name}</div>
-        {candidate.jobId && candidate.jobNumericId ? (
-          <div className="text-slate-500 text-xs mt-0.5 truncate">
-            <JobRecordNumber jobNumericId={Number(candidate.jobNumericId)} />
+        <button
+          type="button"
+          className="text-left w-full"
+          onClick={() => handleViewCandidate(candidate.id)}
+        >
+          <div className="text-slate-800 font-medium truncate">
+            {candidate.name}
           </div>
+        </button>
+        {candidate.jobId && candidate.jobNumericId ? (
+          <button
+            type="button"
+            className="text-slate-500 text-xs mt-0.5 truncate hover:underline"
+            onClick={() => handleViewJob(candidate.jobNumericId)}
+          >
+            <JobRecordNumber jobNumericId={Number(candidate.jobNumericId)} />
+          </button>
         ) : null}
       </div>
       <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
         <FiEye size={14} />
-        <button
-          type="button"
-          onClick={() => handleViewCandidate(candidate.id)}
-          className="hover:underline"
-        >
-          View record
-        </button>
+        <span>Preview</span>
       </div>
     </div>
   );
@@ -841,6 +855,95 @@ export default function CandidateFlowDashboard() {
             }
           }}
         />
+      )}
+      {selectedJobSeekerId != null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
+              <div className="flex items-center gap-2">
+                <FiUser className="text-slate-700" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-slate-800">
+                    <RecordNameResolver
+                      id={selectedJobSeekerId}
+                      type="job-seeker"
+                      clickable={false}
+                    />
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {formatRecordId(selectedJobSeekerId, 'jobSeeker')}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedJobSeekerId(null)}
+                className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                aria-label="Close candidate preview"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-sm text-slate-600">
+                Full candidate details are available in the Job Seeker record.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedJobSeekerId;
+                  setSelectedJobSeekerId(null);
+                  router.push(`/dashboard/job-seekers/view?id=${id}`);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+              >
+                <FiEye size={16} />
+                Open Full Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedJobId != null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-slate-800">
+                  Job Preview
+                </span>
+                <span className="text-xs text-slate-500">
+                  {formatRecordId(selectedJobId, 'job')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedJobId(null)}
+                className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                aria-label="Close job preview"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-sm text-slate-600">
+                Full job details are available in the Job record.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedJobId;
+                  setSelectedJobId(null);
+                  router.push(`/dashboard/jobs/view?id=${id}`);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+              >
+                <FiEye size={16} />
+                Open Job Order
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -107,7 +107,14 @@ export default function LookupField({
             id: user.id.toString(),
             name: user.name || user.email || '',
             email: user.email || '',
-            record_number: user.record_number || ''
+            // Many user records don't have an explicit record_number.
+            // Fallback to the numeric id so owner options still show a prefixed code (e.g. U123 - owner@gmail.com).
+            record_number:
+              (user.record_number != null && user.record_number !== '')
+                ? String(user.record_number)
+                : user.id != null
+                  ? String(user.id)
+                  : ''
           }));
       }
 
@@ -149,7 +156,7 @@ export default function LookupField({
         const prefix = lookupType === 'organizations' ? 'O' : lookupType === 'hiring-managers' ? 'HM' : lookupType === 'job-seekers' ? 'JS' : lookupType === 'jobs' ? 'J' : lookupType === 'owner' ? 'U' : '';
         const baseLabel =
           lookupType === 'owner'
-            ? option.email || option.name
+            ? `${option.name} (${option.email})`|| option.email
             : option.name;
         const label = option.record_number ? `${prefix}${option.record_number} - ${baseLabel}` : baseLabel;
         return (

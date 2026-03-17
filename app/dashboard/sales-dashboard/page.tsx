@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiX, FiChevronLeft, FiBriefcase, FiEye } from 'react-icons/fi';
+import { FiX, FiChevronLeft, FiBriefcase, FiEye, FiUser } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
@@ -14,7 +14,8 @@ import {
   useDraggable,
   useDroppable,
 } from '@dnd-kit/core';
-
+import RecordNameResolver from '@/components/RecordNameResolver';
+import { formatRecordId } from '@/lib/recordIdFormatter';
 interface ApplicationTile {
   id: number;
   jobSeekerId: number;
@@ -55,10 +56,12 @@ const DraggableCard = memo(function DraggableCard({
   app,
   columnId,
   onTileClick,
+  onJobClick,
 }: {
   app: ApplicationTile;
   columnId: string;
   onTileClick: (app: ApplicationTile) => void;
+  onJobClick?: (app: ApplicationTile) => void;
 }) {
   const id = `app-${columnId}-${app.id}-${app.jobSeekerId}`;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -85,18 +88,41 @@ const DraggableCard = memo(function DraggableCard({
         }}
         className="w-full text-left text-gray-800 font-medium mb-1 flex items-start gap-2"
       >
-        <FiBriefcase className="text-slate-500 shrink-0 mt-0.5" size={14} />
-        <span className="line-clamp-1">{app.companyName || '—'}</span>
+        <FiUser className="text-slate-500 shrink-0 mt-0.5" size={14} />
+        <span className="line-clamp-1">
+          <RecordNameResolver
+            id={app.jobSeekerId}
+            type="job-seeker"
+            clickable={false}
+          />
+        </span>
       </button>
-      <div className="text-gray-600 text-sm mb-0.5">
-        {app.jobId ? `Job #${app.jobId}` : '—'}
-      </div>
-      <div className="text-gray-800 text-sm font-semibold mb-2 line-clamp-1">
-        {app.jobTitle || '—'}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (app.jobId && onJobClick) {
+            onJobClick(app);
+          }
+        }}
+        className="text-gray-600 text-xs mb-0.5 hover:underline"
+      >
+        {app.jobId ? (
+          <span>
+            <span className="font-medium">Job </span>
+            <span>{formatRecordId(app.jobId, 'job')}</span>
+          </span>
+        ) : (
+          'Job —'
+        )}
+      </button>
+      <div className="text-gray-800 text-sm font-semibold mb-1 line-clamp-1 flex items-start gap-2">
+        <FiBriefcase className="text-slate-500 shrink-0 mt-0.5" size={14} />
+        <span className="line-clamp-2">{app.jobTitle || app.companyName || '—'}</span>
       </div>
       <div className="flex items-center justify-end text-slate-600 text-xs">
         <FiEye className="mr-1 opacity-70 group-hover:opacity-100" size={14} />
-        <span className="font-medium">#{app.id}</span>
+        <span className="font-medium">Preview</span>
       </div>
     </div>
   );
@@ -105,9 +131,11 @@ const DraggableCard = memo(function DraggableCard({
 const DroppableColumn = memo(function DroppableColumn({
   column,
   onTileClick,
+  onJobClick,
 }: {
   column: Column;
   onTileClick: (app: ApplicationTile) => void;
+  onJobClick?: (app: ApplicationTile) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
@@ -126,6 +154,7 @@ const DroppableColumn = memo(function DroppableColumn({
             app={app}
             columnId={column.id}
             onTileClick={onTileClick}
+            onJobClick={onJobClick}
           />
         ))}
       </div>
@@ -145,6 +174,8 @@ export default function SalesDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedJobSeekerId, setSelectedJobSeekerId] = useState<number | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
   const fetchBoard = useCallback(async () => {
     setLoading(true);
@@ -236,14 +267,17 @@ export default function SalesDashboard() {
   const handleClose = () => router.push('/home');
   const handlePrevious = () => router.push('/dashboard/candidate-flow');
 
-  const handleTileClick = useCallback(
-    (application: ApplicationTile) => {
-      if (application.jobSeekerId) {
-        router.push(`/dashboard/job-seekers/view?id=${application.jobSeekerId}`);
-      }
-    },
-    [router]
-  );
+  const handleTileClick = useCallback((application: ApplicationTile) => {
+    if (application.jobSeekerId) {
+      setSelectedJobSeekerId(application.jobSeekerId);
+    }
+  }, []);
+
+  const handleJobClick = useCallback((application: ApplicationTile) => {
+    if (application.jobId) {
+      setSelectedJobId(application.jobId);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
@@ -276,6 +310,7 @@ export default function SalesDashboard() {
                   key={column.id}
                   column={column}
                   onTileClick={handleTileClick}
+                  onJobClick={handleJobClick}
                 />
               ))}
             </div>
@@ -296,6 +331,97 @@ export default function SalesDashboard() {
           </div>
         </div>
       </div>
+
+      {selectedJobSeekerId != null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
+              <div className="flex items-center gap-2">
+                <FiUser className="text-slate-700" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-slate-800">
+                    <RecordNameResolver
+                      id={selectedJobSeekerId}
+                      type="job-seeker"
+                      clickable={false}
+                    />
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {formatRecordId(selectedJobSeekerId, 'jobSeeker')}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedJobSeekerId(null)}
+                className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                aria-label="Close candidate preview"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-sm text-slate-600">
+                Candidate details are managed in the Job Seeker profile.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedJobSeekerId;
+                  setSelectedJobSeekerId(null);
+                  router.push(`/dashboard/job-seekers/view?id=${id}`);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+              >
+                <FiEye size={16} />
+                Open Full Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedJobId != null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-slate-800">
+                  Job Preview
+                </span>
+                <span className="text-xs text-slate-500">
+                  {formatRecordId(selectedJobId, 'job')}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedJobId(null)}
+                className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                aria-label="Close job preview"
+              >
+                <FiX size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-sm text-slate-600">
+                Job order details are managed in the Job record.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedJobId;
+                  setSelectedJobId(null);
+                  router.push(`/dashboard/jobs/view?id=${id}`);
+                }}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+              >
+                <FiEye size={16} />
+                Open Job Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
