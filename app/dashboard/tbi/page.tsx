@@ -108,6 +108,12 @@ type GenericRow = {
   [key: string]: string | number | undefined;
 };
 
+type OnboardingSummary = {
+  sent: number;
+  submitted: number;
+  approved: number;
+};
+
 function getFromPlacementCustomFields(
   p: PlacementRecord,
   keys: string[],
@@ -172,12 +178,18 @@ function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
   };
 }
 
-function placementToJobSeekerRow(p: PlacementRecord): GenericRow {
+function placementToJobSeekerRow(
+  p: PlacementRecord,
+  summaries?: Record<number, OnboardingSummary>,
+): GenericRow {
+  const jsId = p.jobSeekerId != null ? Number(p.jobSeekerId) : null;
+  const summary = jsId != null ? summaries?.[jsId] : undefined;
   return {
     id: p.id,
     Name: p.jobSeekerName ?? "",
-    Submitted: "",
-    Approved: (p.status || "").toLowerCase() === "approved" ? "Yes" : "",
+    Sent: summary ? String(summary.sent) : "",
+    Submitted: summary ? String(summary.submitted) : "",
+    Approved: summary ? String(summary.approved) : "",
     "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
     "Payroll Type": getFromPlacementCustomFields(p, ["Payroll Type"]),
     State: getFromPlacementCustomFields(p, ["State"]),
@@ -706,6 +718,7 @@ export default function TbiPage() {
     ],
     "Job Seeker": [
       "Name",
+      "Sent",
       "Submitted",
       "Approved",
       "ID Number",
@@ -923,6 +936,11 @@ export default function TbiPage() {
     Record<string, ColumnFilterState>
   >({});
 
+  // Job Seeker onboarding summaries (Sent / Submitted / Approved counts)
+  const [jobSeekerOnboardingSummary, setJobSeekerOnboardingSummary] = useState<
+    Record<number, OnboardingSummary>
+  >({});
+
   const isPlacementDrivenView =
     selectedRow === "TimeSheets" ||
     selectedRow === "Hiring Manager" ||
@@ -938,6 +956,92 @@ export default function TbiPage() {
       ),
     [timesheetsPlacements],
   );
+
+  // Load onboarding summaries for Job Seeker rows
+  useEffect(() => {
+    if (selectedRow !== "Job Seeker") {
+      setJobSeekerOnboardingSummary({});
+      return;
+    }
+    const ids = Array.from(
+      new Set(
+        approvedPlacements
+          .map((p) => p.jobSeekerId)
+          .filter((id): id is number => id != null),
+      ),
+    );
+    if (ids.length === 0) {
+      setJobSeekerOnboardingSummary({});
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const token =
+          typeof document !== "undefined"
+            ? document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1",
+              )
+            : "";
+        const headers: HeadersInit = token
+          ? { Authorization: `Bearer ${token}` }
+          : {};
+
+        const results = await Promise.allSettled(
+          ids.map((id) =>
+            fetch(`/api/onboarding/job-seekers/${id}`, {
+              method: "GET",
+              headers,
+              cache: "no-store",
+            }),
+          ),
+        );
+
+        if (cancelled) return;
+
+        const summaries: Record<number, OnboardingSummary> = {};
+
+        for (let i = 0; i < results.length; i++) {
+          const res = results[i];
+          const jsId = ids[i];
+          if (res.status !== "fulfilled" || !res.value.ok) continue;
+          const json = await res.value.json().catch(() => ({}));
+          const items = Array.isArray(json?.items) ? json.items : [];
+          if (!items || items.length === 0) continue;
+
+          let sent = 0;
+          let submitted = 0;
+          let approved = 0;
+
+          for (const item of items as Array<{ status?: string }>) {
+            const status = String(item.status || "").toUpperCase();
+            sent += 1; // every onboarding item counts as sent
+            if (status === "SUBMITTED" || status === "PENDING_ADMIN_REVIEW") {
+              submitted += 1;
+            }
+            if (status === "APPROVED" || status === "COMPLETED") {
+              approved += 1;
+            }
+          }
+
+          summaries[jsId] = { sent, submitted, approved };
+        }
+
+        setJobSeekerOnboardingSummary(summaries);
+      } catch {
+        if (!cancelled) {
+          setJobSeekerOnboardingSummary({});
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRow, approvedPlacements]);
 
   // Each row = one approved contract placement whose schedule end date is on or before the selected calendar range
   const timesheetsRows = useMemo(() => {
@@ -1327,7 +1431,9 @@ export default function TbiPage() {
       case "Hiring Manager":
         return approvedPlacements.map(placementToHiringManagerRow);
       case "Job Seeker":
-        return approvedPlacements.map(placementToJobSeekerRow);
+        return approvedPlacements.map((p) =>
+          placementToJobSeekerRow(p, jobSeekerOnboardingSummary),
+        );
       case "Placements":
         return approvedPlacements.map(placementToPlacementsSectionRow);
       case "Exports":
