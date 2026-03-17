@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useLayoutEffect,
+} from "react";
 
 type OrganizationRecord = {
   id: number;
@@ -38,10 +45,22 @@ type PlacementRecord = {
 };
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
-import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical, TbBinoculars } from "react-icons/tb";
-import { FiChevronLeft, FiChevronRight, FiArrowUp, FiArrowDown, FiFilter, FiX } from "react-icons/fi";
+import {
+  FiChevronLeft,
+  FiChevronRight,
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
+  FiX,
+} from "react-icons/fi";
 import { createPortal } from "react-dom";
 import OrganizationDetailPanel from "./OrganizationDetailPanel";
 
@@ -66,8 +85,16 @@ function formatDateRange(start: Date, end: Date): string {
 
 function isDateInRange(d: Date, start: Date, end: Date): boolean {
   const t = d.getTime();
-  const s = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
-  const e = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime();
+  const s = new Date(
+    start.getFullYear(),
+    start.getMonth(),
+    start.getDate(),
+  ).getTime();
+  const e = new Date(
+    end.getFullYear(),
+    end.getMonth(),
+    end.getDate(),
+  ).getTime();
   return t >= s && t <= e;
 }
 
@@ -81,8 +108,14 @@ type GenericRow = {
   [key: string]: string | number | undefined;
 };
 
-function getFromPlacementCustomFields(p: PlacementRecord, keys: string[]): string {
-  const cf = (p.customFields ?? p.custom_fields) as Record<string, unknown> | null | undefined;
+function getFromPlacementCustomFields(
+  p: PlacementRecord,
+  keys: string[],
+): string {
+  const cf = (p.customFields ?? p.custom_fields) as
+    | Record<string, unknown>
+    | null
+    | undefined;
   if (!cf || typeof cf !== "object") return "";
   for (const key of keys) {
     const v = cf[key];
@@ -134,7 +167,7 @@ function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
     Name: p.jobSeekerName ?? "",
     Organization: p.organizationName ?? "",
     Email: p.jobSeekerEmail ?? "",
-    "Status": p.status ?? "",
+    Status: p.status ?? "",
     "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
   };
 }
@@ -154,11 +187,17 @@ function placementToJobSeekerRow(p: PlacementRecord): GenericRow {
 
 function placementToPlacementsSectionRow(p: PlacementRecord): GenericRow {
   const timesheetWeekStart =
-    p.startDate != null ? new Date(p.startDate as string) : p.endDate != null ? getMonday(new Date(p.endDate as string)) : null;
+    p.startDate != null
+      ? new Date(p.startDate as string)
+      : p.endDate != null
+        ? getMonday(new Date(p.endDate as string))
+        : null;
 
   return {
     id: p.id,
-    "Timesheet week start": timesheetWeekStart ? timesheetWeekStart.toISOString().slice(0, 10) : "",
+    "Timesheet week start": timesheetWeekStart
+      ? timesheetWeekStart.toISOString().slice(0, 10)
+      : "",
     "Job Seeker": p.jobSeekerName ?? "",
     Organization: p.organizationName ?? "",
     "Status of Placement": p.status ?? "",
@@ -169,9 +208,15 @@ function placementToPlacementsSectionRow(p: PlacementRecord): GenericRow {
     "Job Title": p.jobTitle ?? "",
     "Timesheet Hour entry": "",
     State: getFromPlacementCustomFields(p, ["State"]),
-    "Pay Rate": p.payRate != null ? String(p.payRate) : getFromPlacementCustomFields(p, ["Pay Rate"]),
+    "Pay Rate":
+      p.payRate != null
+        ? String(p.payRate)
+        : getFromPlacementCustomFields(p, ["Pay Rate"]),
     "Bill Rate": getFromPlacementCustomFields(p, ["Bill Rate"]),
-    "Primary Approver": getFromPlacementCustomFields(p, ["Primary Approver", "Time Card Approver(s)"]),
+    "Primary Approver": getFromPlacementCustomFields(p, [
+      "Primary Approver",
+      "Time Card Approver(s)",
+    ]),
     "Job Seeker Email": p.jobSeekerEmail ?? "",
   };
 }
@@ -239,7 +284,10 @@ const CELL_WIDTH = 135;
 const ROW_HEIGHT = 40;
 const ACTIONS_CELL_WIDTH = 80;
 
-const availableHeight = typeof window !== "undefined" ? window.innerHeight - HEADER_HEIGHT * 4.5 : 400;
+const availableHeight =
+  typeof window !== "undefined"
+    ? window.innerHeight - HEADER_HEIGHT * 4.5
+    : 400;
 const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
 
 const TBI_COLUMN_LAYOUT_KEY = "tbi-column-layout";
@@ -277,7 +325,10 @@ const TBI_COLUMN_WIDTHS_KEY = "tbi-column-widths";
 const MIN_COLUMN_WIDTH = 60;
 const MAX_COLUMN_WIDTH = 500;
 
-function loadColumnWidths(viewKey: string, columns: string[]): Record<string, number> {
+function loadColumnWidths(
+  viewKey: string,
+  columns: string[],
+): Record<string, number> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
@@ -288,7 +339,11 @@ function loadColumnWidths(viewKey: string, columns: string[]): Record<string, nu
     const result: Record<string, number> = {};
     for (const col of columns) {
       const w = saved[col];
-      if (typeof w === "number" && w >= MIN_COLUMN_WIDTH && w <= MAX_COLUMN_WIDTH) {
+      if (
+        typeof w === "number" &&
+        w >= MIN_COLUMN_WIDTH &&
+        w <= MAX_COLUMN_WIDTH
+      ) {
         result[col] = w;
       }
     }
@@ -298,11 +353,17 @@ function loadColumnWidths(viewKey: string, columns: string[]): Record<string, nu
   }
 }
 
-function saveColumnWidths(viewKey: string, widths: Record<string, number>): void {
+function saveColumnWidths(
+  viewKey: string,
+  widths: Record<string, number>,
+): void {
   if (typeof window === "undefined") return;
   try {
     const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
-    const data = (raw ? JSON.parse(raw) : {}) as Record<string, Record<string, number>>;
+    const data = (raw ? JSON.parse(raw) : {}) as Record<
+      string,
+      Record<string, number>
+    >;
     data[viewKey] = { ...(data[viewKey] || {}), ...widths };
     localStorage.setItem(TBI_COLUMN_WIDTHS_KEY, JSON.stringify(data));
   } catch {
@@ -338,7 +399,10 @@ function ColumnResizeOverlay({
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const delta = moveEvent.clientX - startX;
-        const newWidth = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidth + delta));
+        const newWidth = Math.min(
+          MAX_COLUMN_WIDTH,
+          Math.max(MIN_COLUMN_WIDTH, startWidth + delta),
+        );
         onResize(header, newWidth);
       };
 
@@ -354,7 +418,7 @@ function ColumnResizeOverlay({
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [getWidth, onResize]
+    [getWidth, onResize],
   );
 
   let left = FIXED_LEFT_WIDTH;
@@ -422,7 +486,11 @@ function SortableHeaderCell({
   const filterRef = useRef<HTMLDivElement>(null);
   const filterToggleRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [filterPosition, setFilterPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
@@ -445,7 +513,10 @@ function SortableHeaderCell({
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const delta = moveEvent.clientX - startXRef.current;
-        const newWidth = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidthRef.current + delta));
+        const newWidth = Math.min(
+          MAX_COLUMN_WIDTH,
+          Math.max(MIN_COLUMN_WIDTH, startWidthRef.current + delta),
+        );
         onResize(header, newWidth);
       };
 
@@ -462,7 +533,7 @@ function SortableHeaderCell({
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     },
-    [onResize, width, header]
+    [onResize, width, header],
   );
 
   useEffect(() => {
@@ -475,7 +546,7 @@ function SortableHeaderCell({
     setFilterPosition({
       top: btnRect.bottom + 4,
       left: headerRect.left,
-      width: Math.max(150, Math.min(250, headerRect.width))
+      width: Math.max(150, Math.min(250, headerRect.width)),
     });
   }, [showFilter]);
 
@@ -492,7 +563,8 @@ function SortableHeaderCell({
 
     if (showFilter) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showFilter, id]);
 
@@ -500,8 +572,16 @@ function SortableHeaderCell({
 
   return (
     <div
-      ref={(node) => { headerRef.current = node; setNodeRef(node); }}
-      style={{ ...style, width: cellWidth, minWidth: cellWidth, height: HEADER_HEIGHT }}
+      ref={(node) => {
+        headerRef.current = node;
+        setNodeRef(node);
+      }}
+      style={{
+        ...style,
+        width: cellWidth,
+        minWidth: cellWidth,
+        height: HEADER_HEIGHT,
+      }}
       className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out relative group"
     >
       <span className="flex-1 truncate text-center text-xs">{header}</span>
@@ -512,7 +592,13 @@ function SortableHeaderCell({
             onSort();
           }}
           className="text-white hover:text-teal-200 transition-colors p-0.5"
-          title={sortState === "asc" ? "Sort descending" : sortState === "desc" ? "Clear sort" : "Sort ascending"}
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Clear sort"
+                : "Sort ascending"
+          }
         >
           {sortState === "asc" ? (
             <FiArrowUp size={12} />
@@ -555,36 +641,44 @@ function SortableHeaderCell({
         />
       )}
 
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="text"
-            value={filterValue || ""}
-            onChange={(e) => onFilterChange(e.target.value)}
-            placeholder={`Filter ${header.toLowerCase()}...`}
-            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-            autoFocus
-          />
-          {filterValue && (
-            <button
-              onClick={() => {
-                onFilterChange("");
-                setShowFilter(false);
-              }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded flex items-center justify-center gap-1"
-            >
-              <FiX size={12} />
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
+      {showFilter &&
+        filterPosition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={filterRef}
+            className="bg-white border border-gray-300 shadow-lg rounded p-2 z-100 min-w-[150px]"
+            style={{
+              position: "fixed",
+              top: filterPosition.top,
+              left: filterPosition.left,
+              width: filterPosition.width,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${header.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+            {filterValue && (
+              <button
+                onClick={() => {
+                  onFilterChange("");
+                  setShowFilter(false);
+                }}
+                className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded flex items-center justify-center gap-1"
+              >
+                <FiX size={12} />
+                Clear Filter
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -602,8 +696,23 @@ export default function TbiPage() {
 
   const columnHeadersMap: Record<string, string[]> = {
     Organization: ["Name", "Oasis Key", "Organization ID", "State"],
-    "Hiring Manager": ["Name", "Organization", "Email", "Organization", "Status", "ID Number"],
-    "Job Seeker": ["Name", "Submitted", "Approved", "ID Number", "Payroll Type", "State", "Status"],
+    "Hiring Manager": [
+      "Name",
+      "Organization",
+      "Email",
+      "Organization",
+      "Status",
+      "ID Number",
+    ],
+    "Job Seeker": [
+      "Name",
+      "Submitted",
+      "Approved",
+      "ID Number",
+      "Payroll Type",
+      "State",
+      "Status",
+    ],
     Placements: [
       "Timesheet week start",
       "Job Seeker",
@@ -619,17 +728,60 @@ export default function TbiPage() {
       "Pay Rate",
       "Bill Rate",
       "Primary Approver",
-      "Job Seeker Email"
+      "Job Seeker Email",
     ],
-    TimeSheets: ["Name", "JobSeeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email", "Week Ending", "Hours"],
-    Exports: ["Documents", "ID Number", "Date Exported", "Report Name", "Status"],
-    Invoices: ["Invoice #", "Organization", "Amount", "Due Date", "Status", "Paid Date", "Notes", "Invoice Type"],
+    TimeSheets: [
+      "Name",
+      "JobSeeker ID",
+      "Approved",
+      "Submitted",
+      "Status",
+      "Payroll Cycle",
+      "Phone Number",
+      "Email",
+      "Week Ending",
+      "Hours",
+    ],
+    Exports: [
+      "Documents",
+      "ID Number",
+      "Date Exported",
+      "Report Name",
+      "Status",
+    ],
+    Invoices: [
+      "Invoice #",
+      "Organization",
+      "Amount",
+      "Due Date",
+      "Status",
+      "Paid Date",
+      "Notes",
+      "Invoice Type",
+    ],
   };
 
   const defaultColumns = [
-    "Job Code", "Regular Hours", "Paid Time Off", "On Call", "Expense",
-    "Organization", "Personal ID", "Status", "FTE", "TIME", "Type", "Total",
-    "Tuesday", "Friday", "Saturday", "Sunday", "Monday", "Time Off", "Vacation", "Sick Time",
+    "Job Code",
+    "Regular Hours",
+    "Paid Time Off",
+    "On Call",
+    "Expense",
+    "Organization",
+    "Personal ID",
+    "Status",
+    "FTE",
+    "TIME",
+    "Type",
+    "Total",
+    "Tuesday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+    "Monday",
+    "Time Off",
+    "Vacation",
+    "Sick Time",
   ];
 
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
@@ -638,16 +790,23 @@ export default function TbiPage() {
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
 
   // Column sort and filter state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [columnSorts, setColumnSorts] = useState<
+    Record<string, ColumnSortState>
+  >({});
+  const [columnFilters, setColumnFilters] = useState<
+    Record<string, ColumnFilterState>
+  >({});
   const getCurrentColumns = () => {
-    if (selectedRow && columnHeadersMap[selectedRow]) return columnHeadersMap[selectedRow];
+    if (selectedRow && columnHeadersMap[selectedRow])
+      return columnHeadersMap[selectedRow];
     return defaultColumns;
   };
 
   const schemaColumns = getCurrentColumns();
   const viewKey = selectedRow ?? "default";
-  const [columnOrder, setColumnOrder] = useState<string[]>(() => [...defaultColumns]);
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => [
+    ...defaultColumns,
+  ]);
 
   // Sync column order when view (sidebar) changes: load from localStorage or use schema default
   useEffect(() => {
@@ -665,30 +824,37 @@ export default function TbiPage() {
   }, [columnOrder]);
 
   // Column widths per view (resizable; persisted to localStorage)
-  const [columnWidths, setColumnWidths] = useState<Record<string, Record<string, number>>>({});
+  const [columnWidths, setColumnWidths] = useState<
+    Record<string, Record<string, number>>
+  >({});
 
   const getColumnWidth = useCallback(
-    (header: string, vKey: string) => columnWidths[vKey]?.[header] ?? CELL_WIDTH,
-    [columnWidths]
+    (header: string, vKey: string) =>
+      columnWidths[vKey]?.[header] ?? CELL_WIDTH,
+    [columnWidths],
   );
 
   const handleColumnResize = useCallback(
     (vKey: string, header: string, newWidth: number) => {
       setColumnWidths((prev) => {
-        const next = { ...prev, [vKey]: { ...(prev[vKey] || {}), [header]: newWidth } };
+        const next = {
+          ...prev,
+          [vKey]: { ...(prev[vKey] || {}), [header]: newWidth },
+        };
         saveColumnWidths(vKey, next[vKey]!);
         return next;
       });
     },
-    []
+    [],
   );
 
   // Load column widths when view changes
   useEffect(() => {
     const vKey = selectedRow === "TimeSheets" ? "TimeSheets" : viewKey;
-    const cols = vKey === "TimeSheets"
-      ? [...TIMESHEETS_TABLE_COLUMNS_LIST]
-      : (columnHeadersMap[vKey] ?? defaultColumns);
+    const cols =
+      vKey === "TimeSheets"
+        ? [...TIMESHEETS_TABLE_COLUMNS_LIST]
+        : (columnHeadersMap[vKey] ?? defaultColumns);
     const loaded = loadColumnWidths(vKey, cols);
     setColumnWidths((prev) => ({ ...prev, [vKey]: loaded }));
   }, [viewKey, selectedRow]);
@@ -697,42 +863,65 @@ export default function TbiPage() {
   const columnHeaders = columnOrder.filter((h) => schemaColumns.includes(h));
   const columnIds = columnHeaders.map((_, i) => `col-${i}`);
 
-  const toggleColumnVisibility = useCallback((header: string) => {
-    setColumnOrder((prev) => {
-      const inOrder = prev.filter((h) => schemaColumns.includes(h));
-      const isVisible = inOrder.includes(header);
-      if (isVisible) {
-        if (inOrder.length <= 1) return prev;
-        return inOrder.filter((h) => h !== header);
-      }
-      return [...inOrder, header];
-    });
-  }, [schemaColumns]);
+  const toggleColumnVisibility = useCallback(
+    (header: string) => {
+      setColumnOrder((prev) => {
+        const inOrder = prev.filter((h) => schemaColumns.includes(h));
+        const isVisible = inOrder.includes(header);
+        if (isVisible) {
+          if (inOrder.length <= 1) return prev;
+          return inOrder.filter((h) => h !== header);
+        }
+        return [...inOrder, header];
+      });
+    },
+    [schemaColumns],
+  );
 
-  const [tbiOrganizations, setTbiOrganizations] = useState<OrganizationRecord[]>([]);
+  const [tbiOrganizations, setTbiOrganizations] = useState<
+    OrganizationRecord[]
+  >([]);
   const [tbiOrgsLoading, setTbiOrgsLoading] = useState(false);
   const [tbiOrgsError, setTbiOrgsError] = useState<string | null>(null);
 
-  const [tbiOrganizationsCache, setTbiOrganizationsCache] = useState<OrganizationRecord[] | null>(null);
-  const [detailOrganization, setDetailOrganization] = useState<OrganizationRecord | null>(null);
+  const [tbiOrganizationsCache, setTbiOrganizationsCache] = useState<
+    OrganizationRecord[] | null
+  >(null);
+  const [detailOrganization, setDetailOrganization] =
+    useState<OrganizationRecord | null>(null);
 
   // TimeSheets layout state
   const [timePeriod, setTimePeriod] = useState<TimePeriodType>("week");
-  const [timesheetsWeekStart, setTimesheetsWeekStart] = useState<Date>(() => getMonday(new Date()));
-  const [timesheetsCalendarMonth, setTimesheetsCalendarMonth] = useState<Date>(() => new Date());
+  const [timesheetsWeekStart, setTimesheetsWeekStart] = useState<Date>(() =>
+    getMonday(new Date()),
+  );
+  const [timesheetsCalendarMonth, setTimesheetsCalendarMonth] = useState<Date>(
+    () => new Date(),
+  );
   const [timesheetsSearchTerm, setTimesheetsSearchTerm] = useState("");
-  const [timesheetsSelectedIds, setTimesheetsSelectedIds] = useState<Set<number>>(new Set());
-  const timesheetsWeekEnd = useMemo(() => getWeekEnd(timesheetsWeekStart), [timesheetsWeekStart]);
+  const [timesheetsSelectedIds, setTimesheetsSelectedIds] = useState<
+    Set<number>
+  >(new Set());
+  const timesheetsWeekEnd = useMemo(
+    () => getWeekEnd(timesheetsWeekStart),
+    [timesheetsWeekStart],
+  );
   const timesheetsDateRangeLabel = useMemo(
     () => formatDateRange(timesheetsWeekStart, timesheetsWeekEnd),
-    [timesheetsWeekStart, timesheetsWeekEnd]
+    [timesheetsWeekStart, timesheetsWeekEnd],
   );
 
-  const [timesheetsPlacements, setTimesheetsPlacements] = useState<PlacementRecord[]>([]);
+  const [timesheetsPlacements, setTimesheetsPlacements] = useState<
+    PlacementRecord[]
+  >([]);
   const [timesheetsLoading, setTimesheetsLoading] = useState(false);
   const [timesheetsError, setTimesheetsError] = useState<string | null>(null);
-  const [timesheetsColumnSorts, setTimesheetsColumnSorts] = useState<Record<string, ColumnSortState>>({});
-  const [timesheetsColumnFilters, setTimesheetsColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [timesheetsColumnSorts, setTimesheetsColumnSorts] = useState<
+    Record<string, ColumnSortState>
+  >({});
+  const [timesheetsColumnFilters, setTimesheetsColumnFilters] = useState<
+    Record<string, ColumnFilterState>
+  >({});
 
   const isPlacementDrivenView =
     selectedRow === "TimeSheets" ||
@@ -745,9 +934,9 @@ export default function TbiPage() {
   const approvedPlacements = useMemo(
     () =>
       timesheetsPlacements.filter(
-        (p) => (p.status || "").toLowerCase() === "approved"
+        (p) => (p.status || "").toLowerCase() === "approved",
       ),
-    [timesheetsPlacements]
+    [timesheetsPlacements],
   );
 
   // Each row = one approved contract placement whose schedule end date is on or before the selected calendar range
@@ -778,7 +967,12 @@ export default function TbiPage() {
         const id = String(p.jobSeekerId ?? p.id ?? "").toLowerCase();
         const email = (p.jobSeekerEmail || "").toLowerCase();
         const title = (p.jobTitle || "").toLowerCase();
-        return name.includes(term) || id.includes(term) || email.includes(term) || title.includes(term);
+        return (
+          name.includes(term) ||
+          id.includes(term) ||
+          email.includes(term) ||
+          title.includes(term)
+        );
       });
     }
 
@@ -788,12 +982,16 @@ export default function TbiPage() {
       result = result.filter((p) => {
         const row = placementToTimesheetRow(p);
         const cellValue = row[header] ?? "";
-        return String(cellValue).toLowerCase().includes(filterValue.toLowerCase());
+        return String(cellValue)
+          .toLowerCase()
+          .includes(filterValue.toLowerCase());
       });
     });
 
     // Apply sorting
-    const activeSortColumn = Object.keys(timesheetsColumnSorts).find((key) => timesheetsColumnSorts[key] !== null);
+    const activeSortColumn = Object.keys(timesheetsColumnSorts).find(
+      (key) => timesheetsColumnSorts[key] !== null,
+    );
     if (activeSortColumn) {
       const direction = timesheetsColumnSorts[activeSortColumn];
       result.sort((a, b) => {
@@ -817,7 +1015,14 @@ export default function TbiPage() {
     }
 
     return result.map(placementToTimesheetRow);
-  }, [approvedPlacements, timePeriod, timesheetsWeekEnd, timesheetsSearchTerm, timesheetsColumnFilters, timesheetsColumnSorts]);
+  }, [
+    approvedPlacements,
+    timePeriod,
+    timesheetsWeekEnd,
+    timesheetsSearchTerm,
+    timesheetsColumnFilters,
+    timesheetsColumnSorts,
+  ]);
 
   const timesheetsCalendarDays = useMemo(() => {
     const year = timesheetsCalendarMonth.getFullYear();
@@ -825,7 +1030,8 @@ export default function TbiPage() {
     const first = new Date(year, month, 1);
     const last = new Date(year, month + 1, 0);
     const firstWeekday = (first.getDay() + 6) % 7;
-    const days: { date: Date; isCurrentMonth: boolean; isInWeek: boolean }[] = [];
+    const days: { date: Date; isCurrentMonth: boolean; isInWeek: boolean }[] =
+      [];
     const startOffset = firstWeekday;
     const totalCells = 42;
     for (let i = 0; i < totalCells; i++) {
@@ -857,11 +1063,15 @@ export default function TbiPage() {
     });
   }, []);
 
-  const [timesheetsColumnOrder, setTimesheetsColumnOrder] = useState<string[]>(() => [...TIMESHEETS_TABLE_COLUMNS_LIST]);
+  const [timesheetsColumnOrder, setTimesheetsColumnOrder] = useState<string[]>(
+    () => [...TIMESHEETS_TABLE_COLUMNS_LIST],
+  );
 
   useEffect(() => {
     if (selectedRow === "TimeSheets") {
-      setTimesheetsColumnOrder(loadColumnLayout("TimeSheets", [...TIMESHEETS_TABLE_COLUMNS_LIST]));
+      setTimesheetsColumnOrder(
+        loadColumnLayout("TimeSheets", [...TIMESHEETS_TABLE_COLUMNS_LIST]),
+      );
       // Reset filters and sorts when switching to TimeSheets
       setTimesheetsColumnSorts({});
       setTimesheetsColumnFilters({});
@@ -876,19 +1086,22 @@ export default function TbiPage() {
 
   const timesheetsColumnIds = useMemo(
     () => timesheetsColumnOrder.map((_, i) => `ts-col-${i}`),
-    [timesheetsColumnOrder]
+    [timesheetsColumnOrder],
   );
 
-  const handleTimeSheetsColumnDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const activeStr = String(active.id);
-    const overStr = String(over.id);
-    const oldIndex = timesheetsColumnIds.indexOf(activeStr);
-    const newIndex = timesheetsColumnIds.indexOf(overStr);
-    if (oldIndex === -1 || newIndex === -1) return;
-    setTimesheetsColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
-  }, [timesheetsColumnIds]);
+  const handleTimeSheetsColumnDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const activeStr = String(active.id);
+      const overStr = String(over.id);
+      const oldIndex = timesheetsColumnIds.indexOf(activeStr);
+      const newIndex = timesheetsColumnIds.indexOf(overStr);
+      if (oldIndex === -1 || newIndex === -1) return;
+      setTimesheetsColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
+    },
+    [timesheetsColumnIds],
+  );
 
   useEffect(() => {
     if (selectedRow !== "Organization") {
@@ -947,16 +1160,20 @@ export default function TbiPage() {
           setTimesheetsPlacements(
             data.placements.map((p: Record<string, unknown>) => ({
               id: Number(p.id),
-              jobSeekerId: p.jobSeekerId != null ? Number(p.jobSeekerId) : undefined,
+              jobSeekerId:
+                p.jobSeekerId != null ? Number(p.jobSeekerId) : undefined,
               status: typeof p.status === "string" ? p.status : undefined,
               startDate: p.startDate ?? p.start_date ?? undefined,
               endDate: p.endDate ?? p.end_date ?? undefined,
               jobSeekerName: p.jobSeekerName ?? p.job_seeker_name ?? undefined,
-              jobSeekerEmail: p.jobSeekerEmail ?? p.job_seeker_email ?? undefined,
-              jobSeekerPhone: p.jobSeekerPhone ?? p.job_seeker_phone ?? undefined,
+              jobSeekerEmail:
+                p.jobSeekerEmail ?? p.job_seeker_email ?? undefined,
+              jobSeekerPhone:
+                p.jobSeekerPhone ?? p.job_seeker_phone ?? undefined,
               jobTitle: p.jobTitle ?? p.job_title ?? undefined,
-              organizationName: p.organizationName ?? p.organization_name ?? undefined,
-            }))
+              organizationName:
+                p.organizationName ?? p.organization_name ?? undefined,
+            })),
           );
         } else {
           setTimesheetsPlacements([]);
@@ -985,37 +1202,42 @@ export default function TbiPage() {
       case "State":
         return (cf?.["State"] ?? "") as string;
       default:
-        return (cf?.[header] ?? (org as Record<string, string>)[header] ?? "") as string;
+        return (cf?.[header] ??
+          (org as Record<string, string>)[header] ??
+          "") as string;
     }
   }
 
-  const handleColumnDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    // Find the header names from the IDs
-    const activeId = String(active.id);
-    const overId = String(over.id);
+  const handleColumnDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      // Find the header names from the IDs
+      const activeId = String(active.id);
+      const overId = String(over.id);
 
-    // Try to find the header by matching the ID in columnIds
-    const activeIndex = columnIds.indexOf(activeId);
-    const overIndex = columnIds.indexOf(overId);
+      // Try to find the header by matching the ID in columnIds
+      const activeIndex = columnIds.indexOf(activeId);
+      const overIndex = columnIds.indexOf(overId);
 
-    if (activeIndex === -1 || overIndex === -1) return;
+      if (activeIndex === -1 || overIndex === -1) return;
 
-    // Get the actual headers from columnHeaders
-    const activeHeader = columnHeaders[activeIndex];
-    const overHeader = columnHeaders[overIndex];
+      // Get the actual headers from columnHeaders
+      const activeHeader = columnHeaders[activeIndex];
+      const overHeader = columnHeaders[overIndex];
 
-    if (!activeHeader || !overHeader) return;
+      if (!activeHeader || !overHeader) return;
 
-    // Reorder based on header names
-    setColumnOrder((prev) => {
-      const oldIndex = prev.indexOf(activeHeader);
-      const newIndex = prev.indexOf(overHeader);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }, [columnIds, columnHeaders]);
+      // Reorder based on header names
+      setColumnOrder((prev) => {
+        const oldIndex = prev.indexOf(activeHeader);
+        const newIndex = prev.indexOf(overHeader);
+        if (oldIndex === -1 || newIndex === -1) return prev;
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    },
+    [columnIds, columnHeaders],
+  );
 
   const handleRowClick = (rowLabel: string) => setSelectedRow(rowLabel);
 
@@ -1027,19 +1249,6 @@ export default function TbiPage() {
       return next;
     });
   }, []);
-
-  // Master checkbox handler - always use DATA_ROW_COUNT
-  const handleSelectAll = useCallback(() => {
-    if (selectedRows.size >= DATA_ROW_COUNT) {
-      setSelectedRows(new Set());
-    } else {
-      setSelectedRows(new Set(Array.from({ length: DATA_ROW_COUNT }, (_, i) => i)));
-    }
-  }, [selectedRows.size]);
-
-  const selectAll = useMemo(() => {
-    return selectedRows.size === DATA_ROW_COUNT;
-  }, [selectedRows.size]);
 
   // Column sort handler
   const handleColumnSort = useCallback((header: string) => {
@@ -1078,12 +1287,16 @@ export default function TbiPage() {
       if (!filterValue || filterValue.trim() === "") return;
       result = result.filter((org) => {
         const cellValue = getOrgCellValue(org, header);
-        return String(cellValue).toLowerCase().includes(filterValue.toLowerCase());
+        return String(cellValue)
+          .toLowerCase()
+          .includes(filterValue.toLowerCase());
       });
     });
 
     // Apply sorting
-    const activeSortColumn = Object.keys(columnSorts).find((key) => columnSorts[key] !== null);
+    const activeSortColumn = Object.keys(columnSorts).find(
+      (key) => columnSorts[key] !== null,
+    );
     if (activeSortColumn) {
       const direction = columnSorts[activeSortColumn];
       result.sort((a, b) => {
@@ -1126,6 +1339,35 @@ export default function TbiPage() {
     }
   }, [selectedRow, approvedPlacements]);
 
+  // Master checkbox handler – only operate on rows that actually have data
+  const totalSelectableRows = useMemo(() => {
+    if (selectedRow === "Organization") {
+      return filteredAndSortedOrgs.length;
+    }
+    return placementSectionRows.length;
+  }, [selectedRow, filteredAndSortedOrgs.length, placementSectionRows.length]);
+
+  const handleSelectAll = useCallback(() => {
+    if (totalSelectableRows === 0) {
+      setSelectedRows(new Set());
+      return;
+    }
+    if (selectedRows.size >= totalSelectableRows) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(
+        new Set(
+          Array.from({ length: totalSelectableRows }, (_, i) => i),
+        ),
+      );
+    }
+  }, [selectedRows.size, totalSelectableRows]);
+
+  const selectAll = useMemo(() => {
+    if (totalSelectableRows === 0) return false;
+    return selectedRows.size === totalSelectableRows;
+  }, [selectedRows.size, totalSelectableRows]);
+
   const exportSelectedAsCsv = useCallback(() => {
     const headers = columnHeaders;
     const headerLine = headers.map(escapeCsvValue).join(",");
@@ -1157,15 +1399,27 @@ export default function TbiPage() {
     a.click();
     URL.revokeObjectURL(url);
     setShowExportMenu(false);
-  }, [columnHeaders, selectedRows, selectedRow, filteredAndSortedOrgs, placementSectionRows]);
+  }, [
+    columnHeaders,
+    selectedRows,
+    selectedRow,
+    filteredAndSortedOrgs,
+    placementSectionRows,
+  ]);
 
-  const containerWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const containerWidth =
+    typeof window !== "undefined" ? window.innerWidth : 1200;
   const totalColumns = columnHeaders.length;
   const fixedGridWidth = 30 + ACTIONS_CELL_WIDTH; // # column + Actions column
   const gridAreaWidth = containerWidth - ROW_LABEL_WIDTH;
-  const columnsToFill = Math.floor((gridAreaWidth - fixedGridWidth) / CELL_WIDTH);
+  const columnsToFill = Math.floor(
+    (gridAreaWidth - fixedGridWidth) / CELL_WIDTH,
+  );
   const extraCellCount = Math.max(0, columnsToFill - totalColumns);
-  const timesheetsExtraCellCount = Math.max(0, columnsToFill - timesheetsColumnOrder.length);
+  const timesheetsExtraCellCount = Math.max(
+    0,
+    columnsToFill - timesheetsColumnOrder.length,
+  );
   const selectionCount = selectedRows.size;
 
   return (
@@ -1179,17 +1433,20 @@ export default function TbiPage() {
       {/* Top Header Bar */}
       <div className="shrink-0 bg-gray-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-3">
-          {(Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+          {(Object.keys(columnFilters).length > 0 ||
+            Object.keys(columnSorts).length > 0) && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-gray-300">Active:</span>
               {Object.keys(columnFilters).length > 0 && (
                 <span className="bg-blue-600 px-2 py-1 rounded text-xs">
-                  {Object.keys(columnFilters).length} filter{Object.keys(columnFilters).length !== 1 ? 's' : ''}
+                  {Object.keys(columnFilters).length} filter
+                  {Object.keys(columnFilters).length !== 1 ? "s" : ""}
                 </span>
               )}
               {Object.keys(columnSorts).length > 0 && (
                 <span className="bg-purple-600 px-2 py-1 rounded text-xs">
-                  {Object.keys(columnSorts).length} sort{Object.keys(columnSorts).length !== 1 ? 's' : ''}
+                  {Object.keys(columnSorts).length} sort
+                  {Object.keys(columnSorts).length !== 1 ? "s" : ""}
                 </span>
               )}
             </div>
@@ -1212,7 +1469,7 @@ export default function TbiPage() {
                     aria-hidden
                     onClick={() => setShowExportMenu(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1 z-[100] py-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[160px]">
+                  <div className="absolute right-0 top-full mt-1 z-100 py-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[160px]">
                     <button
                       type="button"
                       onClick={exportSelectedAsCsv}
@@ -1231,7 +1488,13 @@ export default function TbiPage() {
             className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-sm flex items-center gap-2 transition-colors shadow-sm"
             title="Show/hide columns"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden
+            >
               <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
             </svg>
             Columns
@@ -1254,8 +1517,11 @@ export default function TbiPage() {
                   key={rowLabel}
                   type="button"
                   onClick={() => handleRowClick(rowLabel)}
-                  className={`flex-1 min-h-0 px-3 py-2 border-b border-black flex items-center justify-center font-medium text-sm cursor-pointer transition-colors shadow-sm text-center ${isSelected ? "bg-green-600 text-white" : "bg-green-500 text-white hover:bg-green-600"
-                    }`}
+                  className={`flex-1 min-h-0 px-3 py-2 border-b border-black flex items-center justify-center font-medium text-sm cursor-pointer transition-colors shadow-sm text-center ${
+                    isSelected
+                      ? "bg-green-600 text-white"
+                      : "bg-green-500 text-white hover:bg-green-600"
+                  }`}
                 >
                   {rowLabel}
                 </button>
@@ -1273,7 +1539,9 @@ export default function TbiPage() {
               style={{ width: 280, minWidth: 280 }}
             >
               <div className="p-4 border-b border-gray-200">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Filter Timesheets</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Filter Timesheets
+                </label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1282,13 +1550,23 @@ export default function TbiPage() {
                     onChange={(e) => setTimesheetsSearchTerm(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
-                  <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                  <svg
+                    className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </div>
               </div>
               <div className="p-4 border-b border-gray-200">
-                <div className="text-sm font-medium text-gray-700 mb-2">SELECT TIME PERIOD BY</div>
+                <div className="text-sm font-medium text-gray-700 mb-2">
+                  SELECT TIME PERIOD BY
+                </div>
                 <div className="flex">
                   <button
                     type="button"
@@ -1321,12 +1599,20 @@ export default function TbiPage() {
                   <div className="px-4 pb-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-800">
-                        {timesheetsCalendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                        {timesheetsCalendarMonth.toLocaleDateString("en-US", {
+                          month: "long",
+                          year: "numeric",
+                        })}
                       </span>
                       <div className="flex gap-1">
                         <button
                           type="button"
-                          onClick={() => setTimesheetsCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1))}
+                          onClick={() =>
+                            setTimesheetsCalendarMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() - 1),
+                            )
+                          }
                           className="p-1 rounded hover:bg-gray-200 text-gray-600"
                           aria-label="Previous month"
                         >
@@ -1334,7 +1620,12 @@ export default function TbiPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setTimesheetsCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1))}
+                          onClick={() =>
+                            setTimesheetsCalendarMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() + 1),
+                            )
+                          }
                           className="p-1 rounded hover:bg-gray-200 text-gray-600"
                           aria-label="Next month"
                         >
@@ -1344,7 +1635,10 @@ export default function TbiPage() {
                     </div>
                     <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
                       {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((day) => (
-                        <div key={day} className="py-1 font-medium text-gray-500">
+                        <div
+                          key={day}
+                          className="py-1 font-medium text-gray-500"
+                        >
                           {day}
                         </div>
                       ))}
@@ -1356,8 +1650,13 @@ export default function TbiPage() {
                             const mon = getMonday(cell.date);
                             setTimesheetsWeekStart(mon);
                           }}
-                          className={`py-1.5 rounded text-sm ${!cell.isCurrentMonth ? "text-gray-300" : cell.isInWeek ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
-                            }`}
+                          className={`py-1.5 rounded text-sm ${
+                            !cell.isCurrentMonth
+                              ? "text-gray-300"
+                              : cell.isInWeek
+                                ? "bg-blue-600 text-white"
+                                : "text-gray-700 hover:bg-gray-200"
+                          }`}
                         >
                           {cell.date.getDate()}
                         </button>
@@ -1370,7 +1669,9 @@ export default function TbiPage() {
             {/* TimeSheets grid – same design as Organization: #, Actions, sortable column headers, data rows */}
             <div className="flex-1 min-w-0 overflow-auto bg-white">
               {timesheetsError && (
-                <div className="px-4 py-2 text-sm text-red-600 shrink-0">{timesheetsError}</div>
+                <div className="px-4 py-2 text-sm text-red-600 shrink-0">
+                  {timesheetsError}
+                </div>
               )}
               {timesheetsLoading && (
                 <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
@@ -1384,14 +1685,28 @@ export default function TbiPage() {
                     onDragEnd={handleTimeSheetsColumnDragEnd}
                     modifiers={[restrictToHorizontalAxis]}
                   >
-                    <SortableContext items={timesheetsColumnIds} strategy={horizontalListSortingStrategy}>
+                    <SortableContext
+                      items={timesheetsColumnIds}
+                      strategy={horizontalListSortingStrategy}
+                    >
                       <div className="flex sticky top-0 z-20">
-                        <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
+                        <div
+                          className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out"
+                          style={{
+                            width: 30,
+                            minWidth: 30,
+                            height: HEADER_HEIGHT,
+                          }}
+                        >
                           #
                         </div>
                         <div
                           className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm"
-                          style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
+                          style={{
+                            width: ACTIONS_CELL_WIDTH,
+                            minWidth: ACTIONS_CELL_WIDTH,
+                            height: HEADER_HEIGHT,
+                          }}
                         >
                           Actions
                         </div>
@@ -1401,7 +1716,9 @@ export default function TbiPage() {
                             id={timesheetsColumnIds[tsColIndex]}
                             header={header}
                             sortState={timesheetsColumnSorts[header] || null}
-                            filterValue={timesheetsColumnFilters[header] || null}
+                            filterValue={
+                              timesheetsColumnFilters[header] || null
+                            }
                             onSort={() => {
                               setTimesheetsColumnSorts((prev) => {
                                 const current = prev[header];
@@ -1427,7 +1744,9 @@ export default function TbiPage() {
                               });
                             }}
                             width={getColumnWidth(header, "TimeSheets")}
-                            onResize={(h, w) => handleColumnResize("TimeSheets", h, w)}
+                            onResize={(h, w) =>
+                              handleColumnResize("TimeSheets", h, w)
+                            }
                           />
                         ))}
                       </div>
@@ -1445,14 +1764,24 @@ export default function TbiPage() {
                       const isRowSelected = timesheetsSelectedIds.has(row.id);
                       return (
                         <div key={row.id} className="flex">
-                          <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
+                          <div
+                            className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out"
+                            style={{
+                              width: 30,
+                              minWidth: 30,
+                              height: ROW_HEIGHT,
+                            }}
+                          >
                             {rowIndex + 1}
                           </div>
                           <div
                             className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                            style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
+                            style={{
+                              width: ACTIONS_CELL_WIDTH,
+                              minWidth: ACTIONS_CELL_WIDTH,
+                              height: ROW_HEIGHT,
+                            }}
                           >
-                            <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
                             <input
                               type="checkbox"
                               checked={isRowSelected}
@@ -1460,6 +1789,12 @@ export default function TbiPage() {
                               className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
                               aria-label={`Select row ${rowIndex + 1}`}
                             />
+                            <span
+                              className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300"
+                              aria-hidden
+                            >
+                              <TbBinoculars size={20} />
+                            </span>
                           </div>
                           {timesheetsColumnOrder.map((col, colIndex) => {
                             const colW = getColumnWidth(col, "TimeSheets");
@@ -1467,9 +1802,15 @@ export default function TbiPage() {
                               <div
                                 key={`ts-cell-${colIndex}-${col}`}
                                 className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected ? "bg-teal-200 ring-1 ring-teal-500" : rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                                style={{ width: colW, minWidth: colW, height: ROW_HEIGHT }}
+                                style={{
+                                  width: colW,
+                                  minWidth: colW,
+                                  height: ROW_HEIGHT,
+                                }}
                               >
-                                <span className="truncate w-full text-center">{String(row[col] ?? "") || "\u00A0"}</span>
+                                <span className="truncate w-full text-center">
+                                  {String(row[col] ?? "") || "\u00A0"}
+                                </span>
                               </div>
                             );
                           })}
@@ -1481,7 +1822,9 @@ export default function TbiPage() {
                     columns={timesheetsColumnOrder}
                     getWidth={(h) => getColumnWidth(h, "TimeSheets")}
                     onResize={(h, w) => handleColumnResize("TimeSheets", h, w)}
-                    contentHeight={HEADER_HEIGHT + timesheetsRows.length * ROW_HEIGHT}
+                    contentHeight={
+                      HEADER_HEIGHT + timesheetsRows.length * ROW_HEIGHT
+                    }
                   />
                 </div>
               )}
@@ -1496,16 +1839,25 @@ export default function TbiPage() {
                 onDragEnd={handleColumnDragEnd}
                 modifiers={[restrictToHorizontalAxis]}
               >
-                <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
+                <SortableContext
+                  items={columnIds}
+                  strategy={horizontalListSortingStrategy}
+                >
                   <div className="flex sticky top-0 z-20">
-                    <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
+                    <div
+                      className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out"
+                      style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}
+                    >
                       #
                     </div>
                     <div
                       className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center gap-2 font-medium text-sm shadow-sm"
-                      style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
+                      style={{
+                        width: ACTIONS_CELL_WIDTH,
+                        minWidth: ACTIONS_CELL_WIDTH,
+                        height: HEADER_HEIGHT,
+                      }}
                     >
-                      <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-700" aria-hidden><TbBinoculars size={20} /></span>
                       <input
                         type="checkbox"
                         className="h-4 w-4 text-teal-600 border-gray-300 rounded cursor-pointer"
@@ -1513,6 +1865,12 @@ export default function TbiPage() {
                         onChange={handleSelectAll}
                         title="Select all"
                       />
+                      <span
+                        className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-700"
+                        aria-hidden
+                      >
+                        <TbBinoculars size={20} />
+                      </span>
                     </div>
                     {columnHeaders.map((header, index) => {
                       const colId = columnIds[index];
@@ -1524,7 +1882,9 @@ export default function TbiPage() {
                           sortState={columnSorts[header] || null}
                           filterValue={columnFilters[header] || null}
                           onSort={() => handleColumnSort(header)}
-                          onFilterChange={(val) => handleColumnFilter(header, val)}
+                          onFilterChange={(val) =>
+                            handleColumnFilter(header, val)
+                          }
                           width={getColumnWidth(header, viewKey)}
                           onResize={(h, w) => handleColumnResize(viewKey, h, w)}
                         />
@@ -1533,7 +1893,6 @@ export default function TbiPage() {
                   </div>
                 </SortableContext>
               </DndContext>
-
 
               {/* Many data rows - clickable and selectable; Organization view shows orgs with approved placements */}
               {tbiOrgsLoading && selectedRow === "Organization" && (
@@ -1547,84 +1906,120 @@ export default function TbiPage() {
                 </div>
               )}
 
-              {!tbiOrgsLoading && (() => {
-                const displayOrgs = selectedRow === "Organization" ? filteredAndSortedOrgs : [];
-                const displayPlacementRows = selectedRow === "Organization" ? [] : placementSectionRows;
-                const dynamicRowCount =
-                  selectedRow === "Organization"
-                    ? displayOrgs.length
-                    : displayPlacementRows.length;
-                const rowCount = Math.max(DATA_ROW_COUNT, dynamicRowCount);
+              {!tbiOrgsLoading &&
+                (() => {
+                  const displayOrgs =
+                    selectedRow === "Organization" ? filteredAndSortedOrgs : [];
+                  const displayPlacementRows =
+                    selectedRow === "Organization" ? [] : placementSectionRows;
+                  const dynamicRowCount =
+                    selectedRow === "Organization"
+                      ? displayOrgs.length
+                      : displayPlacementRows.length;
+                  const rowCount = Math.max(DATA_ROW_COUNT, dynamicRowCount);
 
-                return Array.from({ length: rowCount }, (_, rowIndex) => {
-                  const isRowSelected = selectedRows.has(rowIndex);
-                  const org =
-                    selectedRow === "Organization" && rowIndex < displayOrgs.length
-                      ? displayOrgs[rowIndex]
-                      : null;
+                  return Array.from({ length: rowCount }, (_, rowIndex) => {
+                    const isRowSelected = selectedRows.has(rowIndex);
+                    const org =
+                      selectedRow === "Organization" &&
+                      rowIndex < displayOrgs.length
+                        ? displayOrgs[rowIndex]
+                        : null;
                   const placementRow =
-                    selectedRow !== "Organization" && rowIndex < displayPlacementRows.length
+                    selectedRow !== "Organization" &&
+                    rowIndex < displayPlacementRows.length
                       ? displayPlacementRows[rowIndex]
                       : null;
+                  const hasData = !!org || !!placementRow;
 
-                  return (
-                    <div key={rowIndex} className="flex">
-                      <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
-                        {rowIndex + 1}
-                      </div>
-                      <div
-                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                        style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
-                      >
-                        {selectedRow === "Organization" && org ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDetailOrganization(org);
-                            }}
-                            className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
-                            title="View details"
-                            aria-label="View organization details"
-                          >
-                            <TbBinoculars size={20} />
-                          </button>
-                        ) : (
-                          <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
-                        )}
-                        <input
-                          type="checkbox"
-                          checked={isRowSelected}
-                          onChange={() => toggleDataRow(rowIndex)}
-                          className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
-                          aria-label={`Select row ${rowIndex + 1}`}
-                        />
-                      </div>
-                      {columnHeaders.map((header, colIndex) => {
-                        const colW = getColumnWidth(header, viewKey);
-                        const cellValue =
-                          selectedRow === "Organization"
-                            ? (org ? getOrgCellValue(org, header) : "")
-                            : (placementRow ? String(placementRow[header] ?? "") : "");
-                        return (
-                          <div
-                            key={colIndex}
-                            className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected
-                              ? "bg-teal-200 ring-1 ring-teal-500"
-                              : rowIndex % 2 === 0
-                                ? "bg-white"
-                                : "bg-gray-50"
+                    return (
+                      <div key={rowIndex} className="flex">
+                        <div
+                          className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out"
+                          style={{
+                            width: 30,
+                            minWidth: 30,
+                            height: ROW_HEIGHT,
+                          }}
+                        >
+                          {rowIndex + 1}
+                        </div>
+                        <div
+                          className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                          style={{
+                            width: ACTIONS_CELL_WIDTH,
+                            minWidth: ACTIONS_CELL_WIDTH,
+                            height: ROW_HEIGHT,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => hasData && toggleDataRow(rowIndex)}
+                            disabled={!hasData}
+                            className={`h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 shrink-0 ${
+                              hasData ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+                            }`}
+                            aria-label={`Select row ${rowIndex + 1}`}
+                          />
+                          {selectedRow === "Organization" && org ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailOrganization(org);
+                              }}
+                              className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
+                              title="View details"
+                              aria-label="View organization details"
+                            >
+                              <TbBinoculars size={20} />
+                            </button>
+                          ) : (
+                            <span
+                              className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300"
+                              aria-hidden
+                            >
+                              <TbBinoculars size={20} />
+                            </span>
+                          )}
+                        </div>
+                        {columnHeaders.map((header, colIndex) => {
+                          const colW = getColumnWidth(header, viewKey);
+                          const cellValue =
+                            selectedRow === "Organization"
+                              ? org
+                                ? getOrgCellValue(org, header)
+                                : ""
+                              : placementRow
+                                ? String(placementRow[header] ?? "")
+                                : "";
+                          return (
+                            <div
+                              key={colIndex}
+                              className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${
+                                isRowSelected
+                                  ? "bg-teal-200 ring-1 ring-teal-500"
+                                  : rowIndex % 2 === 0
+                                    ? "bg-white"
+                                    : "bg-gray-50"
                               }`}
-                            style={{ width: colW, minWidth: colW, height: ROW_HEIGHT }}
-                          >
-                            <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                });
-              })()}
+                              style={{
+                                width: colW,
+                                minWidth: colW,
+                                height: ROW_HEIGHT,
+                              }}
+                            >
+                              <span className="truncate w-full text-center">
+                                {cellValue || "\u00A0"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  });
+                })()}
               <ColumnResizeOverlay
                 columns={columnHeaders}
                 getWidth={(h) => getColumnWidth(h, viewKey)}
@@ -1641,19 +2036,19 @@ export default function TbiPage() {
         <OrganizationDetailPanel
           organization={detailOrganization}
           onClose={() => setDetailOrganization(null)}
-          onSave={() => { }}
-          onDelete={() => { }}
+          onSave={() => {}}
+          onDelete={() => {}}
         />
       )}
 
       {/* Columns modal – select which columns to show; layout saved to localStorage */}
       {showColumnsMenu && (
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-200 flex items-center justify-center bg-black/50"
           onClick={() => setShowColumnsMenu(false)}
         >
           <div
-            className="bg-white rounded-sm shadow-xl max-w-md w-full mx-4 overflow-hidden flex flex-col max-h-[85vh] relative z-[201]"
+            className="bg-white rounded-sm shadow-xl max-w-md w-full mx-4 overflow-hidden flex flex-col max-h-[85vh] relative z-201"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b shrink-0">
@@ -1664,13 +2059,23 @@ export default function TbiPage() {
                 className="p-1 rounded hover:bg-gray-200 text-gray-600"
                 aria-label="Close"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </button>
             </div>
             <p className="px-4 pt-2 pb-1 text-sm text-gray-500 shrink-0">
-              Show or hide columns for this view. Your choices are saved automatically.
+              Show or hide columns for this view. Your choices are saved
+              automatically.
             </p>
             <div className="overflow-y-auto flex-1 min-h-0 py-2">
               {schemaColumns.map((header, index) => {
@@ -1692,7 +2097,8 @@ export default function TbiPage() {
               })}
             </div>
             <div className="px-4 py-3 bg-gray-50 border-t flex justify-end gap-2 shrink-0">
-              {(Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+              {(Object.keys(columnFilters).length > 0 ||
+                Object.keys(columnSorts).length > 0) && (
                 <button
                   type="button"
                   onClick={() => {

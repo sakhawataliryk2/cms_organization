@@ -83,6 +83,10 @@ export default function SubmissionFormModal({
   const [jobSearchQuery, setJobSearchQuery] = useState("");
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  const [submittedJobIds, setSubmittedJobIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [isLoadingSubmittedJobs, setIsLoadingSubmittedJobs] = useState(false);
   const [showJobDropdown, setShowJobDropdown] = useState(false);
   const [showTemplatesDropdown, setShowTemplatesDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -106,8 +110,40 @@ export default function SubmissionFormModal({
     setSelectedAttachmentIds(new Set(documents.map((d) => d.id)));
     setJobSearchQuery("");
     setValidationError(null);
-    fetchJobs();
+    setSubmittedJobIds(new Set());
+    void fetchJobs();
+    void fetchSubmittedJobsForJobSeeker();
   }, [open, jobSeekerId]);
+
+  const fetchSubmittedJobsForJobSeeker = async () => {
+    if (!jobSeekerId) return;
+    setIsLoadingSubmittedJobs(true);
+    try {
+      const res = await fetch(`/api/job-seekers/${jobSeekerId}/applications`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSubmittedJobIds(new Set());
+        return;
+      }
+      const applications: any[] =
+        data.applications || data.data || data.items || [];
+      const ids = new Set<string>();
+      if (Array.isArray(applications)) {
+        applications.forEach((a: any) => {
+          if (a?.job_id != null && String(a.job_id).trim() !== "") {
+            ids.add(String(a.job_id));
+          }
+        });
+      }
+      setSubmittedJobIds(ids);
+    } catch {
+      setSubmittedJobIds(new Set());
+    } finally {
+      setIsLoadingSubmittedJobs(false);
+    }
+  };
 
   const fetchJobs = async () => {
     setIsLoadingJobs(true);
@@ -191,6 +227,12 @@ export default function SubmissionFormModal({
     setValidationError(null);
     if (!selectedJobId || !selectedJob) {
       setValidationError("Please select a job.");
+      return;
+    }
+    if (submittedJobIds.has(String(selectedJobId))) {
+      setValidationError(
+        "This job seeker has already been submitted to this job. Duplicate submissions are not allowed.",
+      );
       return;
     }
     setIsSubmitting(true);
@@ -335,24 +377,48 @@ export default function SubmissionFormModal({
                     <div className="p-3 text-sm text-gray-500">
                       Loading jobs...
                     </div>
+                  ) : isLoadingSubmittedJobs ? (
+                    <div className="p-3 text-sm text-gray-500">
+                      Checking previously submitted jobs...
+                    </div>
                   ) : filteredJobs.length === 0 ? (
                     <div className="p-3 text-sm text-gray-500">
                       No jobs found
                     </div>
                   ) : (
                     filteredJobs.slice(0, 50).map((job) => (
+                      (() => {
+                        const isDisabled = submittedJobIds.has(String(job.id));
+                        return (
                       <button
                         key={job.id}
                         type="button"
+                        disabled={isDisabled}
                         onClick={() => {
+                          if (isDisabled) {
+                            toast.error(
+                              "This job seeker has already been submitted to this job. Duplicate submissions are not allowed.",
+                            );
+                            return;
+                          }
                           setSelectedJob(job);
                           setSelectedJobId(String(job.id));
                           setJobSearchQuery("");
                           setShowJobDropdown(false);
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                        className={[
+                          "w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0",
+                          isDisabled
+                            ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+                            : "hover:bg-blue-50",
+                        ].join(" ")}
                       >
-                        <span className="font-medium text-gray-900">
+                        <span
+                          className={[
+                            "font-medium",
+                            isDisabled ? "text-gray-500" : "text-gray-900",
+                          ].join(" ")}
+                        >
                           {formatRecordId(job.record_number ?? job.id, "job")}{" "}
                           {job.job_title || "Untitled"}
                         </span>
@@ -361,7 +427,14 @@ export default function SubmissionFormModal({
                             {job.organization_name}
                           </span>
                         )}
+                        {isDisabled && (
+                          <span className="block text-xs text-red-600 mt-0.5">
+                            Already submitted
+                          </span>
+                        )}
                       </button>
+                        );
+                      })()
                     ))
                   )}
                 </div>

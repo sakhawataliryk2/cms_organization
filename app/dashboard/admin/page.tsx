@@ -1316,6 +1316,12 @@ export default function AdminCenter() {
             path: '/dashboard/admin/jobs-xml'
         },
         {
+            id: 'jobs-xml-import',
+            name: 'Jobs XML Import',
+            icon: <FiFileText size={50} color="white" />,
+            path: '/dashboard/jobs?xmlImport=true'
+        },
+        {
             id: 'data-scraper',
             name: 'Data Scraper',
             icon: <FiArrowRight size={50} color="white" />,

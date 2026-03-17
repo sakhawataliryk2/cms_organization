@@ -2043,16 +2043,71 @@ export default function AddOrganization() {
                                   : undefined
                               }
                             />
-                            {duplicateWarning && (
-                              <div className="mt-1 text-xs text-yellow-700">
+                            {duplicateWarning && (isPhoneDuplicateField || isWebsiteDuplicateField) && (
+                              <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                <div className="font-semibold mb-1">
+                                  Possible duplicate organization(s) detected
+                                </div>
                                 {isPhoneDuplicateField &&
-                                  (duplicateWarning.phone?.length ?? 0) > 0 &&
-                                  "This phone number matches an existing organization."}
+                                  (duplicateWarning.phone?.length ?? 0) > 0 && (
+                                    <div className="space-y-1">
+                                      <div className="font-medium">Same phone number:</div>
+                                      <ul className="list-disc list-inside">
+                                        {duplicateWarning.phone.map((org) => (
+                                          <li key={org.id}>
+                                            <a
+                                              href={`/dashboard/organizations/view?id=${org.id}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:underline"
+                                            >
+                                              {org.name}
+                                            </a>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
                                 {isWebsiteDuplicateField &&
-                                  (duplicateWarning.website?.length ?? 0) > 0 &&
-                                  "This website matches an existing organization."}
-                                {isEmailDuplicateField &&
-                                  (duplicateWarning.email?.length ?? 0) > 0 &&
+                                  (duplicateWarning.website?.length ?? 0) > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                      <div className="font-medium">Same website:</div>
+                                      <ul className="list-disc list-inside">
+                                        {duplicateWarning.website.map((org) => (
+                                          <li key={org.id}>
+                                            <a
+                                              href={`/dashboard/organizations/view?id=${org.id}`}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:underline"
+                                            >
+                                              {org.name}
+                                            </a>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                <div className="mt-2 flex items-center gap-2">
+                                  <input
+                                    id={`confirm-duplicate-save-${field.field_name}`}
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={hasConfirmedDuplicateSave}
+                                    onChange={(e) =>
+                                      setHasConfirmedDuplicateSave(e.target.checked)
+                                    }
+                                  />
+                                  <label htmlFor={`confirm-duplicate-save-${field.field_name}`}>
+                                    I have reviewed the possible duplicates and still want to save this
+                                    organization.
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+                            {duplicateWarning && isEmailDuplicateField && (
+                              <div className="mt-1 text-xs text-yellow-700">
+                                {(duplicateWarning.email?.length ?? 0) > 0 &&
                                   "This email matches an existing organization."}
                               </div>
                             )}
@@ -2090,50 +2145,12 @@ export default function AddOrganization() {
           </div>
 
           {/* Duplicate warning section with links to possible matches and confirmation */}
-          {duplicateWarning && (
+          {duplicateWarning && (duplicateWarning.email?.length ?? 0) > 0 && (
             <div className="mb-4 p-4 border border-yellow-300 bg-yellow-50 rounded">
               <div className="font-semibold text-yellow-800 mb-2">
                 Possible duplicate organization(s) detected
               </div>
               <div className="space-y-2 text-sm text-yellow-900">
-                {(duplicateWarning.phone?.length ?? 0) > 0 && (
-                  <div>
-                    <div className="font-medium">Same phone number:</div>
-                    <ul className="list-disc list-inside">
-                      {duplicateWarning.phone.map((org) => (
-                        <li key={org.id}>
-                          <a
-                            href={`/dashboard/organizations/view?id=${org.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {org.name}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {(duplicateWarning.website?.length ?? 0) > 0 && (
-                  <div>
-                    <div className="font-medium">Same website:</div>
-                    <ul className="list-disc list-inside">
-                      {duplicateWarning.website.map((org) => (
-                        <li key={org.id}>
-                          <a
-                            href={`/dashboard/organizations/view?id=${org.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {org.name}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 {(duplicateWarning.email?.length ?? 0) > 0 && (
                   <div>
                     <div className="font-medium">Same email:</div>

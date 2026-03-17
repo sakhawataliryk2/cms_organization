@@ -461,6 +461,25 @@ export default function Dashboard() {
 
     // Handle date click - fetch tasks for selected date
     const handleDateClick = async (date: Date) => {
+        const selectedStr = formatDateForAPI(date);
+        setActivityRange((prev) => {
+            const start = prev.start;
+            const end = prev.end;
+
+            // If range not set yet, initialize to the selected date
+            if (!start && !end) return { start: selectedStr, end: selectedStr };
+            if (!start && end) return { start: selectedStr, end };
+            if (start && !end) return { start, end: selectedStr };
+
+            // Key rule: if selected date is inside the range, do nothing
+            if (selectedStr >= start && selectedStr <= end) return prev;
+
+            // Otherwise, adjust only the closest boundary to include selected date
+            if (selectedStr < start) return { start: selectedStr, end };
+            if (selectedStr > end) return { start, end: selectedStr };
+
+            return prev;
+        });
         setSelectedDate(date);
         await fetchTasksForDate(date);
     };
@@ -559,6 +578,8 @@ export default function Dashboard() {
 
             const data = await response.json();
             const allTasks = (data.tasks || []) as TaskWithOwnerFields[];
+
+            console.log('allTasks:', allTasks);
 
             const userId = user?.id;
             const userTasks = userId
@@ -1482,10 +1503,10 @@ export default function Dashboard() {
                                                     </span>
                                                 )}
                                             </div>
-                                            {task.due_date && (
+                                            {task.created_at && (
                                                 <div className="flex items-center text-xs text-gray-500">
                                                     <FiClock size={12} className="mr-1" />
-                                                    {formatDate(task.due_date)}
+                                                    {formatDate(task.created_at)}
                                                 </div>
                                             )}
                                         </div>

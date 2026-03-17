@@ -126,6 +126,11 @@ export default function ClientSubmissionModal({
   const [showInternalUserDropdown, setShowInternalUserDropdown] =
     useState(false);
 
+  const [hasExistingSubmissionForJob, setHasExistingSubmissionForJob] =
+    useState(false);
+  const [isCheckingExistingSubmission, setIsCheckingExistingSubmission] =
+    useState(false);
+
   const [commentHtml, setCommentHtml] = useState("");
   const editorRef = useRef<HTMLDivElement | null>(null);
 
@@ -203,9 +208,14 @@ export default function ClientSubmissionModal({
     setHiringManagers(initialHMs);
     setSelectedHiringManagerIds(initialHMIds);
     setSelectedInternalUserIds(new Set());
+    setHasExistingSubmissionForJob(false);
+    setIsCheckingExistingSubmission(false);
 
     if (initialId) {
       void fetchDocumentsForCandidate(String(initialId));
+      if (jobId != null) {
+        void checkExistingSubmission(String(initialId), String(jobId));
+      }
     }
     void fetchInternalUsers();
     void fetchHiringManagersForOrganization(
@@ -439,6 +449,63 @@ export default function ClientSubmissionModal({
     }
   };
 
+  const checkExistingSubmission = async (
+    candidateId: string,
+    jobIdValue: string,
+  ) => {
+    if (!candidateId || !jobIdValue) {
+      setHasExistingSubmissionForJob(false);
+      return;
+    }
+    setIsCheckingExistingSubmission(true);
+    try {
+      // Check generic applications (job_seeker_applications)
+      const appsRes = await fetch(
+        `/api/job-seekers/${candidateId}/applications`,
+      );
+      const appsData = await appsRes.json().catch(() => ({}));
+      const applications: any[] =
+        appsData.applications || appsData.data || appsData.items || [];
+      const alreadyAppliedViaApplication = Array.isArray(applications)
+        ? applications.some(
+            (app: any) =>
+              app &&
+              app.job_id != null &&
+              String(app.job_id) === String(jobIdValue),
+          )
+        : false;
+
+      // Check dedicated client submissions table as well
+      const csRes = await fetch(
+        `/api/job-seekers/${candidateId}/client-submissions`,
+      );
+      const csData = await csRes.json().catch(() => ({}));
+      const submissions: any[] =
+        csData.submissions || csData.client_submissions || csData.data || [];
+      const alreadyAppliedViaClientSubmission = Array.isArray(submissions)
+        ? submissions.some(
+            (sub: any) =>
+              sub &&
+              sub.job_id != null &&
+              String(sub.job_id) === String(jobIdValue),
+          )
+        : false;
+
+      setHasExistingSubmissionForJob(
+        alreadyAppliedViaApplication || alreadyAppliedViaClientSubmission,
+      );
+    } catch (error) {
+      console.error(
+        "Error checking existing submissions for candidate/job",
+        error,
+      );
+      // In case of error, do not block the UI completely, just fall back to allowing submission.
+      setHasExistingSubmissionForJob(false);
+    } finally {
+      setIsCheckingExistingSubmission(false);
+    }
+  };
+
   const toggleDocumentSelection = (id: string) => {
     setSelectedDocumentIds((prev: Set<string>) => {
       const next = new Set<string>(prev);
@@ -506,6 +573,12 @@ export default function ClientSubmissionModal({
       toast.error("Missing job context for submission.");
       return;
     }
+    if (hasExistingSubmissionForJob) {
+      toast.error(
+        "This candidate has already been submitted to this job and cannot be submitted again.",
+      );
+      return;
+    }
 
     const attachments = Array.from(selectedDocumentIds);
     // Documents are optional: allow submission with or without attachments.
@@ -551,8 +624,7 @@ export default function ClientSubmissionModal({
 
       toast.success("Client submission created successfully.");
 
-      // If user chose Compose Email, open their email client with selected attachments listed in body
-      // If user chose Compose Email, open Gmail compose with details
+      // If user chose Compose Email, open the OS default mail client
       if (mode === "compose" && typeof window !== "undefined") {
         const toEmails = Array.from(selectedHiringManagerIds)
           .map((id: string) => {
@@ -599,13 +671,13 @@ export default function ClientSubmissionModal({
             attachmentList +
             attachmentUrlList;
 
-          const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-            toEmails.join(","),
-          )}&su=${encodeURIComponent(subjectText)}&body=${encodeURIComponent(
+          const mailtoUrl = `mailto:${encodeURIComponent(
+            toEmails.join(";"),
+          )}?subject=${encodeURIComponent(subjectText)}&body=${encodeURIComponent(
             bodyText,
           )}`;
 
-          window.open(gmailUrl, "_blank", "noopener,noreferrer");
+          window.location.href = mailtoUrl;
         }
       }
 
@@ -729,6 +801,14 @@ export default function ClientSubmissionModal({
                                 setCandidateSearchQuery("");
                                 setShowCandidateDropdown(false);
                                 void fetchDocumentsForCandidate(id);
+                                if (jobId != null) {
+                                  void checkExistingSubmission(
+                                    id,
+                                    String(jobId),
+                                  );
+                                } else {
+                                  setHasExistingSubmissionForJob(false);
+                                }
                               }}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
                             >
@@ -778,6 +858,21 @@ export default function ClientSubmissionModal({
               <span className="text-gray-900">{displayJob}</span>
               <FiCheck className="text-green-600 shrink-0" size={18} />
             </div>
+            {selectedCandidate && (
+              <p className="mt-1 text-xs">
+                {isCheckingExistingSubmission && (
+                  <span className="text-gray-500">
+                    Checking existing submissions for this candidate...
+                  </span>
+                )}
+                {!isCheckingExistingSubmission && hasExistingSubmissionForJob && (
+                  <span className="text-red-600 font-medium">
+                    This candidate has already been submitted to this job. New
+                    submissions are disabled.
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           {/* Hiring managers (contacts) */}
@@ -1203,7 +1298,11 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("compose")}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSubmitting || !selectedCandidateId}
+            disabled={
+              isSubmitting ||
+              !selectedCandidateId ||
+              hasExistingSubmissionForJob
+            }
           >
             {isSubmitting ? "Submitting..." : "Compose Email"}
           </button>
@@ -1211,7 +1310,11 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("no-email")}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSubmitting || !selectedCandidateId}
+            disabled={
+              isSubmitting ||
+              !selectedCandidateId ||
+              hasExistingSubmissionForJob
+            }
           >
             {isSubmitting ? "Submitting..." : "Add Without Email"}
           </button>
