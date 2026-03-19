@@ -135,6 +135,84 @@ function getFromPlacementCustomFields(
   return "";
 }
 
+function normalizePlacementRelatedId(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const nested =
+      obj.id ??
+      obj.hiring_manager_id ??
+      obj.hiringManagerId ??
+      obj.contact_id ??
+      obj.contactId;
+    return normalizePlacementRelatedId(nested);
+  }
+  return null;
+}
+
+function resolvePlacementHiringManagerId(p: Record<string, unknown>): string | null {
+  const cfRaw = (p.customFields ?? p.custom_fields) as unknown;
+  const cf =
+    cfRaw && typeof cfRaw === "object"
+      ? (cfRaw as Record<string, unknown>)
+      : null;
+  return (
+    normalizePlacementRelatedId(
+      p.hiringManagerId ??
+        p.hiring_manager_id ??
+        p.contactId ??
+        p.contact_id ??
+        p.hiringManager ??
+        p.hiring_manager ??
+        p.timecard_approver_id ??
+        p.billing_contact_id,
+    ) ??
+    normalizePlacementRelatedId(
+      cf?.["Hiring Manager ID"] ??
+        cf?.hiring_manager_id ??
+        cf?.hiringManagerId ??
+        cf?.["Billing Contact ID"] ??
+        cf?.billing_contact_id ??
+        cf?.["Timecard Approver ID"] ??
+        cf?.timecard_approver_id,
+    )
+  );
+}
+
+function resolvePlacementHiringManagerName(
+  p: Record<string, unknown>,
+): string | null {
+  const cfRaw = (p.customFields ?? p.custom_fields) as unknown;
+  const cf =
+    cfRaw && typeof cfRaw === "object"
+      ? (cfRaw as Record<string, unknown>)
+      : null;
+  const candidate =
+    p.hiringManagerName ??
+    p.hiring_manager_name ??
+    p.contactName ??
+    p.contact_name ??
+    (typeof p.hiringManager === "object" && p.hiringManager
+      ? (p.hiringManager as Record<string, unknown>).name
+      : undefined) ??
+    (typeof p.hiring_manager === "object" && p.hiring_manager
+      ? (p.hiring_manager as Record<string, unknown>).name
+      : undefined) ??
+    cf?.["Hiring Manager"] ??
+    cf?.hiring_manager_name ??
+    null;
+  if (candidate == null) return null;
+  const str = String(candidate).trim();
+  return str.length > 0 ? str : null;
+}
+
 function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
   const row: TimesheetRow = {
     id: p.id,
@@ -177,10 +255,9 @@ function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
     Organization: p.organizationName ?? "",
     Email: "",
     Status: p.status ?? "",
-    "ID Number":
-      p.hiringManagerId != null ? String(p.hiringManagerId) : String(p.id),
+    "ID Number": p.hiringManagerId != null ? String(p.hiringManagerId) : "",
     __hiringManagerId:
-      p.hiringManagerId != null ? String(p.hiringManagerId) : String(p.id),
+      p.hiringManagerId != null ? String(p.hiringManagerId) : null,
   };
 }
 
@@ -1339,18 +1416,9 @@ export default function TbiPage() {
               jobTitle: p.jobTitle ?? p.job_title ?? undefined,
               organizationName:
                 p.organizationName ?? p.organization_name ?? undefined,
-              hiringManagerId:
-                p.hiringManagerId ??
-                p.hiring_manager_id ??
-                p.contactId ??
-                p.contact_id ??
-                undefined,
+              hiringManagerId: resolvePlacementHiringManagerId(p) ?? undefined,
               hiringManagerName:
-                p.hiringManagerName ??
-                p.hiring_manager_name ??
-                p.contactName ??
-                p.contact_name ??
-                undefined,
+                resolvePlacementHiringManagerName(p) ?? undefined,
             })),
           );
         } else {
@@ -2244,8 +2312,25 @@ export default function TbiPage() {
                                   setDetailHiringManagerId(String(hmId));
                                 }
                               }}
-                              className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
-                              title="View details"
+                              disabled={
+                                placementRow.__hiringManagerId == null ||
+                                String(placementRow.__hiringManagerId).trim() ===
+                                  ""
+                              }
+                              className={`p-1.5 rounded transition-colors shrink-0 inline-flex items-center justify-center ${
+                                placementRow.__hiringManagerId == null ||
+                                String(placementRow.__hiringManagerId).trim() ===
+                                  ""
+                                  ? "text-gray-300 cursor-not-allowed"
+                                  : "text-gray-600 hover:bg-teal-100 hover:text-teal-700"
+                              }`}
+                              title={
+                                placementRow.__hiringManagerId == null ||
+                                String(placementRow.__hiringManagerId).trim() ===
+                                  ""
+                                  ? "Hiring manager id not available"
+                                  : "View details"
+                              }
                               aria-label="View hiring manager details"
                             >
                               <TbBinoculars size={20} />
