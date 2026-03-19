@@ -12,7 +12,7 @@ import AddNoteModal from '@/components/AddNoteModal';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { toast } from 'sonner';
 import { getRecordNumberFromId } from '@/lib/getRecordNumberFromId';
-import RecordNameResolver from '@/components/RecordNameResolver';
+import RecordNameResolver, { type RecordType } from '@/components/RecordNameResolver';
 
 interface PrescreenedCandidate {
   id: number;
@@ -46,6 +46,39 @@ interface CandidateColumn {
   count?: number;
   candidates: Candidate[] | PrescreenedCandidate[];
   isPrescreenedColumn?: boolean;
+}
+
+interface JobSeekerProfilePreview {
+  id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  status?: string | null;
+  company_status?: string | null;
+  mobile_phone?: string | null;
+  direct_line?: string | null;
+  linkedin_url?: string | null;
+  date_added?: string | null;
+  owner_name?: string | null;
+  customFields?: unknown;
+}
+
+interface JobProfilePreview {
+  id: number;
+  title?: string | null;
+  status?: string | null;
+  company?: string | null;
+  company_name?: string | null;
+  organization_name?: string | null;
+  location?: string | null;
+  city?: string | null;
+  state?: string | null;
+  job_type?: string | null;
+  employment_type?: string | null;
+  date_added?: string | null;
+  owner_name?: string | null;
+  customFields?: unknown;
 }
 
 interface DragPayload {
@@ -115,6 +148,10 @@ export default function CandidateFlowDashboard() {
   const [reloadKey, setReloadKey] = useState(0);
   const [selectedJobSeekerId, setSelectedJobSeekerId] = useState<number | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const [selectedJobSeekerProfile, setSelectedJobSeekerProfile] = useState<JobSeekerProfilePreview | null>(null);
+  const [loadingJobSeekerProfile, setLoadingJobSeekerProfile] = useState(false);
+  const [selectedJobProfile, setSelectedJobProfile] = useState<JobProfilePreview | null>(null);
+  const [loadingJobProfile, setLoadingJobProfile] = useState(false);
 
   const getToken = () =>
     document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
@@ -558,6 +595,370 @@ export default function CandidateFlowDashboard() {
     setShowAddNote(true);
   };
 
+  useEffect(() => {
+    if (selectedJobSeekerId == null) {
+      setSelectedJobSeekerProfile(null);
+      setLoadingJobSeekerProfile(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchJobSeekerProfile = async () => {
+      setLoadingJobSeekerProfile(true);
+      try {
+        const token = getToken();
+        const res = await fetch(`/api/job-seekers/${selectedJobSeekerId}`, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setSelectedJobSeekerProfile(null);
+          return;
+        }
+        const record = (data.jobSeeker ?? data) as Record<string, any>;
+        let normalizedCustomFields: Record<string, any> = {};
+        const customSources = [
+          record?.customFields,
+          record?.custom_fields,
+          record?.custom_fields_json,
+          record?.job_seeker_custom_fields,
+          record?.fields,
+        ];
+        for (const src of customSources) {
+          if (!src) continue;
+          try {
+            const parsed = typeof src === 'string' ? JSON.parse(src) : src;
+            if (Array.isArray(parsed)) {
+              parsed.forEach((f: any) => {
+                const k = String(
+                  f?.field_label ?? f?.field_name ?? f?.label ?? f?.name ?? f?.key ?? ''
+                ).trim();
+                if (!k) return;
+                const v =
+                  f?.field_value ??
+                  f?.value ??
+                  f?.display_value ??
+                  f?.displayValue ??
+                  f?.selected_options ??
+                  f?.selectedOptions ??
+                  '';
+                if (v != null && v !== '') normalizedCustomFields[k] = v;
+              });
+            } else if (parsed && typeof parsed === 'object') {
+              normalizedCustomFields = { ...parsed, ...normalizedCustomFields };
+            }
+          } catch {
+            // Ignore malformed custom field source
+          }
+        }
+        setSelectedJobSeekerProfile({
+          ...(record as JobSeekerProfilePreview),
+          customFields: normalizedCustomFields,
+        });
+      } catch {
+        if (!cancelled) setSelectedJobSeekerProfile(null);
+      } finally {
+        if (!cancelled) setLoadingJobSeekerProfile(false);
+      }
+    };
+
+    void fetchJobSeekerProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJobSeekerId]);
+
+  useEffect(() => {
+    if (selectedJobId == null) {
+      setSelectedJobProfile(null);
+      setLoadingJobProfile(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchJobProfile = async () => {
+      setLoadingJobProfile(true);
+      try {
+        const token = getToken();
+        const res = await fetch(`/api/jobs/${selectedJobId}`, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setSelectedJobProfile(null);
+          return;
+        }
+        const record = (data.job ?? data) as Record<string, any>;
+        let normalizedCustomFields: Record<string, any> = {};
+        const customSources = [
+          record?.customFields,
+          record?.custom_fields,
+          record?.custom_fields_json,
+          record?.job_custom_fields,
+          record?.fields,
+        ];
+        for (const src of customSources) {
+          if (!src) continue;
+          try {
+            const parsed = typeof src === 'string' ? JSON.parse(src) : src;
+            if (Array.isArray(parsed)) {
+              parsed.forEach((f: any) => {
+                const k = String(
+                  f?.field_label ?? f?.field_name ?? f?.label ?? f?.name ?? f?.key ?? ''
+                ).trim();
+                if (!k) return;
+                const v =
+                  f?.field_value ??
+                  f?.value ??
+                  f?.display_value ??
+                  f?.displayValue ??
+                  f?.selected_options ??
+                  f?.selectedOptions ??
+                  '';
+                if (v != null && v !== '') normalizedCustomFields[k] = v;
+              });
+            } else if (parsed && typeof parsed === 'object') {
+              normalizedCustomFields = { ...parsed, ...normalizedCustomFields };
+            }
+          } catch {
+            // Ignore malformed custom field source
+          }
+        }
+        setSelectedJobProfile({
+          ...(record as JobProfilePreview),
+          customFields: normalizedCustomFields,
+        });
+      } catch {
+        if (!cancelled) setSelectedJobProfile(null);
+      } finally {
+        if (!cancelled) setLoadingJobProfile(false);
+      }
+    };
+
+    void fetchJobProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJobId]);
+
+  const openAddAppointmentForJobSeeker = (id: number) => {
+    const params = new URLSearchParams();
+    params.set('addAppointment', '1');
+    params.set('participantType', 'job_seeker');
+    params.set('participantId', String(id));
+    setSelectedJobSeekerId(null);
+    router.push(`/dashboard/planner?${params.toString()}`);
+  };
+
+  const openAddTaskForJobSeeker = (id: number) => {
+    setSelectedJobSeekerId(null);
+    router.push(`/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${id}`);
+  };
+
+  const openAddAppointmentForJob = (id: number) => {
+    const params = new URLSearchParams();
+    params.set('addAppointment', '1');
+    params.set('jobId', String(id));
+    setSelectedJobId(null);
+    router.push(`/dashboard/planner?${params.toString()}`);
+  };
+
+  const openAddTaskForJob = (id: number) => {
+    setSelectedJobId(null);
+    router.push(`/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${id}`);
+  };
+
+  const formatPreviewDate = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('en-US');
+  };
+
+  const normalizeFieldLabel = (value: string) =>
+    value.toLowerCase().replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const formatPreviewValue = (value: any): string => {
+    if (value == null || value === '') return '';
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => formatPreviewValue(v))
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof value === 'object') {
+      if (typeof value.value === 'string' || typeof value.value === 'number') {
+        return String(value.value);
+      }
+      if (typeof value.display === 'string' || typeof value.display === 'number') {
+        return String(value.display);
+      }
+      if (typeof value.label === 'string' || typeof value.label === 'number') {
+        return String(value.label);
+      }
+      return '';
+    }
+    return String(value);
+  };
+
+  const extractCustomFieldEntries = (customFields: unknown): Array<{ label: string; value: any }> => {
+    if (!customFields) return [];
+
+    const out: Array<{ label: string; value: any }> = [];
+
+    const visit = (source: any, depth = 0) => {
+      if (!source || depth > 3) return;
+
+      if (Array.isArray(source)) {
+        source.forEach((item) => visit(item, depth + 1));
+        return;
+      }
+
+      if (typeof source !== 'object') return;
+
+      const label = String(
+        source?.label ??
+          source?.name ??
+          source?.field_label ??
+          source?.fieldName ??
+          source?.field_name ??
+          source?.key ??
+          ''
+      ).trim();
+      const value =
+        source?.value ??
+        source?.field_value ??
+        source?.fieldValue ??
+        source?.display_value ??
+        source?.displayValue ??
+        source?.selected_options ??
+        source?.selectedOptions ??
+        source?.values;
+
+      if (label) out.push({ label, value });
+
+      const nestedCandidates = [
+        source?.customFields,
+        source?.custom_fields,
+        source?.fields,
+        source?.data,
+        source?.items,
+        source?.records,
+      ];
+      nestedCandidates.forEach((n) => visit(n, depth + 1));
+
+      // Plain key/value object support
+      Object.entries(source).forEach(([k, v]) => {
+        if (k === 'customFields' || k === 'custom_fields' || k === 'fields') return;
+        if (typeof v === 'object' && v !== null) return;
+        out.push({ label: k, value: v });
+      });
+    };
+
+    visit(customFields);
+    return out.filter((entry) => entry.label);
+  };
+
+  const getFieldRawValue = (
+    record: Record<string, any> | null | undefined,
+    labels: string[],
+    directKeys: string[] = []
+  ) => {
+    if (!record) return '';
+    for (const key of directKeys) {
+      const direct = record[key];
+      const parsed = formatPreviewValue(direct);
+      if (parsed) return direct;
+    }
+
+    const wanted = labels.map(normalizeFieldLabel);
+    const customEntries = [
+      ...extractCustomFieldEntries(record.customFields),
+      ...extractCustomFieldEntries(record.custom_fields),
+      ...extractCustomFieldEntries(record.fields),
+    ];
+    for (const entry of customEntries) {
+      const normalizedLabel = normalizeFieldLabel(entry.label);
+      const matched = wanted.some(
+        (w) => normalizedLabel.includes(w) || w.includes(normalizedLabel)
+      );
+      if (!matched) continue;
+      const value = formatPreviewValue(entry.value);
+      if (value) return entry.value;
+    }
+
+    // Last fallback: match against direct record keys by label includes
+    for (const [key, raw] of Object.entries(record)) {
+      const normalizedKey = normalizeFieldLabel(key);
+      const matched = wanted.some((w) => normalizedKey.includes(w) || w.includes(normalizedKey));
+      if (!matched) continue;
+      const value = formatPreviewValue(raw);
+      if (value) return raw;
+    }
+    return '';
+  };
+
+  const getFieldValue = (
+    record: Record<string, any> | null | undefined,
+    labels: string[],
+    directKeys: string[] = [],
+    isDate = false
+  ) => {
+    const raw = getFieldRawValue(record, labels, directKeys);
+    const formatted = formatPreviewValue(raw);
+    if (!formatted) return '';
+    return isDate ? formatPreviewDate(formatted) : formatted;
+  };
+
+  const getLookupIdValue = (raw: any): string | null => {
+    if (raw == null || raw === '') return null;
+    if (typeof raw === 'number') return String(raw);
+    if (typeof raw === 'string') {
+      const cleaned = raw.trim();
+      if (!cleaned) return null;
+      if (/^\d+(,\s*\d+)*$/.test(cleaned)) return cleaned;
+      return null;
+    }
+    if (Array.isArray(raw)) {
+      const ids = raw
+        .map((item) => getLookupIdValue(item))
+        .filter(Boolean) as string[];
+      return ids.length ? ids.join(',') : null;
+    }
+    if (typeof raw === 'object') {
+      const candidate = raw.id ?? raw.value ?? raw.record_id ?? raw.recordId;
+      return getLookupIdValue(candidate);
+    }
+    return null;
+  };
+
+  const renderDetailCellValue = (
+    raw: any,
+    fallbackText: string,
+    lookupType?: RecordType | string
+  ) => {
+    if (!lookupType) return fallbackText || '-';
+    const resolvedId = getLookupIdValue(raw);
+    if (!resolvedId) return fallbackText || '-';
+    return (
+      <RecordNameResolver
+        id={resolvedId}
+        type={lookupType}
+        clickable={true}
+        fallback={fallbackText || '-'}
+        className="text-slate-700"
+      />
+    );
+  };
+
   const renderPrescreenedCard = (c: PrescreenedCandidate) => {
     return (
       <div
@@ -858,47 +1259,170 @@ export default function CandidateFlowDashboard() {
       )}
       {selectedJobSeekerId != null && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
+            <div className="flex items-center justify-between px-5 py-3 border-b bg-slate-50">
               <div className="flex items-center gap-2">
-                <FiUser className="text-slate-700" />
-                <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-slate-800">
+                <FiUser className="text-teal-700" />
+                <div className="text-sm font-semibold text-slate-800 tracking-tight">
+                  {selectedJobSeekerProfile?.first_name || selectedJobSeekerProfile?.name || (
                     <RecordNameResolver
                       id={selectedJobSeekerId}
                       type="job-seeker"
                       clickable={false}
                     />
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {formatRecordId(selectedJobSeekerId, 'jobSeeker')}
-                  </span>
+                  )}
                 </div>
               </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openAddAppointmentForJobSeeker(selectedJobSeekerId)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                >
+                  Add Appt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAddTaskForJobSeeker(selectedJobSeekerId)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                >
+                  Add Task
+                </button>
+                <div className="text-xs text-slate-500">
+                  {formatRecordId(selectedJobSeekerId, 'jobSeeker')}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedJobSeekerId(null)}
+                  className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                  aria-label="Close candidate preview"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-0">
+              <div className="px-5 py-3 border-b bg-white">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Candidate Internal Profile
+                </p>
+              </div>
+              <div className="p-5 bg-slate-50/60">
+                {loadingJobSeekerProfile ? (
+                  <div className="text-sm text-slate-500">Loading details...</div>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+                    <div className="px-4 py-3 text-xs font-semibold text-slate-700 border-b bg-slate-50">
+                      Details
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {[
+                        {
+                          label: 'Status',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['status', 'candidate status'],
+                            ['status']
+                          ),
+                        },
+                        {
+                          label: 'Company',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['company', 'current company', 'organization'],
+                            ['company', 'company_name', 'organization_name']
+                          ),
+                          raw: getFieldRawValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['company', 'current company', 'organization'],
+                            ['company', 'company_name', 'organization_name']
+                          ),
+                          lookupType: 'organization' as const,
+                        },
+                        {
+                          label: 'Company Status',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['company status', 'employment status'],
+                            ['company_status']
+                          ),
+                        },
+                        {
+                          label: 'Phone',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['phone', 'work phone'],
+                            ['phone']
+                          ),
+                        },
+                        {
+                          label: 'Mobile Phone',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['mobile phone', 'mobile', 'cell'],
+                            ['mobile_phone', 'phone']
+                          ),
+                        },
+                        {
+                          label: 'Direct Line',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['direct line', 'direct phone'],
+                            ['direct_line']
+                          ),
+                        },
+                        {
+                          label: 'LinkedIn URL',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['linkedin', 'linkedin url'],
+                            ['linkedin_url']
+                          ),
+                        },
+                        {
+                          label: 'Date Added',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['date added', 'created date', 'created at'],
+                            ['date_added', 'created_at'],
+                            true
+                          ),
+                        },
+                        {
+                          label: 'Owner',
+                          value: getFieldValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['owner', 'record owner', 'assigned recruiter'],
+                            ['owner_name']
+                          ),
+                          raw: getFieldRawValue(
+                            selectedJobSeekerProfile as Record<string, any>,
+                            ['owner', 'record owner', 'assigned recruiter'],
+                            ['owner', 'owner_id', 'owner_name']
+                          ),
+                          lookupType: 'owner' as const,
+                        },
+                      ].map((item) => (
+                        <div key={item.label} className="grid grid-cols-[170px_1fr] text-xs">
+                          <div className="px-4 py-2 text-slate-500 bg-slate-50 font-medium">{item.label}</div>
+                          <div className="px-4 py-2 text-slate-700">
+                            {renderDetailCellValue(item.raw, item.value || '-', item.lookupType)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end px-4 py-3 border-t bg-white">
               <button
                 type="button"
                 onClick={() => setSelectedJobSeekerId(null)}
-                className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
-                aria-label="Close candidate preview"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-slate-500 text-white text-sm font-medium hover:bg-slate-600"
               >
-                <FiX size={18} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <p className="text-sm text-slate-600">
-                Full candidate details are available in the Job Seeker record.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const id = selectedJobSeekerId;
-                  setSelectedJobSeekerId(null);
-                  router.push(`/dashboard/job-seekers/view?id=${id}`);
-                }}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
-              >
-                <FiEye size={16} />
-                Open Full Profile
+                <FiX size={16} />
+                Close
               </button>
             </div>
           </div>
@@ -906,12 +1430,26 @@ export default function CandidateFlowDashboard() {
       )}
       {selectedJobId != null && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-100">
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-slate-800">
-                  Job Preview
-                </span>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
+            <div className="flex items-center justify-between px-5 py-3 border-b bg-slate-50">
+              <div className="text-sm font-semibold text-slate-800 tracking-tight">
+                {selectedJobProfile?.title || 'Job'}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openAddAppointmentForJob(selectedJobId)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                >
+                  Add Appt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAddTaskForJob(selectedJobId)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                >
+                  Add Task
+                </button>
                 <span className="text-xs text-slate-500">
                   {formatRecordId(selectedJobId, 'job')}
                 </span>
@@ -925,10 +1463,113 @@ export default function CandidateFlowDashboard() {
                 <FiX size={18} />
               </button>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <p className="text-sm text-slate-600">
-                Full job details are available in the Job record.
-              </p>
+            <div className="flex-1 overflow-auto p-0">
+              <div className="px-5 py-3 border-b bg-white">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Job Internal Profile
+                </p>
+              </div>
+              <div className="p-5 bg-slate-50/60">
+                {loadingJobProfile ? (
+                  <div className="text-sm text-slate-500">Loading details...</div>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+                    <div className="px-4 py-3 text-xs font-semibold text-slate-700 border-b bg-slate-50">
+                      Details
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {[
+                        {
+                          label: 'Status',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['status', 'job status'],
+                            ['status']
+                          ),
+                        },
+                        {
+                          label: 'Company',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['company', 'client', 'organization'],
+                            ['company', 'company_name', 'organization_name']
+                          ),
+                          raw: getFieldRawValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['company', 'client', 'organization'],
+                            ['company', 'company_id', 'organization_id', 'company_name', 'organization_name']
+                          ),
+                          lookupType: 'organization' as const,
+                        },
+                        {
+                          label: 'Location',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['location', 'job location'],
+                            ['location']
+                          ),
+                        },
+                        {
+                          label: 'City',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['city'],
+                            ['city']
+                          ),
+                        },
+                        {
+                          label: 'State',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['state', 'province'],
+                            ['state']
+                          ),
+                        },
+                        {
+                          label: 'Job Type',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['job type', 'employment type', 'position type'],
+                            ['job_type', 'employment_type']
+                          ),
+                        },
+                        {
+                          label: 'Date Added',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['date added', 'created date', 'created at'],
+                            ['date_added', 'created_at'],
+                            true
+                          ),
+                        },
+                        {
+                          label: 'Owner',
+                          value: getFieldValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['owner', 'record owner', 'recruiter'],
+                            ['owner_name']
+                          ),
+                          raw: getFieldRawValue(
+                            selectedJobProfile as Record<string, any>,
+                            ['owner', 'record owner', 'recruiter'],
+                            ['owner', 'owner_id', 'owner_name']
+                          ),
+                          lookupType: 'owner' as const,
+                        },
+                      ].map((item) => (
+                        <div key={item.label} className="grid grid-cols-[170px_1fr] text-xs">
+                          <div className="px-4 py-2 text-slate-500 bg-slate-50 font-medium">{item.label}</div>
+                          <div className="px-4 py-2 text-slate-700">
+                            {renderDetailCellValue(item.raw, item.value || '-', item.lookupType)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end px-4 py-3 border-t bg-white">
               <button
                 type="button"
                 onClick={() => {
@@ -936,7 +1577,7 @@ export default function CandidateFlowDashboard() {
                   setSelectedJobId(null);
                   router.push(`/dashboard/jobs/view?id=${id}`);
                 }}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-teal-600 text-white text-sm font-medium hover:bg-teal-700"
               >
                 <FiEye size={16} />
                 Open Job Order

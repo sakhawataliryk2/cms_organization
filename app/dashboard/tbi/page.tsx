@@ -19,6 +19,8 @@ type OrganizationRecord = {
 
 type PlacementRecord = {
   id: number;
+  hiringManagerId?: number | string | null;
+  hiringManagerName?: string | null;
   jobSeekerId?: number;
   status?: string;
   startDate?: string | null;
@@ -63,6 +65,7 @@ import {
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
 import OrganizationDetailPanel from "./OrganizationDetailPanel";
+import HiringManagerDetailPanel from "./HiringManagerDetailPanel";
 
 type TimePeriodType = "week" | "customRange" | "all";
 
@@ -105,7 +108,7 @@ type TimesheetRow = {
 
 type GenericRow = {
   id: number;
-  [key: string]: string | number | undefined;
+  [key: string]: string | number | undefined | null;
 };
 
 type OnboardingSummary = {
@@ -170,11 +173,14 @@ function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
 function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
   return {
     id: p.id,
-    Name: p.jobSeekerName ?? "",
+    Name: p.hiringManagerName ?? "",
     Organization: p.organizationName ?? "",
-    Email: p.jobSeekerEmail ?? "",
+    Email: "",
     Status: p.status ?? "",
-    "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
+    "ID Number":
+      p.hiringManagerId != null ? String(p.hiringManagerId) : String(p.id),
+    __hiringManagerId:
+      p.hiringManagerId != null ? String(p.hiringManagerId) : String(p.id),
   };
 }
 
@@ -902,6 +908,9 @@ export default function TbiPage() {
   >(null);
   const [detailOrganization, setDetailOrganization] =
     useState<OrganizationRecord | null>(null);
+  const [detailHiringManagerId, setDetailHiringManagerId] = useState<
+    string | null
+  >(null);
 
   // TimeSheets layout state
   const [timePeriod, setTimePeriod] = useState<TimePeriodType>("week");
@@ -935,6 +944,27 @@ export default function TbiPage() {
   const [timesheetsColumnFilters, setTimesheetsColumnFilters] = useState<
     Record<string, ColumnFilterState>
   >({});
+  const [timesheetsActionsRowId, setTimesheetsActionsRowId] = useState<
+    number | null
+  >(null);
+
+  type TimesheetAuditEvent = {
+    id: number | string;
+    action: string;
+    performed_at: string;
+    performed_by_name?: string | null;
+    details?: unknown;
+  };
+
+  const [timesheetHistoryRow, setTimesheetHistoryRow] =
+    useState<TimesheetRow | null>(null);
+  const [timesheetHistoryEvents, setTimesheetHistoryEvents] = useState<
+    TimesheetAuditEvent[]
+  >([]);
+  const [timesheetHistoryLoading, setTimesheetHistoryLoading] = useState(false);
+  const [timesheetHistoryError, setTimesheetHistoryError] = useState<
+    string | null
+  >(null);
 
   // Job Seeker onboarding summaries (Sent / Submitted / Approved counts)
   const [jobSeekerOnboardingSummary, setJobSeekerOnboardingSummary] = useState<
@@ -1207,6 +1237,38 @@ export default function TbiPage() {
     [timesheetsColumnIds],
   );
 
+  const openTimesheetHistory = useCallback((row: TimesheetRow) => {
+    setTimesheetHistoryRow(row);
+    setTimesheetHistoryEvents([]);
+    setTimesheetHistoryError(null);
+    setTimesheetHistoryLoading(true);
+
+    const id = row.id;
+
+    fetch(`/api/timesheets/${encodeURIComponent(String(id))}/history`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || "Failed to load history");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        const history = Array.isArray(data?.history) ? data.history : [];
+        setTimesheetHistoryEvents(history as TimesheetAuditEvent[]);
+        setTimesheetHistoryLoading(false);
+      })
+      .catch((err) => {
+        setTimesheetHistoryLoading(false);
+        setTimesheetHistoryEvents([]);
+        setTimesheetHistoryError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while loading history",
+        );
+      });
+  }, []);
+
   useEffect(() => {
     if (selectedRow !== "Organization") {
       setTbiOrganizations([]);
@@ -1277,6 +1339,18 @@ export default function TbiPage() {
               jobTitle: p.jobTitle ?? p.job_title ?? undefined,
               organizationName:
                 p.organizationName ?? p.organization_name ?? undefined,
+              hiringManagerId:
+                p.hiringManagerId ??
+                p.hiring_manager_id ??
+                p.contactId ??
+                p.contact_id ??
+                undefined,
+              hiringManagerName:
+                p.hiringManagerName ??
+                p.hiring_manager_name ??
+                p.contactName ??
+                p.contact_name ??
+                undefined,
             })),
           );
         } else {
@@ -1895,6 +1969,81 @@ export default function TbiPage() {
                               className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
                               aria-label={`Select row ${rowIndex + 1}`}
                             />
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTimesheetsActionsRowId((current) =>
+                                    current === row.id ? null : row.id,
+                                  );
+                                }}
+                                className="px-1.5 py-0.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700"
+                                title="Timesheet actions"
+                              >
+                                Actions
+                              </button>
+                              {timesheetsActionsRowId === row.id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-10"
+                                    aria-hidden
+                                    onClick={() =>
+                                      setTimesheetsActionsRowId(null)
+                                    }
+                                  />
+                                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded shadow-lg text-xs z-20">
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      Create
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-red-600"
+                                    >
+                                      Delete
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      Submit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      Create Supplemental
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTimesheetsActionsRowId(null);
+                                        openTimesheetHistory(row);
+                                      }}
+                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                    >
+                                      View History
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                             <span
                               className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300"
                               aria-hidden
@@ -2081,6 +2230,26 @@ export default function TbiPage() {
                             >
                               <TbBinoculars size={20} />
                             </button>
+                          ) : selectedRow === "Hiring Manager" && placementRow ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const hmId = placementRow.__hiringManagerId;
+                                if (
+                                  hmId !== undefined &&
+                                  hmId !== null &&
+                                  String(hmId).trim() !== ""
+                                ) {
+                                  setDetailHiringManagerId(String(hmId));
+                                }
+                              }}
+                              className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
+                              title="View details"
+                              aria-label="View hiring manager details"
+                            >
+                              <TbBinoculars size={20} />
+                            </button>
                           ) : (
                             <span
                               className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300"
@@ -2145,6 +2314,120 @@ export default function TbiPage() {
           onSave={() => {}}
           onDelete={() => {}}
         />
+      )}
+      {detailHiringManagerId && (
+        <HiringManagerDetailPanel
+          hiringManagerId={detailHiringManagerId}
+          onClose={() => setDetailHiringManagerId(null)}
+          onSave={() => {}}
+          onDelete={() => {}}
+        />
+      )}
+
+      {timesheetHistoryRow && (
+        <div
+          className="fixed inset-0 z-200 flex items-center justify-center bg-black/50"
+          onClick={() => {
+            setTimesheetHistoryRow(null);
+            setTimesheetHistoryEvents([]);
+            setTimesheetHistoryError(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-sm shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Timesheet History – Placement{" "}
+                {timesheetHistoryRow["Placement Number"] ??
+                  timesheetHistoryRow.id}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimesheetHistoryRow(null);
+                  setTimesheetHistoryEvents([]);
+                  setTimesheetHistoryError(null);
+                }}
+                className="p-1 rounded hover:bg-gray-200 text-gray-600"
+                aria-label="Close"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-3 text-sm">
+              <div className="text-gray-600">
+                Week Ending:{" "}
+                <span className="font-medium">
+                  {timesheetHistoryRow["End Date"] || "Not set"}
+                </span>
+              </div>
+              {timesheetHistoryLoading && (
+                <div className="text-gray-500 text-center py-6">
+                  Loading history...
+                </div>
+              )}
+              {timesheetHistoryError && !timesheetHistoryLoading && (
+                <div className="text-red-600 text-center py-4">
+                  {timesheetHistoryError}
+                </div>
+              )}
+              {!timesheetHistoryLoading &&
+                !timesheetHistoryError &&
+                timesheetHistoryEvents.length === 0 && (
+                  <div className="text-gray-500 text-center py-6">
+                    No history records found for this time card.
+                  </div>
+                )}
+              {!timesheetHistoryLoading &&
+                !timesheetHistoryError &&
+                timesheetHistoryEvents.length > 0 && (
+                  <div className="space-y-3">
+                    {timesheetHistoryEvents.map((event) => {
+                      let detailsText: string | null = null;
+                      if (
+                        event.details &&
+                        typeof event.details === "object" &&
+                        "summary" in (event.details as Record<string, unknown>)
+                      ) {
+                        detailsText = String(
+                          (event.details as Record<string, unknown>).summary,
+                        );
+                      }
+                      return (
+                        <div
+                          key={event.id}
+                          className="border rounded px-3 py-2 bg-gray-50"
+                        >
+                          <div className="flex justify-between items-start mb-1.5">
+                            <span className="font-medium text-blue-700">
+                              {event.action}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {event.performed_at
+                                ? new Date(
+                                    event.performed_at,
+                                  ).toLocaleString()
+                                : "Unknown date"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 mb-1">
+                            By: {event.performed_by_name || "Unknown"}
+                          </div>
+                          {detailsText && (
+                            <div className="text-xs text-gray-700">
+                              {detailsText}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Columns modal – select which columns to show; layout saved to localStorage */}
