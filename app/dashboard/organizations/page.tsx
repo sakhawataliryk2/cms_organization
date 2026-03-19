@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -1359,12 +1360,21 @@ export default function OrganizationList() {
 
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAndSortedOrganizations.length > 0 ? (
-                  filteredAndSortedOrganizations.map((org) => (
-                    <tr
-                      key={org.id}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => handleViewOrganization(org.id)}
-                    >
+                  filteredAndSortedOrganizations.map((org) => {
+                    const orgViewHref = `/dashboard/organizations/view?id=${org.id}`;
+                    return (
+                      <tr
+                        key={org.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest("a,button,input,[role='button']")) return;
+                          const rowLink = e.currentTarget.querySelector(
+                            "a[data-row-link='true']"
+                          ) as HTMLAnchorElement | null;
+                          rowLink?.click();
+                        }}
+                      >
                       {/* Fixed checkbox */}
                       <td
                         className="px-6 py-4 whitespace-nowrap"
@@ -1418,7 +1428,14 @@ export default function OrganizationList() {
                         if (key === "record_number") {
                           return (
                             <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
-                              O {getColumnValue(org, key)}
+                              <Link
+                                href={orgViewHref}
+                                data-row-link="true"
+                                className="text-black no-underline hover:no-underline focus:no-underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                O {getColumnValue(org, key)}
+                              </Link>
                             </td>
                           );
                         }
@@ -1448,8 +1465,9 @@ export default function OrganizationList() {
                           </td>
                         );
                       })}
-                    </tr>
-                  ))
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td
