@@ -18,12 +18,10 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const contentType = request.headers.get('content-type') || '';
-        const isMultipart = contentType.includes('multipart/form-data');
-        const body = isMultipart ? null : await request.json();
+        const body = await request.json();
 
-        // Validate required fields (for multipart, check form values later)
-        if (!isMultipart && (!body.date || !body.time || !body.type)) {
+        // Validate required fields
+        if (!body.date || !body.time || !body.type) {
             return NextResponse.json(
                 { success: false, message: 'Date, time, and type are required' },
                 { status: 400 }
@@ -34,96 +32,81 @@ export async function POST(request: NextRequest) {
         
         // Prepare appointment data for backend
         // Support both new format (participant_type/participant_id) and legacy format (job_seeker_id, etc.)
-        const appointmentData: any = isMultipart
-            ? {}
-            : {
-                  date: body.date,
-                  time: body.time,
-                  type: body.type,
-                  duration: body.duration || 30, // Default 30 minutes
-                  description: body.description || null,
-              };
+        const appointmentData: any = {
+            date: body.date,
+            time: body.time,
+            type: body.type,
+            duration: body.duration || 30, // Default 30 minutes
+            description: body.description || null,
+        };
 
-        if (!isMultipart) {
-            // New format: participant_type and participant_id
-            if (body.participant_type && body.participant_id) {
-                appointmentData.participant_type = body.participant_type;
-                appointmentData.participant_id = body.participant_id;
-            }
-            // Legacy format: support for backward compatibility
-            else if (body.job_seeker_id) {
-                appointmentData.job_seeker_id = body.job_seeker_id;
-            } else if (body.jobSeekerId) {
-                appointmentData.job_seeker_id = body.jobSeekerId;
-            } else if (body.hiring_manager_id) {
-                appointmentData.hiring_manager_id = body.hiring_manager_id;
-            } else if (body.hiringManagerId) {
-                appointmentData.hiring_manager_id = body.hiringManagerId;
-            } else if (body.organization_id) {
-                appointmentData.organization_id = body.organization_id;
-            } else if (body.organizationId) {
-                appointmentData.organization_id = body.organizationId;
-            }
+        // New format: participant_type and participant_id
+        if (body.participant_type && body.participant_id) {
+            appointmentData.participant_type = body.participant_type;
+            appointmentData.participant_id = body.participant_id;
+        }
+        // Legacy format: support for backward compatibility
+        else if (body.job_seeker_id) {
+            appointmentData.job_seeker_id = body.job_seeker_id;
+        } else if (body.jobSeekerId) {
+            appointmentData.job_seeker_id = body.jobSeekerId;
+        } else if (body.hiring_manager_id) {
+            appointmentData.hiring_manager_id = body.hiring_manager_id;
+        } else if (body.hiringManagerId) {
+            appointmentData.hiring_manager_id = body.hiringManagerId;
+        } else if (body.organization_id) {
+            appointmentData.organization_id = body.organization_id;
+        } else if (body.organizationId) {
+            appointmentData.organization_id = body.organizationId;
+        }
 
-            // Job ID (optional)
-            if (body.job_id) {
-                appointmentData.job_id = body.job_id;
-            } else if (body.jobId) {
-                appointmentData.job_id = body.jobId;
-            }
+        // Job ID (optional)
+        if (body.job_id) {
+            appointmentData.job_id = body.job_id;
+        } else if (body.jobId) {
+            appointmentData.job_id = body.jobId;
+        }
 
-            // Legacy fields for backward compatibility (if provided)
-            if (body.client) {
-                appointmentData.client = body.client;
-            }
-            if (body.job && typeof body.job === 'string') {
-                appointmentData.job = body.job;
-            }
-            if (body.location) {
-                appointmentData.location = body.location;
-            }
-            if (body.owner) {
-                appointmentData.owner = body.owner;
-            }
-            if (body.references && Array.isArray(body.references)) {
-                appointmentData.references = body.references;
-            }
-            if (body.attendees && Array.isArray(body.attendees)) {
-                appointmentData.attendees = body.attendees;
-            }
-            if (body.invitee_emails && Array.isArray(body.invitee_emails)) {
-                appointmentData.invitee_emails = body.invitee_emails;
-            }
-            if (body.sendInvites !== undefined) {
-                appointmentData.send_invites = body.sendInvites;
-            }
+        if (Array.isArray(body.documents)) {
+            appointmentData.documents = body.documents;
+        }
+
+        // Legacy fields for backward compatibility (if provided)
+        if (body.client) {
+            appointmentData.client = body.client;
+        }
+        if (body.job && typeof body.job === 'string') {
+            appointmentData.job = body.job;
+        }
+        if (body.location) {
+            appointmentData.location = body.location;
+        }
+        if (body.owner) {
+            appointmentData.owner = body.owner;
+        }
+        if (body.references && Array.isArray(body.references)) {
+            appointmentData.references = body.references;
+        }
+        if (body.attendees && Array.isArray(body.attendees)) {
+            appointmentData.attendees = body.attendees;
+        }
+        if (body.invitee_emails && Array.isArray(body.invitee_emails)) {
+            appointmentData.invitee_emails = body.invitee_emails;
+        }
+        if (body.sendInvites !== undefined) {
+            appointmentData.send_invites = body.sendInvites;
         }
 
         console.log('Creating appointment with data:', appointmentData);
 
-        // Create appointment in backend
-        let response: Response;
-        if (isMultipart) {
-            // Forward raw multipart body as-is (including boundary) to avoid form re-encoding issues.
-            const rawBody = await request.arrayBuffer();
-            response = await fetch(`${apiUrl}/api/planner/appointments`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': contentType,
-                },
-                body: rawBody,
-            });
-        } else {
-            response = await fetch(`${apiUrl}/api/planner/appointments`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify(appointmentData),
-            });
-        }
+        const response = await fetch(`${apiUrl}/api/planner/appointments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(appointmentData),
+        });
 
         const responseText = await response.text();
         let data;
