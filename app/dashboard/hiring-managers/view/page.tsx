@@ -10,7 +10,12 @@ import { FiUserCheck, FiSearch } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
+import {
+  sendCalendarInvite,
+  type CalendarEvent,
+  getCalendarTimeZone,
+  toLocalDateTimeString,
+} from "@/lib/googleCalendar";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import RequestActionModal from '@/components/RequestActionModal';
@@ -3484,16 +3489,17 @@ export default function HiringManagerView() {
 
           const endDate = new Date(appointmentDate);
           endDate.setMinutes(endDate.getMinutes() + appointmentForm.duration);
+          const timeZone = getCalendarTimeZone();
 
           const calendarEvent: CalendarEvent = {
             subject: `${appointmentForm.type} - ${hiringManager?.fullName || hiringManager?.name || 'Hiring Manager'}`,
             start: {
-              dateTime: appointmentDate.toISOString(),
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              dateTime: toLocalDateTimeString(appointmentDate),
+              timeZone,
             },
             end: {
-              dateTime: endDate.toISOString(),
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              dateTime: toLocalDateTimeString(endDate),
+              timeZone,
             },
             body: {
               contentType: 'Text',
@@ -3511,7 +3517,7 @@ export default function HiringManagerView() {
           const isAuthError = /not authenticated|sign in|401|please authenticate/i.test(msg);
           toast.warning(
             isAuthError
-              ? "Appointment created. To send calendar invites, connect Office 365 first (Dashboard → Planner → Connect Microsoft 365)."
+              ? "Appointment created. Calendar credentials are missing or invalid on server."
               : `Appointment created, but calendar invites failed: ${msg}. Please send manually.`
           );
         }

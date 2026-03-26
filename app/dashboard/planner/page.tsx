@@ -20,10 +20,11 @@ import {
 } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
-  isOffice365Authenticated,
   sendCalendarInvite,
   type CalendarEvent,
-} from "@/lib/office365";
+  getCalendarTimeZone,
+  toLocalDateTimeString,
+} from "@/lib/googleCalendar";
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import {
   isPinnedRecord,
@@ -530,6 +531,9 @@ const Planners = () => {
   const [isRecordPinned, setIsRecordPinned] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+  const [isRefreshingAppointments, setIsRefreshingAppointments] =
+    useState(false);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [appointmentForm, setAppointmentForm] = useState({
     date: "",
@@ -717,6 +721,15 @@ const Planners = () => {
     window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
     return () =>
       window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, []);
+
+  // Clear refresh timeout on unmount to avoid state updates after navigation
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Fetch lookup data for participants
@@ -1546,8 +1559,8 @@ const Planners = () => {
         if (!Number.isNaN(d.getTime())) setSelectedDate(d);
       }
 
-      // If user chose to send calendar invites and Office 365 is authenticated, send invite to all invitees + primary participant
-      if (appointmentForm.sendInvites && isOffice365Authenticated()) {
+      // Send Google Calendar invites to all invitees + primary participant
+      if (appointmentForm.sendInvites) {
         const apiUrl = (
           process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"
         ).replace(/\/$/, "");
@@ -1627,15 +1640,16 @@ const Planners = () => {
               `${appointmentForm.date}T${appointmentForm.time}`,
             );
             const end = new Date(start.getTime() + duration * 60 * 1000);
+            const timeZone = getCalendarTimeZone();
             const event: CalendarEvent = {
               subject: appointmentForm.type || "Appointment",
               start: {
-                dateTime: start.toISOString(),
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                dateTime: toLocalDateTimeString(start),
+                timeZone,
               },
               end: {
-                dateTime: end.toISOString(),
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                dateTime: toLocalDateTimeString(end),
+                timeZone,
               },
               body: appointmentForm.description
                 ? { contentType: "text", content: appointmentForm.description }
@@ -2555,8 +2569,22 @@ const Planners = () => {
                   <BsFillPinAngleFill size={20} />
                 </button>
                 <button
-                  onClick={() => fetchAppointments()}
-                  className="p-2 text-gray-600 hover:text-gray-800"
+                  onClick={() => {
+                    if (isRefreshingAppointments) return;
+                    if (refreshTimeoutRef.current) {
+                      clearTimeout(refreshTimeoutRef.current);
+                    }
+                    setIsRefreshingAppointments(true);
+                    refreshTimeoutRef.current = setTimeout(async () => {
+                      try {
+                        await fetchAppointments();
+                      } finally {
+                        setIsRefreshingAppointments(false);
+                      }
+                    }, 1000);
+                  }}
+                  disabled={isRefreshingAppointments}
+                  className="p-2 text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                   title="Refresh"
                 >
                   <FiRefreshCw size={20} />

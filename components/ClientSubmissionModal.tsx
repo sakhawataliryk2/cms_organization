@@ -459,23 +459,8 @@ export default function ClientSubmissionModal({
     }
     setIsCheckingExistingSubmission(true);
     try {
-      // Check generic applications (job_seeker_applications)
-      const appsRes = await fetch(
-        `/api/job-seekers/${candidateId}/applications`,
-      );
-      const appsData = await appsRes.json().catch(() => ({}));
-      const applications: any[] =
-        appsData.applications || appsData.data || appsData.items || [];
-      const alreadyAppliedViaApplication = Array.isArray(applications)
-        ? applications.some(
-            (app: any) =>
-              app &&
-              app.job_id != null &&
-              String(app.job_id) === String(jobIdValue),
-          )
-        : false;
-
-      // Check dedicated client submissions table as well
+      // Only block duplicates when a CLIENT submission already exists.
+      // Normal submissions/applications should not disable this flow.
       const csRes = await fetch(
         `/api/job-seekers/${candidateId}/client-submissions`,
       );
@@ -491,9 +476,7 @@ export default function ClientSubmissionModal({
           )
         : false;
 
-      setHasExistingSubmissionForJob(
-        alreadyAppliedViaApplication || alreadyAppliedViaClientSubmission,
-      );
+      setHasExistingSubmissionForJob(alreadyAppliedViaClientSubmission);
     } catch (error) {
       console.error(
         "Error checking existing submissions for candidate/job",

@@ -89,48 +89,74 @@ export default function DataUploader() {
         }
     }, [recordType, currentStep]);
 
-    const getStandardFields = (entityType: string): CustomFieldDefinition[] => {
-        const standardFieldsMap: Record<string, CustomFieldDefinition[]> = {
-            'job-seekers': [
-                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
-                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
-                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
-                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 5 },
-            ],
-            'organizations': [
-                { id: 'std_name', field_name: 'name', field_label: 'Company Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_contact_phone', field_name: 'contact_phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 2 },
-                { id: 'std_website', field_name: 'website', field_label: 'Website', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
-                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 4 },
-            ],
-            'leads': [
-                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
-                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
-                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
-                { id: 'std_title', field_name: 'title', field_label: 'Title', field_type: 'text', is_required: false, is_hidden: false, sort_order: 5 },
-                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 6 },
-            ],
-            'jobs': [
-                { id: 'std_title', field_name: 'title', field_label: 'Job Title', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_organization_id', field_name: 'organization_id', field_label: 'Organization ID', field_type: 'text', is_required: false, is_hidden: false, sort_order: 2 },
-                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
-            ],
-            'hiring-managers': [
-                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
-                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
-                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
-            ],
-            'placements': [
-                { id: 'std_job_seeker_id', field_name: 'job_seeker_id', field_label: 'Job Seeker ID', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
-                { id: 'std_job_id', field_name: 'job_id', field_label: 'Job ID', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
-                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
-            ],
+    const normalizeFieldText = (value: string): string =>
+        (value || '').toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
+
+    const runAutoMapping = (
+        headers: string[],
+        fields: CustomFieldDefinition[]
+    ): Record<string, string> => {
+        if (fields.length === 0 || headers.length === 0) return {};
+
+        const usedHeaders = new Set<string>();
+        const autoMappings: Record<string, string> = {};
+
+        const getFieldVariants = (field: CustomFieldDefinition): string[] => {
+            const label = field.field_label || '';
+            const name = field.field_name || '';
+            const normalizedLabel = normalizeFieldText(label);
+            const normalizedName = normalizeFieldText(name.replace(/_/g, ' '));
+            const nameUnderscore = name.toLowerCase().replace(/\s+/g, '_');
+            const labelNoSpaces = normalizedLabel.replace(/\s+/g, '');
+            const labelUnderscore = normalizedLabel.replace(/\s+/g, '_');
+
+            return [...new Set([normalizedLabel, normalizedName, nameUnderscore, labelNoSpaces, labelUnderscore].filter(Boolean))];
         };
 
-        return standardFieldsMap[entityType] || [];
+        fields.forEach((field) => {
+            const fieldName = field.field_name || '';
+            if (!fieldName) return;
+
+            const variants = getFieldVariants(field);
+            const match = headers.find((header) => {
+                if (usedHeaders.has(header)) return false;
+                const normalizedHeader = normalizeFieldText(header);
+                return variants.some((variant) => (
+                    variant === normalizedHeader ||
+                    normalizedHeader === variant.replace(/_/g, ' ')
+                ));
+            });
+
+            if (match) {
+                autoMappings[fieldName] = match;
+                usedHeaders.add(match);
+            }
+        });
+
+        return autoMappings;
+    };
+
+    const fetchVisibleCustomFields = async (entityType: string): Promise<CustomFieldDefinition[]> => {
+        const token = document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+        );
+        const response = await fetch(`/api/admin/field-management/${entityType}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Unable to fetch fields');
+        }
+
+        const data = await response.json();
+        const fields = data.customFields || data.fields || [];
+        const visibleFields = fields.filter((f: CustomFieldDefinition) => !f.is_hidden);
+        visibleFields.sort((a: CustomFieldDefinition, b: CustomFieldDefinition) =>
+            (a.sort_order || 0) - (b.sort_order || 0)
+        );
+        return visibleFields;
     };
 
     const fetchAvailableFields = async () => {
@@ -139,53 +165,23 @@ export default function DataUploader() {
 
         setIsLoadingFields(true);
         try {
-            const token = document.cookie.replace(
-                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                "$1"
-            );
-            const response = await fetch(`/api/admin/field-management/${entityType}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-
-            const standardFields = getStandardFields(entityType);
-            let customFields: CustomFieldDefinition[] = [];
-
-            if (response.ok) {
-                const data = await response.json();
-                const fields = data.customFields || data.fields || [];
-                // Filter out hidden fields
-                const visibleFields = fields.filter((f: CustomFieldDefinition) => !f.is_hidden);
-                // Sort by sort_order
-                visibleFields.sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
-                    (a.sort_order || 0) - (b.sort_order || 0)
-                );
-                customFields = visibleFields;
-            }
-
-            // Combine standard and custom fields, ensuring no duplicates
-            const allFields = [...standardFields];
-            const standardFieldNames = new Set(standardFields.map(f => f.field_name));
-            customFields.forEach(field => {
-                if (!standardFieldNames.has(field.field_name)) {
-                    allFields.push(field);
-                }
-            });
-
-            // Sort all fields by sort_order
-            allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-            setAvailableFields(allFields);
+            const customFields = await fetchVisibleCustomFields(entityType);
+            setAvailableFields(customFields);
         } catch (err) {
             console.error('Error fetching available fields:', err);
-            // Fallback to standard fields only
-            if (entityType) {
-                setAvailableFields(getStandardFields(entityType));
-            }
+            setAvailableFields([]);
         } finally {
             setIsLoadingFields(false);
         }
     };
+
+    useEffect(() => {
+        if (currentStep !== 3) return;
+        if (csvHeaders.length === 0 || availableFields.length === 0) return;
+        if (Object.keys(fieldMappings).length > 0) return;
+        const autoMappings = runAutoMapping(csvHeaders, availableFields);
+        setFieldMappings(autoMappings);
+    }, [currentStep, csvHeaders, availableFields, fieldMappings]);
 
     const parseCSV = (text: string): { headers: string[]; rows: CSVRow[] } => {
         const lines = text.split('\n').filter(line => line.trim());
@@ -244,26 +240,71 @@ export default function DataUploader() {
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
-            if (!file.name.endsWith('.csv')) {
-                toast.error('Please select a CSV file');
+            const lowerCaseName = file.name.toLowerCase();
+            const isCSV = lowerCaseName.endsWith('.csv');
+            const isExcel = lowerCaseName.endsWith('.xlsx') || lowerCaseName.endsWith('.xls');
+
+            if (!isCSV && !isExcel) {
+                toast.error('Please select a CSV or Excel file');
                 return;
             }
 
             setSelectedFile(file);
 
-            // Parse CSV
-            const text = await file.text();
-            const { headers, rows } = parseCSV(text);
+            let parsedHeaders: string[] = [];
+            let parsedRows: CSVRow[] = [];
 
-            if (headers.length === 0) {
-                toast.error('CSV file appears to be empty or invalid');
+            if (isCSV) {
+                const text = await file.text();
+                const { headers, rows } = parseCSV(text);
+                parsedHeaders = headers;
+                parsedRows = rows;
+            } else {
+                const XLSX = await import('xlsx');
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+
+                if (!firstSheetName) {
+                    toast.error('Excel file appears to be empty');
+                    return;
+                }
+
+                const worksheet = workbook.Sheets[firstSheetName];
+                const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
+                    header: 1,
+                    defval: '',
+                    raw: false,
+                });
+
+                if (!matrix.length) {
+                    toast.error('Excel file appears to be empty');
+                    return;
+                }
+
+                parsedHeaders = (matrix[0] || []).map((cell) => String(cell ?? '').trim()).filter(Boolean);
+                const dataRows = matrix.slice(1).filter((row) =>
+                    row.some((cell) => String(cell ?? '').trim() !== '')
+                );
+
+                parsedRows = dataRows.map((row) => {
+                    const csvRow: CSVRow = {};
+                    parsedHeaders.forEach((header, index) => {
+                        csvRow[header] = String(row[index] ?? '').trim();
+                    });
+                    return csvRow;
+                });
+            }
+
+            if (parsedHeaders.length === 0) {
+                toast.error('File appears to be empty or invalid');
                 return;
             }
 
-            setCsvHeaders(headers);
-            setCsvRows(rows);
-            setFieldMappings({});
+            setCsvHeaders(parsedHeaders);
+            setCsvRows(parsedRows);
             setValidationErrors([]);
+            setFieldMappings(runAutoMapping(parsedHeaders, availableFields));
         }
     };
 
@@ -487,51 +528,7 @@ export default function DataUploader() {
                 toast.error('Invalid record type');
                 return;
             }
-
-            const token = document.cookie.replace(
-                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                "$1"
-            );
-
-            let fields: CustomFieldDefinition[] = [];
-            try {
-                const response = await fetch(`/api/admin/field-management/${entityType}`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-
-                const standardFields = getStandardFields(entityType);
-                let customFields: CustomFieldDefinition[] = [];
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const fetchedFields = data.customFields || data.fields || [];
-                    // Filter out hidden fields for template
-                    const visibleFields = fetchedFields.filter((f: CustomFieldDefinition) => !f.is_hidden);
-                    visibleFields.sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
-                        (a.sort_order || 0) - (b.sort_order || 0)
-                    );
-                    customFields = visibleFields;
-                }
-
-                // Combine standard and custom fields
-                const allFields = [...standardFields];
-                const standardFieldNames = new Set(standardFields.map(f => f.field_name));
-                customFields.forEach(field => {
-                    if (!standardFieldNames.has(field.field_name)) {
-                        allFields.push(field);
-                    }
-                });
-
-                // Sort all fields by sort_order
-                allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-                fields = allFields;
-            } catch (err) {
-                console.error('Error fetching fields for template:', err);
-                // Fallback to standard fields only
-                fields = getStandardFields(entityType);
-            }
+            const fields = await fetchVisibleCustomFields(entityType);
 
             if (fields.length === 0) {
                 toast.error('No fields available for this record type');
@@ -673,13 +670,13 @@ export default function DataUploader() {
                             <div>
                                 <h2 className="text-xl font-semibold mb-4">Step 2: Upload CSV File</h2>
                                 <p className="text-gray-600 mb-4">
-                                    Select the .csv file containing the data you would like to import.
+                                    Select a .csv, .xlsx, or .xls file containing the data you would like to import.
                                 </p>
                                 <div className="flex items-center space-x-2">
                                     <input
                                         ref={fileInputRef}
                                         type="file"
-                                        accept=".csv"
+                                        accept=".csv,.xlsx,.xls"
                                         onChange={handleFileChange}
                                         className="hidden"
                                     />
@@ -696,7 +693,7 @@ export default function DataUploader() {
                                 {csvHeaders.length > 0 && (
                                     <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
                                         <p className="text-green-800">
-                                            ✓ CSV file loaded successfully. Found {csvHeaders.length} columns and {csvRows.length} rows.
+                                            ✓ File loaded successfully. Found {csvHeaders.length} columns and {csvRows.length} rows.
                                         </p>
                                     </div>
                                 )}

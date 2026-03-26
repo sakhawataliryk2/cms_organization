@@ -31,11 +31,13 @@ export function AuthFetchInterceptor() {
           url.includes("/api/auth/login") ||
           url.includes("/api/auth/signup") ||
           url.includes("/api/auth/refresh");
-        // Office 365 401 = MS token missing/expired, not CMS session — don't log user out
+        // Office 365 / Google Calendar 401 = calendar auth/config issue, not CMS session
         const isOffice365Route = url.includes("/api/office365/");
+        const isGoogleCalendarRoute = url.includes("/api/google/calendar/");
         if (
           !isAuthRoute &&
           !isOffice365Route &&
+          !isGoogleCalendarRoute &&
           (url.includes("/api/") || url.startsWith("/api/"))
         ) {
           logout();

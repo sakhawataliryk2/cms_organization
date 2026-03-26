@@ -10,6 +10,8 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setCookie } from "cookies-next";
+import assets from "@/app/assets/assets";
+
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
@@ -270,7 +272,7 @@ export default function Login() {
           {/* Logo */}
           <div className="flex justify-center mb-16">
             <Image
-              src="https://completestaffingsolutions.com/wp-content/themes/completestaffing/images/logo.svg"
+              src={assets.logo}
               alt="Complete Staffing Solutions Logo"
               width={250}
               height={100}

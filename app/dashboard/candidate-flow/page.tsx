@@ -1288,9 +1288,9 @@ export default function CandidateFlowDashboard() {
                 >
                   Add Task
                 </button>
-                <div className="text-xs text-slate-500">
+                {/* <div className="text-xs text-slate-500">
                   {formatRecordId(selectedJobSeekerId, 'jobSeeker')}
-                </div>
+                </div> */}
                 <button
                   type="button"
                   onClick={() => setSelectedJobSeekerId(null)}
@@ -1450,9 +1450,9 @@ export default function CandidateFlowDashboard() {
                 >
                   Add Task
                 </button>
-                <span className="text-xs text-slate-500">
+                {/* <span className="text-xs text-slate-500">
                   {formatRecordId(selectedJobId, 'job')}
-                </span>
+                </span> */}
               </div>
               <button
                 type="button"

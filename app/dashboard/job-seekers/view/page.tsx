@@ -7,7 +7,13 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
-import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
+import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
+import {
+  sendCalendarInvite,
+  type CalendarEvent,
+  getCalendarTimeZone,
+  toLocalDateTimeString,
+} from "@/lib/googleCalendar";
 import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } from "react-icons/fi";
 import { HiOutlineUser } from "react-icons/hi";
 import { BsFillPinAngleFill } from "react-icons/bs";
@@ -3703,16 +3709,17 @@ Best regards`;
 
           const endDate = new Date(appointmentDate);
           endDate.setMinutes(endDate.getMinutes() + appointmentForm.duration);
+          const timeZone = getCalendarTimeZone();
 
           const calendarEvent: CalendarEvent = {
             subject: `${appointmentForm.type} - ${jobSeeker?.fullName || jobSeeker?.name || 'Job Seeker'}`,
             start: {
-              dateTime: appointmentDate.toISOString(),
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              dateTime: toLocalDateTimeString(appointmentDate),
+              timeZone,
             },
             end: {
-              dateTime: endDate.toISOString(),
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              dateTime: toLocalDateTimeString(endDate),
+              timeZone,
             },
             body: {
               contentType: 'Text',
@@ -3730,7 +3737,7 @@ Best regards`;
           const isAuthError = /not authenticated|sign in|401|please authenticate/i.test(msg);
           toast.warning(
             isAuthError
-              ? "Appointment created. To send calendar invites, connect Office 365 first (Dashboard → Planner → Connect Microsoft 365)."
+              ? "Appointment created. Calendar credentials are missing or invalid on server."
               : `Appointment created, but calendar invites failed: ${msg}. Please send manually.`
           );
         }

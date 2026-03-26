@@ -163,27 +163,63 @@ function resolvePlacementHiringManagerId(p: Record<string, unknown>): string | n
     cfRaw && typeof cfRaw === "object"
       ? (cfRaw as Record<string, unknown>)
       : null;
-  return (
+  const resolved =
     normalizePlacementRelatedId(
       p.hiringManagerId ??
         p.hiring_manager_id ??
         p.contactId ??
         p.contact_id ??
+        p.hiring_manager_contact_id ??
+        p.hiringManagerContactId ??
+        p.hiring_manager_contact ??
+        p.hiringManagerContact ??
         p.hiringManager ??
         p.hiring_manager ??
+        p["Hiring Manager"] ??
+        p["Hiring Manager ID"] ??
+        p["hiring manager id"] ??
         p.timecard_approver_id ??
-        p.billing_contact_id,
+        p.timecardApproverId ??
+        p.billing_contact_id ??
+        p.billingContactId,
     ) ??
     normalizePlacementRelatedId(
       cf?.["Hiring Manager ID"] ??
+        cf?.["Hiring Manager Id"] ??
+        cf?.["hiring manager id"] ??
         cf?.hiring_manager_id ??
         cf?.hiringManagerId ??
+        cf?.hiring_manager_contact_id ??
+        cf?.hiringManagerContactId ??
+        cf?.["Hiring Manager Contact ID"] ??
+        cf?.["Hiring Manager"] ??
         cf?.["Billing Contact ID"] ??
         cf?.billing_contact_id ??
+        cf?.billingContactId ??
         cf?.["Timecard Approver ID"] ??
-        cf?.timecard_approver_id,
-    )
-  );
+        cf?.timecard_approver_id ??
+        cf?.timecardApproverId,
+    );
+  // #region agent log
+  sendTbiDebugLog({
+    runId: "pre-fix",
+    hypothesisId: "H2",
+    location: "tbi/page.tsx:resolvePlacementHiringManagerId",
+    message: "Resolved placement hiring manager id",
+    data: {
+      placementId:
+        typeof p.id === "number" || typeof p.id === "string" ? p.id : null,
+      hasTopLevelHiringManagerId:
+        p.hiringManagerId != null || p.hiring_manager_id != null,
+      hasTopLevelContactId: p.contactId != null || p.contact_id != null,
+      hasTopLevelManagerObject:
+        typeof p.hiringManager === "object" || typeof p.hiring_manager === "object",
+      hasCustomFields: cf != null,
+      resolvedIdPresent: resolved != null && String(resolved).trim() !== "",
+    },
+  });
+  // #endregion
+  return resolved;
 }
 
 function resolvePlacementHiringManagerName(
@@ -377,7 +413,7 @@ const ROW_LABEL_WIDTH = 190;
 const HEADER_HEIGHT = 44;
 const CELL_WIDTH = 135;
 const ROW_HEIGHT = 40;
-const ACTIONS_CELL_WIDTH = 80;
+const ACTIONS_CELL_WIDTH = 170;
 
 const availableHeight =
   typeof window !== "undefined"
@@ -548,6 +584,30 @@ function ColumnResizeOverlay({
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
+
+function sendTbiDebugLog(payload: {
+  runId: string;
+  hypothesisId: string;
+  location: string;
+  message: string;
+  data: Record<string, unknown>;
+}) {
+  if (typeof window === "undefined") return;
+  // #region agent log
+  fetch("http://127.0.0.1:7938/ingest/83ffe1ad-183f-48c6-af95-6837532433e8", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "81d849",
+    },
+    body: JSON.stringify({
+      sessionId: "81d849",
+      ...payload,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+}
 
 function SortableHeaderCell({
   id,
@@ -1024,6 +1084,11 @@ export default function TbiPage() {
   const [timesheetsActionsRowId, setTimesheetsActionsRowId] = useState<
     number | null
   >(null);
+  const [timesheetsActionsMenuPosition, setTimesheetsActionsMenuPosition] =
+    useState<{
+      top: number;
+      left: number;
+    } | null>(null);
 
   type TimesheetAuditEvent = {
     id: number | string;
@@ -1400,8 +1465,8 @@ export default function TbiPage() {
         if (cancelled) return;
         setTimesheetsLoading(false);
         if (data?.placements && Array.isArray(data.placements)) {
-          setTimesheetsPlacements(
-            data.placements.map((p: Record<string, unknown>) => ({
+          const mappedPlacements: PlacementRecord[] = data.placements.map(
+            (p: Record<string, unknown>) => ({
               id: Number(p.id),
               jobSeekerId:
                 p.jobSeekerId != null ? Number(p.jobSeekerId) : undefined,
@@ -1419,8 +1484,30 @@ export default function TbiPage() {
               hiringManagerId: resolvePlacementHiringManagerId(p) ?? undefined,
               hiringManagerName:
                 resolvePlacementHiringManagerName(p) ?? undefined,
-            })),
+            }),
           );
+          setTimesheetsPlacements(mappedPlacements);
+          // #region agent log
+          sendTbiDebugLog({
+            runId: "pre-fix",
+            hypothesisId: "H1",
+            location: "tbi/page.tsx:placementsFetchMap",
+            message: "Placements mapped for TBI",
+            data: {
+              placementsCount: mappedPlacements.length,
+              withHiringManagerName: mappedPlacements.filter(
+                (m: PlacementRecord) =>
+                  m.hiringManagerName != null &&
+                  String(m.hiringManagerName).trim() !== "",
+              ).length,
+              withHiringManagerId: mappedPlacements.filter(
+                (m: PlacementRecord) =>
+                  m.hiringManagerId != null &&
+                  String(m.hiringManagerId).trim() !== "",
+              ).length,
+            },
+          });
+          // #endregion
         } else {
           setTimesheetsPlacements([]);
         }
@@ -1569,23 +1656,53 @@ export default function TbiPage() {
   // Use all column headers (including empty ones) - don't filter out empty columns
   // Empty columns will just show empty cells
   const placementSectionRows = useMemo<GenericRow[]>(() => {
+    let rows: GenericRow[] = [];
     switch (selectedRow) {
       case "Hiring Manager":
-        return approvedPlacements.map(placementToHiringManagerRow);
+        rows = approvedPlacements.map(placementToHiringManagerRow);
+        break;
       case "Job Seeker":
-        return approvedPlacements.map((p) =>
+        rows = approvedPlacements.map((p) =>
           placementToJobSeekerRow(p, jobSeekerOnboardingSummary),
         );
+        break;
       case "Placements":
-        return approvedPlacements.map(placementToPlacementsSectionRow);
+        rows = approvedPlacements.map(placementToPlacementsSectionRow);
+        break;
       case "Exports":
-        return approvedPlacements.map(placementToExportsRow);
+        rows = approvedPlacements.map(placementToExportsRow);
+        break;
       case "Invoices":
-        return approvedPlacements.map(placementToInvoicesRow);
+        rows = approvedPlacements.map(placementToInvoicesRow);
+        break;
       default:
-        return [];
+        rows = [];
+        break;
     }
-  }, [selectedRow, approvedPlacements]);
+    if (selectedRow === "Hiring Manager") {
+      // #region agent log
+      sendTbiDebugLog({
+        runId: "pre-fix",
+        hypothesisId: "H3",
+        location: "tbi/page.tsx:placementSectionRows",
+        message: "Hiring Manager rows shaped",
+        data: {
+          rowsCount: rows.length,
+          rowsWithName: rows.filter(
+            (r) => String(r.Name ?? "").trim().length > 0,
+          ).length,
+          rowsWithIdNumber: rows.filter(
+            (r) => String(r["ID Number"] ?? "").trim().length > 0,
+          ).length,
+          rowsWithInternalId: rows.filter(
+            (r) => String(r.__hiringManagerId ?? "").trim().length > 0,
+          ).length,
+        },
+      });
+      // #endregion
+    }
+    return rows;
+  }, [selectedRow, approvedPlacements, jobSeekerOnboardingSummary]);
 
   // Master checkbox handler – only operate on rows that actually have data
   const totalSelectableRows = useMemo(() => {
@@ -1669,6 +1786,20 @@ export default function TbiPage() {
     columnsToFill - timesheetsColumnOrder.length,
   );
   const selectionCount = selectedRows.size;
+
+  useEffect(() => {
+    // #region agent log
+    sendTbiDebugLog({
+      runId: "pre-fix",
+      hypothesisId: "H0",
+      location: "tbi/page.tsx:TbiPageMount",
+      message: "TBI page mounted with debug instrumentation active",
+      data: {
+        selectedRow: selectedRow ?? "",
+      },
+    });
+    // #endregion
+  }, [selectedRow]);
 
   return (
     <div
@@ -2042,9 +2173,19 @@ export default function TbiPage() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setTimesheetsActionsRowId((current) =>
-                                    current === row.id ? null : row.id,
-                                  );
+                                  const buttonRect =
+                                    e.currentTarget.getBoundingClientRect();
+                                  setTimesheetsActionsRowId((current) => {
+                                    if (current === row.id) {
+                                      setTimesheetsActionsMenuPosition(null);
+                                      return null;
+                                    }
+                                    setTimesheetsActionsMenuPosition({
+                                      top: buttonRect.bottom + 4,
+                                      left: Math.max(8, buttonRect.right - 160),
+                                    });
+                                    return row.id;
+                                  });
                                 }}
                                 className="px-1.5 py-0.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700"
                                 title="Timesheet actions"
@@ -2053,62 +2194,81 @@ export default function TbiPage() {
                               </button>
                               {timesheetsActionsRowId === row.id && (
                                 <>
-                                  <div
-                                    className="fixed inset-0 z-10"
-                                    aria-hidden
-                                    onClick={() =>
-                                      setTimesheetsActionsRowId(null)
-                                    }
-                                  />
-                                  <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded shadow-lg text-xs z-20">
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      Create
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      View
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-red-600"
-                                    >
-                                      Delete
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      Approve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      Submit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      Create Supplemental
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setTimesheetsActionsRowId(null);
-                                        openTimesheetHistory(row);
-                                      }}
-                                      className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                    >
-                                      View History
-                                    </button>
-                                  </div>
+                                  {timesheetsActionsMenuPosition &&
+                                    typeof document !== "undefined" &&
+                                    createPortal(
+                                      <>
+                                        <div
+                                          className="fixed inset-0 z-10"
+                                          aria-hidden
+                                          onClick={() => {
+                                            setTimesheetsActionsRowId(null);
+                                            setTimesheetsActionsMenuPosition(
+                                              null,
+                                            );
+                                          }}
+                                        />
+                                        <div
+                                          className="fixed w-40 bg-white border border-gray-200 rounded shadow-lg text-xs z-20"
+                                          style={{
+                                            top: timesheetsActionsMenuPosition.top,
+                                            left: timesheetsActionsMenuPosition.left,
+                                          }}
+                                        >
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            Create
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            View
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-red-600"
+                                          >
+                                            Delete
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            Submit
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            Create Supplemental
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setTimesheetsActionsRowId(null);
+                                              setTimesheetsActionsMenuPosition(
+                                                null,
+                                              );
+                                              openTimesheetHistory(row);
+                                            }}
+                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                          >
+                                            View History
+                                          </button>
+                                        </div>
+                                      </>,
+                                      document.body,
+                                    )}
                                 </>
                               )}
                             </div>
@@ -2254,6 +2414,31 @@ export default function TbiPage() {
                       ? displayPlacementRows[rowIndex]
                       : null;
                   const hasData = !!org || !!placementRow;
+                  const isHiringManagerActionDisabled =
+                    selectedRow === "Hiring Manager" &&
+                    !!placementRow &&
+                    (placementRow.__hiringManagerId == null ||
+                      String(placementRow.__hiringManagerId).trim() === "");
+                  if (
+                    rowIndex < 5 &&
+                    selectedRow === "Hiring Manager" &&
+                    placementRow
+                  ) {
+                    // #region agent log
+                    sendTbiDebugLog({
+                      runId: "pre-fix",
+                      hypothesisId: "H4",
+                      location: "tbi/page.tsx:renderHiringManagerActionCell",
+                      message: "Hiring manager action state evaluated",
+                      data: {
+                        rowIndex,
+                        idNumber: String(placementRow["ID Number"] ?? ""),
+                        internalId: String(placementRow.__hiringManagerId ?? ""),
+                        disabled: isHiringManagerActionDisabled,
+                      },
+                    });
+                    // #endregion
+                  }
 
                     return (
                       <div key={rowIndex} className="flex">
@@ -2304,6 +2489,22 @@ export default function TbiPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 const hmId = placementRow.__hiringManagerId;
+                                // #region agent log
+                                sendTbiDebugLog({
+                                  runId: "pre-fix",
+                                  hypothesisId: "H5",
+                                  location:
+                                    "tbi/page.tsx:hiringManagerButtonOnClick",
+                                  message: "Hiring manager action button clicked",
+                                  data: {
+                                    rowIndex,
+                                    idNumber: String(
+                                      placementRow["ID Number"] ?? "",
+                                    ),
+                                    internalId: String(hmId ?? ""),
+                                  },
+                                });
+                                // #endregion
                                 if (
                                   hmId !== undefined &&
                                   hmId !== null &&
@@ -2313,21 +2514,15 @@ export default function TbiPage() {
                                 }
                               }}
                               disabled={
-                                placementRow.__hiringManagerId == null ||
-                                String(placementRow.__hiringManagerId).trim() ===
-                                  ""
+                                isHiringManagerActionDisabled
                               }
                               className={`p-1.5 rounded transition-colors shrink-0 inline-flex items-center justify-center ${
-                                placementRow.__hiringManagerId == null ||
-                                String(placementRow.__hiringManagerId).trim() ===
-                                  ""
+                                isHiringManagerActionDisabled
                                   ? "text-gray-300 cursor-not-allowed"
                                   : "text-gray-600 hover:bg-teal-100 hover:text-teal-700"
                               }`}
                               title={
-                                placementRow.__hiringManagerId == null ||
-                                String(placementRow.__hiringManagerId).trim() ===
-                                  ""
+                                isHiringManagerActionDisabled
                                   ? "Hiring manager id not available"
                                   : "View details"
                               }
