@@ -3531,8 +3531,32 @@ const Planners = () => {
                 multiple
                 onChange={(e) => {
                   const files = Array.from(e.target.files || []);
-                  setAppointmentDocuments(files);
+                  const allowedMimeTypes = new Set([
+                    "application/pdf",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "image/jpeg",
+                    "image/png",
+                    "image/gif",
+                    "image/webp",
+                    "image/bmp",
+                  ]);
+                  const allowedExtensions = [".pdf", ".docx", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+                  const validFiles = files.filter((file) => {
+                    const lowerName = file.name.toLowerCase();
+                    const hasAllowedExtension = allowedExtensions.some((ext) =>
+                      lowerName.endsWith(ext),
+                    );
+                    return allowedMimeTypes.has(file.type) || hasAllowedExtension;
+                  });
+
+                  if (validFiles.length !== files.length) {
+                    toast.error(
+                      "Only PDF, DOCX, and image files are allowed. Excel, CSV, and other non-previewable files are not accepted.",
+                    );
+                  }
+                  setAppointmentDocuments(validFiles);
                 }}
+                accept=".pdf,.docx,image/*"
                 className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               />
               {appointmentDocuments.length > 0 && (
