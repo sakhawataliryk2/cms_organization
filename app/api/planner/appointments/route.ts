@@ -104,27 +104,15 @@ export async function POST(request: NextRequest) {
         // Create appointment in backend
         let response: Response;
         if (isMultipart) {
-            const incoming = await request.formData();
-            const out = new FormData();
-            for (const [key, value] of incoming.entries()) {
-                // Allow passing complex values as JSON strings for arrays/objects
-                out.append(key, value as any);
-            }
-            const date = String(out.get('date') || '');
-            const time = String(out.get('time') || '');
-            const type = String(out.get('type') || '');
-            if (!date || !time || !type) {
-                return NextResponse.json(
-                    { success: false, message: 'Date, time, and type are required' },
-                    { status: 400 }
-                );
-            }
+            // Forward raw multipart body as-is (including boundary) to avoid form re-encoding issues.
+            const rawBody = await request.arrayBuffer();
             response = await fetch(`${apiUrl}/api/planner/appointments`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
+                    'Content-Type': contentType,
                 },
-                body: out,
+                body: rawBody,
             });
         } else {
             response = await fetch(`${apiUrl}/api/planner/appointments`, {
