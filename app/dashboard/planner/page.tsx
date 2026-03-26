@@ -1503,47 +1503,71 @@ const Planners = () => {
       }
 
       const hasDocs = appointmentDocuments.length > 0;
-      const response = await fetch("/api/planner/appointments", {
-        method: "POST",
-        headers: hasDocs
-          ? {
-              Authorization: `Bearer ${token}`,
-            }
-          : {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-        body: hasDocs
-          ? (() => {
-              const fd = new FormData();
-              Object.entries(requestBody).forEach(([k, v]) => {
-                if (v === undefined || v === null) return;
-                if (Array.isArray(v) || typeof v === "object") {
-                  fd.append(k, JSON.stringify(v));
-                } else {
-                  fd.append(k, String(v));
-                }
+      let responseData: any;
+      let responseOk = false;
+
+      if (hasDocs) {
+        // Use XMLHttpRequest for multipart uploads (same upload approach as records summary docs tab)
+        const fd = new FormData();
+        Object.entries(requestBody).forEach(([k, v]) => {
+          if (v === undefined || v === null) return;
+          if (Array.isArray(v) || typeof v === "object") {
+            fd.append(k, JSON.stringify(v));
+          } else {
+            fd.append(k, String(v));
+          }
+        });
+        for (const f of appointmentDocuments) {
+          fd.append("documents", f);
+        }
+
+        const xhrResult = await new Promise<{ ok: boolean; text: string }>(
+          (resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/api/planner/appointments");
+            xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+            xhr.onload = () => {
+              resolve({
+                ok: xhr.status >= 200 && xhr.status < 300,
+                text: xhr.responseText || "",
               });
-              for (const f of appointmentDocuments) {
-                fd.append("documents", f);
-              }
-              return fd;
-            })()
-          : JSON.stringify(requestBody),
-      });
+            };
+            xhr.onerror = () => reject(new Error("Network error during upload"));
+            xhr.send(fd);
+          },
+        );
 
-      const responseText = await response.text();
-      let responseData;
+        responseOk = xhrResult.ok;
+        try {
+          responseData = xhrResult.text ? JSON.parse(xhrResult.text) : {};
+        } catch (parseError) {
+          console.error("Error parsing upload response:", parseError);
+          console.error("Upload response text:", xhrResult.text);
+          throw new Error("Invalid response from server");
+        }
+      } else {
+        const response = await fetch("/api/planner/appointments", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(requestBody),
+        });
 
-      try {
-        responseData = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Error parsing response:", parseError);
-        console.error("Response text:", responseText);
-        throw new Error("Invalid response from server");
+        responseOk = response.ok;
+        const responseText = await response.text();
+        try {
+          responseData = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          console.error("Response text:", responseText);
+          throw new Error("Invalid response from server");
+        }
       }
 
-      if (!response.ok) {
+      if (!responseOk) {
         throw new Error(
           responseData.message ||
             responseData.error ||
