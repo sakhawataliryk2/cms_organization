@@ -31,7 +31,7 @@ export default function PanelWithHeader({
                 <h2 className="font-semibold">{title}</h2>
                 <div className="flex space-x-1">
                     {title !== "Recent Notes" && (
-                         onEdit && (
+                        onEdit && (
                             <button
                                 onClick={onEdit}
                                 className="no-print text-gray-500 hover:text-gray-700"
