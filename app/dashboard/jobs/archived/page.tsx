@@ -946,10 +946,10 @@ export default function ArchivedJobsList() {
                           </td>
                         );
                       }
-                      const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                      const colInfo = getColumnInfo(key) as { key: string; label: string; name: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
                       const fieldInfo = colInfo
-                        ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
-                        : { key, label: getColumnLabel(key) };
+                        ? { key: colInfo.key, label: colInfo.label, name: colInfo.name, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                        : { key, label: getColumnLabel(key), name: key };
                       const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
                       return (
                         <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -961,6 +961,7 @@ export default function ArchivedJobsList() {
                             stopPropagation
                             forceRenderAsStatus={isArchiveReason}
                             statusVariant={isArchiveReason && String(getColumnValue(job, key) || "").toLowerCase() === "deletion" ? "deletion" : "blue"}
+                            entityType="job"
                           />
                         </td>
                       );

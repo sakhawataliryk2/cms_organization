@@ -1,0 +1,364 @@
+/**
+ * description editor & read-only content styles.
+ * Use class "description" on the element that wraps the HTML content
+ * (editor content or dangerouslySetInnerHTML container).
+ * Uses CSS custom properties from your theme (index.css) for consistency.
+ */
+
+/* Base wrapper */
+.description {
+  outline: none;
+}
+
+.description > :first-child {
+  margin-top: 0;
+}
+
+/* Placeholder (editor only) */
+.description p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  content: attr(data-placeholder);
+}
+
+/* Headings */
+.description h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+
+.description h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+
+.description h3 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  line-height: 1.25;
+}
+
+.description h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  line-height: 1.25;
+}
+
+.description h5 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  line-height: 1.25;
+}
+
+.description h6 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  line-height: 1.25;
+}
+
+/* Paragraph */
+.description p {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.625;
+}
+
+/* Lists */
+.description ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.description ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.description li {
+  line-height: 1.625;
+}
+
+.description li p {
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+}
+
+/* Blockquote */
+.description blockquote {
+  border-left: 4px solid var(--border);
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding-left: 1rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+/* Code */
+.description code {
+  background-color: var(--muted);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+  font-family: ui-monospace, monospace;
+}
+
+.description pre {
+  background-color: var(--muted);
+  border-radius: 0.5rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.description pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+/* Highlight.js (syntax highlighting in code blocks) */
+.description .hljs {
+  background: transparent;
+}
+
+/* Links */
+.description a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.description a:hover {
+  opacity: 0.8;
+}
+
+/* Horizontal rule */
+.description hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+/* Text marks */
+.description strong {
+  font-weight: 700;
+}
+
+.description em {
+  font-style: italic;
+}
+
+.description s {
+  text-decoration: line-through;
+}
+
+
+/* -------------------- Tables -------------------- */
+.description table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}
+
+.description th,
+.description td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.description th {
+  background-color: var(--muted);
+  font-weight: 700;
+}
+
+.description caption {
+  caption-side: bottom;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin-top: 0.5rem;
+}
+
+/* -------------------- Images & Media -------------------- */
+.description img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1rem auto;
+  border-radius: 0.5rem;
+}
+
+.description video,
+.description iframe {
+  max-width: 100%;
+  display: block;
+  margin: 1rem auto;
+}
+
+/* -------------------- Details / Summary -------------------- */
+.description details {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background-color: var(--background);
+}
+
+.description summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* -------------------- Definition Lists -------------------- */
+.description dl {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.description dt {
+  font-weight: 700;
+  margin-top: 1rem;
+}
+
+.description dd {
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+/* -------------------- Horizontal Alignment -------------------- */
+.description div[align="center"] {
+  text-align: center;
+}
+.description div[align="right"] {
+  text-align: right;
+}
+.description div[align="left"] {
+  text-align: left;
+}
+
+/* -------------------- Horizontal & Line Breaks -------------------- */
+.description hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+.description br {
+  line-height: 1.625;
+}
+
+/* -------------------- Block-level Elements -------------------- */
+.description address {
+  font-style: italic;
+  margin: 1rem 0;
+}
+
+.description figure {
+  margin: 1.5rem 0;
+}
+
+.description figcaption {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin-top: 0.25rem;
+}
+
+/* -------------------- Lists -------------------- */
+.description ul ul,
+.description ol ol,
+.description ul ol,
+.description ol ul {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* -------------------- Forms (readonly styling) -------------------- */
+.description input,
+.description textarea,
+.description select {
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--background);
+}
+
+/* -------------------- Abbreviations & Small -------------------- */
+.description abbr[title] {
+  border-bottom: 1px dotted var(--muted-foreground);
+  cursor: help;
+}
+
+.description small {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* -------------------- Figures & Media Objects -------------------- */
+.description audio {
+  display: block;
+  margin: 1rem auto;
+}
+
+.description picture {
+  display: block;
+  margin: 1rem auto;
+}
+
+/* -------------------- Mark & Highlight -------------------- */
+.description mark {
+  background-color: var(--primary)/20;
+  color: var(--primary);
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.2rem;
+}
+
+/* -------------------- Superscript & Subscript -------------------- */
+.description sup {
+  vertical-align: super;
+  font-size: 0.75em;
+}
+
+.description sub {
+  vertical-align: sub;
+  font-size: 0.75em;
+}
+
+/* -------------------- Horizontal & Vertical Spacing -------------------- */
+.description blockquote,
+.description pre,
+.description table,
+.description dl,
+.description details {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* -------------------- Accessibility -------------------- */
+.description a:focus,
+.description button:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

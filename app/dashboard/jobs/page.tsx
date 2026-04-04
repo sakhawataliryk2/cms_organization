@@ -592,7 +592,8 @@ export default function JobList() {
         const customKey = isBackendCol ? name : `custom:${label || name}:${name || `f${idx}`}`;
         return {
           key: customKey,
-          label: String(label || name),
+          label: String(label),
+          name: String(name),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -617,6 +618,7 @@ export default function JobList() {
       .filter((k) => !alreadyHaveCustom.has(k))
       .map((k) => ({
         key: `custom:${k}`,
+        name: k,
         label: humanize(k),
         sortable: false,
         filterType: "text" as const,
@@ -1729,11 +1731,12 @@ export default function JobList() {
                           ? {
                               key: colInfo.key,
                               label: colInfo.label,
+                              name: (colInfo as any).name,
                               fieldType: (colInfo as any).fieldType,
                               lookupType: (colInfo as any).lookupType,
                               multiSelectLookupType: (colInfo as any).multiSelectLookupType,
                             }
-                          : { key, label: getColumnLabel(key) };
+                          : { key, label: getColumnLabel(key), name: key };
                         return (
                           <td
                             key={key}
@@ -1746,6 +1749,7 @@ export default function JobList() {
                               clickable
                               stopPropagation
                               className=""
+                              entityType="job"
                             />
                           </td>
                         );

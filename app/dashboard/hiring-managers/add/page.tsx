@@ -86,7 +86,9 @@ export default function AddHiringManager() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("hiring-managers");
+  } = useCustomFields("hiring-managers", {
+    applyAutoCurrentDefaults: !hiringManagerId,
+  });
   const addressFields = useMemo(
     () => getAddressFields(customFields as any),
     [customFields]

@@ -461,7 +461,7 @@ export default function AddJob() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("jobs");
+  } = useCustomFields("jobs", { applyAutoCurrentDefaults: !jobId });
 
   const hiringManagerCustomField = useMemo(() => {
     return customFields.find((f) => {

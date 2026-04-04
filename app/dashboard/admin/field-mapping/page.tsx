@@ -41,6 +41,25 @@ import {
   FiFilter,
 } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
+import { entityFieldConfigs } from "@/lib/field-mapping-configs";
+import { validateFieldMappingDefaultValue } from "@/lib/field-mapping-default-value";
+import FieldMappingDefaultValueControl from "@/components/FieldMappingDefaultValueControl";
+import type { FieldMappingLookupType } from "@/lib/field-mapping-default-value";
+
+const LOOKUP_TYPES: FieldMappingLookupType[] = [
+  "organizations",
+  "hiring-managers",
+  "job-seekers",
+  "jobs",
+  "owner",
+];
+
+function coerceLookupType(raw: unknown): FieldMappingLookupType {
+  const s = String(raw ?? "").trim();
+  return LOOKUP_TYPES.includes(s as FieldMappingLookupType)
+    ? (s as FieldMappingLookupType)
+    : "organizations";
+}
 
 // Define Field interface for type safety
 interface CustomField {
@@ -209,17 +228,19 @@ const FieldMapping = () => {
     options: [] as string[],
     placeholder: "",
     defaultValue: "",
-    lookupType: "organizations" as
-      | "organizations"
-      | "hiring-managers"
-      | "job-seekers"
-      | "jobs",
+    lookupType: "organizations" as FieldMappingLookupType,
     subFieldIds: [] as string[],
     isDependent: false,
     dependentOnFieldId: "",
   });
-  const [editingSortOrder, setEditingSortOrder] = useState<string | null>(null);
-  const [tempSortOrder, setTempSortOrder] = useState<number>(0);
+  const fieldLocks = useMemo(() => {
+    if (!section || !editFormData.fieldName) return null;
+    const configs = entityFieldConfigs[section] || [];
+    return configs.find((c) => c.name === editFormData.fieldName) || null;
+  }, [section, editFormData.fieldName]);
+  const [defaultValueValidationError, setDefaultValueValidationError] = useState<
+    string | null
+  >(null);
   const [orderedFields, setOrderedFields] = useState<CustomField[]>([]);
   const [savedOrderSnapshot, setSavedOrderSnapshot] = useState<CustomField[]>([]);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
@@ -325,6 +346,7 @@ const FieldMapping = () => {
   };
 
   const handleFieldClick = (field: CustomField) => {
+    setDefaultValueValidationError(null);
     setSelectedField(field);
     const subIds = field.sub_field_ids;
     const depId = (field as any).dependent_on_field_id;
@@ -341,7 +363,7 @@ const FieldMapping = () => {
         : [],
       placeholder: (field.placeholder || "").trim(),
       defaultValue: (field.default_value || "").trim(),
-      lookupType: (field as any).lookup_type || "organizations",
+      lookupType: coerceLookupType((field as any).lookup_type),
       subFieldIds: Array.isArray(subIds) ? subIds.map(String) : [],
       isDependent: Boolean(depId),
       dependentOnFieldId: depId != null ? String(depId) : "",
@@ -356,6 +378,7 @@ const FieldMapping = () => {
   };
 
   const handleAddField = () => {
+    setDefaultValueValidationError(null);
     if (customFields.length >= MAX_FIELDS_PER_SECTION) {
       toast.error(`You can add up to ${MAX_FIELDS_PER_SECTION} fields per section.`);
       return;
@@ -419,6 +442,13 @@ const FieldMapping = () => {
               : value,
       };
 
+      if (name === "fieldType") {
+        newData.defaultValue = "";
+      }
+      if (name === "lookupType") {
+        newData.defaultValue = "";
+      }
+
       // Read-only: when checked, required is auto-disabled
       if (name === "isReadOnly" && checked === true) {
         newData.isRequired = false;
@@ -432,23 +462,22 @@ const FieldMapping = () => {
 
       return newData;
     });
+    if (name === "fieldType" || name === "lookupType") {
+      setDefaultValueValidationError(null);
+    }
   };
 
-  const handleOptionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value.replace(/\r\n/g, "\n");
-    const options = value
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    setEditFormData((prev) => ({
-      ...prev,
-      options,
-    }));
+  const handleDefaultValueChange = (next: string) => {
+    setDefaultValueValidationError(null);
+    setEditFormData((prev) => ({ ...prev, defaultValue: next }));
   };
 
   const handleOptionChange = (index: number, value: string) => {
     setEditFormData((prev) => {
       const next = [...prev.options];
+      if (index === 0 && next.length === 0) {
+        return { ...prev, options: [value] };
+      }
       if (index >= 0 && index < next.length) next[index] = value;
       return { ...prev, options: next };
     });
@@ -476,6 +505,24 @@ const FieldMapping = () => {
         );
       }
 
+      const trimmedOptionList = editFormData.options
+        .map((o: string) => o.trim())
+        .filter(Boolean);
+      const defaultCheck = validateFieldMappingDefaultValue({
+        fieldType: editFormData.fieldType,
+        value: editFormData.defaultValue,
+        options: trimmedOptionList,
+        lookupType: editFormData.lookupType,
+      });
+      if (!defaultCheck.ok) {
+        setDefaultValueValidationError(defaultCheck.message);
+        toast.error(defaultCheck.message);
+        return;
+      }
+      setDefaultValueValidationError(null);
+      const defaultValueForApi =
+        defaultCheck.normalized.trim() !== "" ? defaultCheck.normalized : null;
+
       if (selectedField) {
         // Update existing field - only send changed fields
         apiData = {
@@ -490,7 +537,7 @@ const FieldMapping = () => {
               ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
               : null,
           placeholder: editFormData.placeholder || null,
-          defaultValue: (editFormData.defaultValue || "").trim() || null,
+          defaultValue: defaultValueForApi,
           lookupType:
             editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
@@ -532,7 +579,7 @@ const FieldMapping = () => {
               ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
               : null,
           placeholder: editFormData.placeholder || null,
-          defaultValue: (editFormData.defaultValue || "").trim() || null,
+          defaultValue: defaultValueForApi,
           lookupType:
             editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
@@ -577,41 +624,6 @@ const FieldMapping = () => {
         err instanceof Error
           ? err.message
           : "An error occurred while saving the field"
-      );
-    }
-  };
-
-  const handleDeleteField = async (fieldId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this custom field? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `/api/admin/field-management/fields/${fieldId}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to delete field");
-      }
-
-      // Refresh the fields list
-      await fetchCustomFields();
-    } catch (err) {
-      console.error("Error deleting field:", err);
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting the field"
       );
     }
   };
@@ -735,69 +747,6 @@ const FieldMapping = () => {
     }
   };
 
-  // Handle inline sort order editing
-  const handleSortOrderClick = (field: CustomField) => {
-    setEditingSortOrder(field.id);
-    setTempSortOrder(field.sort_order);
-  };
-
-  const handleSortOrderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value) || 0;
-    setTempSortOrder(value);
-  };
-
-  const handleSortOrderSave = async (field: CustomField) => {
-    try {
-      const updateData = { sortOrder: tempSortOrder };
-      console.log("Updating sort order:", updateData);
-      console.log("Field ID:", field.id);
-
-      const response = await fetch(
-        `/api/admin/field-management/fields/${field.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updateData),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.message || "Failed to update sort order");
-      }
-
-      // Refresh the fields list
-      await fetchCustomFields();
-      setEditingSortOrder(null);
-    } catch (err) {
-      console.error("Error updating sort order:", err);
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "An error occurred while updating the sort order";
-      toast.error(`Failed to update sort order: ${errorMessage}`);
-    }
-  };
-
-  const handleSortOrderCancel = () => {
-    setEditingSortOrder(null);
-    setTempSortOrder(0);
-  };
-
-  const handleSortOrderKeyPress = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    field: CustomField
-  ) => {
-    if (e.key === "Enter") {
-      handleSortOrderSave(field);
-    } else if (e.key === "Escape") {
-      handleSortOrderCancel();
-    }
-  };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
@@ -917,7 +866,7 @@ const FieldMapping = () => {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-          <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+          <div className="bg-gray-200 p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold">Field Column Definitions</h2>
             <button onClick={onClose} className="p-1 rounded hover:bg-gray-200">
               <FiX size={20} />
@@ -974,7 +923,7 @@ const FieldMapping = () => {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-          <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+          <div className="bg-gray-200 p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold">
               History for "{selectedField.field_label}"
             </h2>
@@ -1236,10 +1185,15 @@ const FieldMapping = () => {
   const activeDragField =
     dragActiveId != null
       ? visibleFields.find((field) => String(field.id) === String(dragActiveId)) ||
-        orderedFields.find((field) => String(field.id) === String(dragActiveId))
+      orderedFields.find((field) => String(field.id) === String(dragActiveId))
       : null;
 
   const SortableTableRow = ({ field }: { field: CustomField }) => {
+    const locks = useMemo(() => {
+      if (!section) return null;
+      return entityFieldConfigs[section]?.find((c) => c.name === field.field_name) || null;
+    }, [field.field_name]);
+
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
       useSortable({
         id: String(field.id),
@@ -1286,13 +1240,6 @@ const FieldMapping = () => {
               <FiEdit2 size={14} />
             </button>
             <button
-              onClick={() => handleDeleteField(field.id)}
-              className="text-red-500 hover:text-red-700"
-              title="Delete"
-            >
-              <FiTrash2 size={14} />
-            </button>
-            <button
               onClick={() => handleShowHistory(field)}
               className="text-green-500 hover:text-green-700"
               title="View History"
@@ -1309,23 +1256,28 @@ const FieldMapping = () => {
         <td className="p-3 text-center">
           <button
             onClick={(e) => {
+              if (locks?.is_hidden_locked) return;
               e.preventDefault();
               e.stopPropagation();
               toggleFieldHidden(field);
             }}
-            disabled={field.is_required}
+            disabled={field.is_required} // Keep original disabled for business logic
             className={`h-4 w-4 rounded flex items-center justify-center ${field.is_required
               ? "bg-gray-200 cursor-not-allowed opacity-50"
-              : field.is_hidden
-                ? "bg-red-500 hover:bg-red-600 text-white"
-                : "bg-gray-300 hover:bg-gray-400"
+              : locks?.is_hidden_locked
+                ? "bg-gray-200 cursor-not-allowed"
+                : field.is_hidden
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-gray-200 hover:bg-gray-400"
               }`}
             title={
-              field.is_required
-                ? "Cannot hide a required field - Uncheck Required first"
-                : field.is_hidden
-                  ? "Hidden - Click to show"
-                  : "Visible - Click to hide"
+              locks?.is_hidden_locked
+                ? "Hidden status is locked"
+                : field.is_required
+                  ? "Cannot hide a required field - Uncheck Required first"
+                  : field.is_hidden
+                    ? "Hidden - Click to show"
+                    : "Visible - Click to hide"
             }
           >
             {field.is_hidden && !field.is_required && (
@@ -1336,23 +1288,28 @@ const FieldMapping = () => {
         <td className="p-3 text-center">
           <button
             onClick={(e) => {
+              if (locks?.is_required_locked) return;
               e.preventDefault();
               e.stopPropagation();
               toggleFieldRequired(field);
             }}
-            disabled={field.is_hidden}
+            disabled={field.is_hidden} // Keep original disabled for business logic
             className={`h-4 w-4 rounded flex items-center justify-center ${field.is_hidden
               ? "bg-gray-200 cursor-not-allowed opacity-50"
-              : field.is_required
-                ? "bg-blue-500 hover:bg-blue-600 text-white"
-                : "bg-gray-300 hover:bg-gray-400"
+              : locks?.is_required_locked
+                ? "bg-gray-200 cursor-not-allowed"
+                : field.is_required
+                  ? "bg-blue-500 hover:bg-blue-600 text-white"
+                  : "bg-gray-200 hover:bg-gray-400"
               }`}
             title={
-              field.is_hidden
-                ? "Cannot require a hidden field - Uncheck Hidden first"
-                : field.is_required
-                  ? "Required - Click to make optional"
-                  : "Optional - Click to make required"
+              locks?.is_required_locked
+                ? "Required status is locked"
+                : field.is_hidden
+                  ? "Cannot require a hidden field - Uncheck Hidden first"
+                  : field.is_required
+                    ? "Required - Click to make optional"
+                    : "Optional - Click to make required"
             }
           >
             {field.is_required && !field.is_hidden && (
@@ -1361,41 +1318,9 @@ const FieldMapping = () => {
           </button>
         </td>
         <td className="p-3">
-          {editingSortOrder === field.id ? (
-            <div className="flex items-center space-x-1">
-              <input
-                type="number"
-                value={tempSortOrder}
-                onChange={handleSortOrderChange}
-                onKeyDown={(e) => handleSortOrderKeyPress(e, field)}
-                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                min="0"
-                autoFocus
-              />
-              <button
-                onClick={() => handleSortOrderSave(field)}
-                className="text-green-600 hover:text-green-800 text-xs"
-                title="Save"
-              >
-                ✓
-              </button>
-              <button
-                onClick={handleSortOrderCancel}
-                className="text-red-600 hover:text-red-800 text-xs"
-                title="Cancel"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => handleSortOrderClick(field)}
-              className="text-sm hover:bg-gray-100 px-2 py-1 rounded transition-colors"
-              title="Click to edit sort order"
-            >
-              {field.sort_order}
-            </button>
-          )}
+          <span className="text-sm px-2 py-1">
+            {field.sort_order}
+          </span>
         </td>
         <td className="p-3 text-sm">{formatDate(field.updated_at)}</td>
         <td className="p-3 text-sm">
@@ -1467,7 +1392,7 @@ const FieldMapping = () => {
           <button
             onClick={handleDiscardFieldOrder}
             disabled={!hasUnsavedOrderChanges || isSavingOrder}
-            className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Discard unsaved order changes"
           >
             Discard Order
@@ -1482,7 +1407,9 @@ const FieldMapping = () => {
           </button>
           <button
             onClick={handleAddField}
-            className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={true}
+            className="flex items-center px-4 py-2 bg-gray-400 text-white rounded cursor-not-allowed opacity-70"
+            title="Adding new custom fields is currently disabled"
           >
             <FiPlus size={16} className="mr-1" />
             Add Custom Field
@@ -1522,99 +1449,99 @@ const FieldMapping = () => {
           >
             <div className="bg-white shadow overflow-x-auto relative">
               <table className="w-full">
-              <thead>
-                <tr className="bg-gray-100 text-left text-sm">
-                  <th className="p-3 font-normal w-16">Actions</th>
+                <thead>
+                  <tr className="bg-gray-100 text-left text-sm">
+                    <th className="p-3 font-normal w-16">Actions</th>
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field2}
-                    columnKey="field_name"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.field_name}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="text"
-                    filterPlaceholder="Filter name..."
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field2}
+                      columnKey="field_name"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.field_name}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="text"
+                      filterPlaceholder="Filter name..."
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field1}
-                    columnKey="field_label"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.field_label}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="text"
-                    filterPlaceholder="Filter label..."
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field1}
+                      columnKey="field_label"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.field_label}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="text"
+                      filterPlaceholder="Filter label..."
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field3}
-                    columnKey="field_type"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.field_type}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="text"
-                    filterPlaceholder="Filter type..."
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field3}
+                      columnKey="field_type"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.field_type}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="text"
+                      filterPlaceholder="Filter type..."
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field4}
-                    columnKey="is_hidden"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.is_hidden}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="boolean"
-                    filterPlaceholder="All"
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field4}
+                      columnKey="is_hidden"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.is_hidden}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="boolean"
+                      filterPlaceholder="All"
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field5}
-                    columnKey="is_required"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.is_required}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="boolean"
-                    filterPlaceholder="All"
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field5}
+                      columnKey="is_required"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.is_required}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="boolean"
+                      filterPlaceholder="All"
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field6}
-                    columnKey="sort_order"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.sort_order}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="number"
-                    filterPlaceholder="Filter order..."
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field6}
+                      columnKey="sort_order"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.sort_order}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="number"
+                      filterPlaceholder="Filter order..."
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field7}
-                    columnKey="updated_at"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.updated_at}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="text"
-                    filterPlaceholder="Filter date..."
-                  />
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field7}
+                      columnKey="updated_at"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.updated_at}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="text"
+                      filterPlaceholder="Filter date..."
+                    />
 
-                  <SortableFilterableHeader
-                    label={fieldColumnNames.field8}
-                    columnKey="updated_by"
-                    sortConfig={sortConfig}
-                    filterValue={columnFilters.updated_by}
-                    onSort={handleSort}
-                    onFilterChange={handleFilterChange}
-                    filterType="text"
-                    filterPlaceholder="Filter user..."
-                  />
-                </tr>
-              </thead>
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field8}
+                      columnKey="updated_by"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.updated_by}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="text"
+                      filterPlaceholder="Filter user..."
+                    />
+                  </tr>
+                </thead>
                 <SortableContext
                   items={visibleFieldIds}
                   strategy={verticalListSortingStrategy}
@@ -1645,7 +1572,7 @@ const FieldMapping = () => {
           </DndContext>
 
           {/* Footer Info */}
-          <div className="bg-gray-100 p-2 text-sm text-gray-600">
+          <div className="bg-gray-200 p-2 text-sm text-gray-600">
             Showing {visibleFields.length} of {sortedFields.length} entries (Total: {customFields.length})
           </div>
         </>
@@ -1657,7 +1584,7 @@ const FieldMapping = () => {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                {selectedField ? "Edit" : "Add"} Custom Field
+                Edit Custom Field
               </h2>
               <div className="space-x-2">
                 <button
@@ -1665,8 +1592,9 @@ const FieldMapping = () => {
                     setShowEditForm(false);
                     setShowAddForm(false);
                     setSelectedField(null);
+                    setDefaultValueValidationError(null);
                   }}
-                  className="px-4 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  className="px-4 py-1 bg-gray-200 border border-gray-300 text-gray-700 rounded hover:bg-gray-200"
                 >
                   Cancel
                 </button>
@@ -1688,9 +1616,9 @@ const FieldMapping = () => {
                     type="text"
                     name="fieldName"
                     value={editFormData.fieldName}
+                    // readOnly
                     onChange={handleEditFormChange}
-                    className={`w-full px-3 py-2 border rounded ${!selectedField ? "bg-gray-100 cursor-not-allowed" : ""
-                      }`}
+                    className={`w-full px-3 py-2 border rounded bg-gray-200 cursor-not-allowed bg-gray-150`}
                     placeholder="e.g., company_size"
                     pattern="^[a-zA-Z][a-zA-Z0-9_]*$"
                     title={
@@ -1700,7 +1628,7 @@ const FieldMapping = () => {
                     }
                     required
                     disabled={!selectedField} // Auto-generated for new fields, editable for existing fields
-                    readOnly={!selectedField} // Make it read-only for new fields
+                    readOnly // Make it read-only for new fields
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     {!selectedField
@@ -1718,9 +1646,10 @@ const FieldMapping = () => {
                     name="fieldLabel"
                     value={editFormData.fieldLabel}
                     onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border rounded"
+                    className={`w-full px-3 py-2 border rounded ${fieldLocks?.is_label_locked ? "bg-gray-200" : ""}`}
                     placeholder="e.g., Company Size"
                     required
+                    readOnly={!!fieldLocks?.is_label_locked}
                   />
                 </div>
 
@@ -1732,8 +1661,11 @@ const FieldMapping = () => {
                     name="fieldType"
                     value={editFormData.fieldType}
                     onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border rounded"
+                    className={`w-full px-3 py-2 border rounded ${fieldLocks?.is_field_type_locked ? "bg-gray-200" : ""}`}
                     required
+                    onMouseDown={(e) => fieldLocks?.is_field_type_locked && e.preventDefault()}
+                    onKeyDown={(e) => fieldLocks?.is_field_type_locked && e.preventDefault()}
+                    tabIndex={fieldLocks?.is_field_type_locked ? -1 : 0}
                   >
                     {editTypeOptions.map((option) => (
                       <option key={option} value={option}>
@@ -1755,19 +1687,6 @@ const FieldMapping = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sort Order:
-                  </label>
-                  <input
-                    type="number"
-                    name="sortOrder"
-                    value={editFormData.sortOrder}
-                    onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border rounded"
-                    min="0"
-                  />
-                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1778,8 +1697,9 @@ const FieldMapping = () => {
                     name="placeholder"
                     value={editFormData.placeholder}
                     onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border rounded"
+                    className={`w-full px-3 py-2 border rounded ${fieldLocks?.is_placeholder_locked ? "bg-gray-200" : ""}`}
                     placeholder="Placeholder text for the field"
+                    readOnly={!!fieldLocks?.is_placeholder_locked}
                   />
                 </div>
 
@@ -1787,68 +1707,15 @@ const FieldMapping = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Default Value:
                   </label>
-                  {(() => {
-                    const ft = editFormData.fieldType;
-                    const hasOptions =
-                      ft === "select" ||
-                      ft === "radio" ||
-                      ft === "multiselect" ||
-                      ft === "multicheckbox";
-                    const isBoolean = ft === "boolean";
-                    if (hasOptions && editFormData.options.length > 0) {
-                      return (
-                        <select
-                          name="defaultValue"
-                          value={editFormData.defaultValue}
-                          onChange={handleEditFormChange}
-                          className="w-full px-3 py-2 border rounded"
-                        >
-                          <option value="">— None —</option>
-                          {editFormData.options.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      );
-                    }
-                    if (isBoolean) {
-                      return (
-                        <select
-                          name="defaultValue"
-                          value={editFormData.defaultValue}
-                          onChange={handleEditFormChange}
-                          className="w-full px-3 py-2 border rounded"
-                        >
-                          <option value="">— None —</option>
-                          <option value="true">Yes</option>
-                          <option value="false">No</option>
-                        </select>
-                      );
-                    }
-                    if (ft === "lookup" || ft === "multiselect_lookup") {
-                      return (
-                        <input
-                          type="text"
-                          name="defaultValue"
-                          value={editFormData.defaultValue}
-                          onChange={handleEditFormChange}
-                          className="w-full px-3 py-2 border rounded"
-                          placeholder="Default record ID (optional)"
-                        />
-                      );
-                    }
-                    return (
-                      <input
-                        type="text"
-                        name="defaultValue"
-                        value={editFormData.defaultValue}
-                        onChange={handleEditFormChange}
-                        className="w-full px-3 py-2 border rounded"
-                        placeholder="Default value for the field"
-                      />
-                    );
-                  })()}
+                  <FieldMappingDefaultValueControl
+                    fieldType={editFormData.fieldType}
+                    options={editFormData.options}
+                    lookupType={editFormData.lookupType}
+                    value={editFormData.defaultValue}
+                    onChange={handleDefaultValueChange}
+                    locked={!!fieldLocks?.is_default_value_locked}
+                    validationError={defaultValueValidationError}
+                  />
                 </div>
 
                 {(editFormData.fieldType === "select" ||
@@ -1869,15 +1736,16 @@ const FieldMapping = () => {
                               type="text"
                               value={opt}
                               onChange={(e) => handleOptionChange(idx, e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className={`flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${fieldLocks?.is_options_locked ? "bg-gray-200" : ""}`}
                               placeholder={`Option ${idx + 1}`}
+                              readOnly={!!fieldLocks?.is_options_locked}
                             />
                             <button
                               type="button"
-                              onClick={() => handleRemoveOption(idx)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200"
+                              onClick={() => !fieldLocks?.is_options_locked && handleRemoveOption(idx)}
+                              className={`p-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 ${fieldLocks?.is_options_locked ? "bg-gray-200 opacity-50 cursor-not-allowed" : ""}`}
                               title="Remove option"
-                              disabled={editFormData.options.length <= 1}
+                              disabled={editFormData.options.length <= 1 || !!fieldLocks?.is_options_locked}
                             >
                               <FiTrash2 size={16} />
                             </button>
@@ -1885,8 +1753,9 @@ const FieldMapping = () => {
                         ))}
                         <button
                           type="button"
-                          onClick={handleAddOption}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700"
+                          onClick={() => !fieldLocks?.is_options_locked && handleAddOption()}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700 ${fieldLocks?.is_options_locked ? "bg-gray-200 opacity-50 cursor-not-allowed" : ""}`}
+                          disabled={!!fieldLocks?.is_options_locked}
                         >
                           <FiPlus size={16} />
                           Add option
@@ -2013,51 +1882,54 @@ const FieldMapping = () => {
                 )}
 
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                  <label className="flex items-center">
+                  <label className={`flex items-center ${fieldLocks?.is_required_locked ? "cursor-not-allowed opacity-50" : ""}`}>
                     <input
                       type="checkbox"
                       name="isRequired"
                       checked={editFormData.isRequired}
                       onChange={handleEditFormChange}
-                      disabled={editFormData.isHidden || editFormData.isReadOnly}
-                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden || editFormData.isReadOnly ? "opacity-50 cursor-not-allowed" : ""
+                      disabled={!!fieldLocks?.is_required_locked || editFormData.isHidden || editFormData.isReadOnly}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${fieldLocks?.is_required_locked ? "bg-gray-300 cursor-not-allowed" : ""} ${(editFormData.isHidden || editFormData.isReadOnly) ? "opacity-50 cursor-not-allowed" : ""
                         }`}
                     />
-                    <span className={`ml-2 text-sm ${editFormData.isHidden || editFormData.isReadOnly ? "text-gray-500" : ""}`}>
+                    <span className={`ml-2 text-sm ${(fieldLocks?.is_required_locked || editFormData.isHidden || editFormData.isReadOnly) ? "text-gray-500" : ""}`}>
                       Required
-                      {editFormData.isHidden && (
+                      {editFormData.isHidden && !fieldLocks?.is_required_locked && (
                         <span className="text-xs text-gray-400 block">(Cannot require hidden fields)</span>
                       )}
-                      {editFormData.isReadOnly && !editFormData.isHidden && (
+                      {editFormData.isReadOnly && !editFormData.isHidden && !fieldLocks?.is_required_locked && (
                         <span className="text-xs text-gray-400 block">(Disabled when Read-only)</span>
                       )}
                     </span>
                   </label>
 
-                  <label className="flex items-center">
+                  <label className={`flex items-center ${fieldLocks?.is_read_only_locked ? "cursor-not-allowed opacity-50" : ""}`}>
                     <input
                       type="checkbox"
                       name="isReadOnly"
                       checked={editFormData.isReadOnly}
                       onChange={handleEditFormChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      disabled={!!fieldLocks?.is_read_only_locked}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${fieldLocks?.is_read_only_locked ? "bg-gray-300 cursor-not-allowed" : ""}`}
                     />
-                    <span className="ml-2 text-sm">Read-only</span>
+                    <span className={`ml-2 text-sm ${fieldLocks?.is_read_only_locked ? "text-gray-500" : ""}`}>
+                      Read-only
+                    </span>
                   </label>
 
-                  <label className="flex items-center">
+                  <label className={`flex items-center ${fieldLocks?.is_hidden_locked ? "cursor-not-allowed opacity-50" : ""}`}>
                     <input
                       type="checkbox"
                       name="isHidden"
                       checked={editFormData.isHidden}
                       onChange={handleEditFormChange}
-                      disabled={editFormData.isRequired}
-                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isRequired ? "opacity-50 cursor-not-allowed" : ""
+                      disabled={!!fieldLocks?.is_hidden_locked || editFormData.isRequired}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${fieldLocks?.is_hidden_locked ? "bg-gray-300 cursor-not-allowed" : ""} ${editFormData.isRequired ? "opacity-50 cursor-not-allowed" : ""
                         }`}
                     />
-                    <span className={`ml-2 text-sm ${editFormData.isRequired ? "text-gray-500" : ""}`}>
+                    <span className={`ml-2 text-sm ${(fieldLocks?.is_hidden_locked || editFormData.isRequired) ? "text-gray-500" : ""}`}>
                       Hidden
-                      {editFormData.isRequired && (
+                      {editFormData.isRequired && !fieldLocks?.is_hidden_locked && (
                         <span className="text-xs text-gray-400 block">(Cannot hide required fields)</span>
                       )}
                     </span>

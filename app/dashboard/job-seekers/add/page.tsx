@@ -338,7 +338,9 @@ export default function AddJobSeeker() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("job-seekers");
+  } = useCustomFields("job-seekers", {
+    applyAutoCurrentDefaults: !jobSeekerId,
+  });
 
   const sortedCustomFields = useMemo(
     () =>
