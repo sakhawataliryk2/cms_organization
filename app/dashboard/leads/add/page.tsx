@@ -82,7 +82,7 @@ export default function AddLead() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("leads");
+  } = useCustomFields("leads", { applyAutoCurrentDefaults: !leadId });
 
   const [formData, setFormData] = useState({
     firstName: "",

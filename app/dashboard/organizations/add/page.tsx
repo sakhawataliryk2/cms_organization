@@ -83,7 +83,9 @@ export default function AddOrganization() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("organizations");
+  } = useCustomFields("organizations", {
+    applyAutoCurrentDefaults: !organizationId,
+  });
   const [isParsingOrganization, setIsParsingOrganization] = useState(false);
   const [parseOrganizationError, setParseOrganizationError] = useState<string | null>(null);
   const [parseOrganizationProgress, setParseOrganizationProgress] = useState<number>(0);

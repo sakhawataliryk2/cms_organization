@@ -150,7 +150,7 @@ export default function AddTask() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("tasks");
+  } = useCustomFields("tasks", { applyAutoCurrentDefaults: !taskId });
 
   // Initialize and load users
   useEffect(() => {

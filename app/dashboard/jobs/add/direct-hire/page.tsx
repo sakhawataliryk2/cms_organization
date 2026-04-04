@@ -392,7 +392,9 @@ export default function AddDirectHireJob() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("jobs-direct-hire");
+  } = useCustomFields("jobs-direct-hire", {
+    applyAutoCurrentDefaults: !jobId,
+  });
 
   const hiringManagerCustomField = useMemo(() => {
     return customFields.find((f) => {

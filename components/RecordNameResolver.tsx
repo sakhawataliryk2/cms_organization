@@ -37,6 +37,16 @@ type CacheEntry = {
 };
 
 /* ---------------------------------------------
+   Helpers
+--------------------------------------------- */
+
+// 🔥 ID validator (adjust based on your backend)
+function isValidRecordId(id: string) {
+  // Accept numeric OR Mongo-like IDs (6+ hex chars)
+  return /^[0-9a-fA-F]{6,}$/.test(id);
+}
+
+/* ---------------------------------------------
    Global Cache
 --------------------------------------------- */
 
@@ -215,10 +225,10 @@ export default function RecordNameResolver({
 
   const ids = id
     ? id
-      .toString()
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean)
+        .toString()
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean)
     : [];
 
   /* ---------- MULTIPLE IDS ---------- */
@@ -249,16 +259,24 @@ export default function RecordNameResolver({
 
   /* ---------- SINGLE ID ---------- */
   const singleId = ids[0];
-  const { name, isLoading, error } = useRecordName(singleId, type);
+  const isValidId = singleId ? isValidRecordId(singleId) : false;
+
+  const { name, isLoading, error } = useRecordName(
+    isValidId ? singleId : null,
+    type
+  );
 
   const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
-  const displayName =
-    name ?? (isLoading ? loadingText : error ? fallback : fallback);
 
-  // Owner type should never be clickable
+  // ✅ Final display logic
+  const displayName = !isValidId
+    ? singleId || fallback
+    : name ?? (isLoading ? loadingText : fallback);
+
   const isOwnerType = normalizedType === "owner";
-  const shouldBeClickable = clickable && !isOwnerType && viewPath && singleId;
+  const shouldBeClickable =
+    clickable && isValidId && !isOwnerType && viewPath && singleId;
 
   if (shouldBeClickable) {
     const href = `${viewPath}?id=${singleId}`;

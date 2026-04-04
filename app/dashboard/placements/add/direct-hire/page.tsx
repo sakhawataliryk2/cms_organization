@@ -56,7 +56,9 @@ export default function AddPlacement() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("placements-direct-hire");
+  } = useCustomFields("placements-direct-hire", {
+    applyAutoCurrentDefaults: !placementId,
+  });
 
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);

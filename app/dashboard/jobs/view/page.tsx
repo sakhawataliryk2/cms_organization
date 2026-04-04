@@ -1425,7 +1425,7 @@ export default function JobView() {
       const label = field?.field_label || field?.field_name || key;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
-      const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
+      const fieldInfo = { key, label, name: field?.field_name || field?.fieldName || key, fieldType: field?.field_type ?? field?.fieldType, lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
@@ -1435,8 +1435,9 @@ export default function JobView() {
               fieldInfo={fieldInfo}
               allFields={customFieldDefs as any}
               valuesRecord={customObj as any}
+              entityType="job"
             />
-              </div>
+          </div>
         </div>
       );
     };
@@ -1524,7 +1525,7 @@ export default function JobView() {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
           const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? "-";
-          const fieldInfo = { key, label: fieldLabel, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
+          const fieldInfo = { key, label: fieldLabel, name: field?.field_name || field?.fieldName || key, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
@@ -1534,6 +1535,7 @@ export default function JobView() {
                   fieldInfo={fieldInfo as any}
                   allFields={customFieldDefs as any}
                   valuesRecord={job.customFields as any}
+                  entityType="job"
                 />
               </div>
             </div>
@@ -1835,13 +1837,12 @@ export default function JobView() {
                         <h4 className="font-medium text-blue-600 hover:underline">{task.title}</h4>
                         {task.priority && (
                           <span
-                            className={`px-2 py-0.5 rounded text-xs ${
-                              task.priority === "High"
+                            className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
                                 ? "bg-red-100 text-red-800"
                                 : task.priority === "Medium"
                                   ? "bg-yellow-100 text-yellow-800"
                                   : "bg-gray-100 text-gray-800"
-                            }`}
+                              }`}
                           >
                             {task.priority}
                           </span>
@@ -2255,11 +2256,11 @@ export default function JobView() {
         const data = await jobsRes.value.json();
         const jobs = searchTerm
           ? (data.jobs || []).filter(
-              (job: any) =>
-                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                job.id?.toString().includes(searchTerm) ||
-                String(job.record_number ?? "").includes(searchTerm)
-            )
+            (job: any) =>
+              job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              job.id?.toString().includes(searchTerm) ||
+              String(job.record_number ?? "").includes(searchTerm)
+          )
           : (data.jobs || []);
 
         jobs.forEach((job: any) => {
@@ -2278,10 +2279,10 @@ export default function JobView() {
         const data = await orgsRes.value.json();
         const orgs = searchTerm
           ? (data.organizations || []).filter(
-              (org: any) =>
-                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                org.id?.toString().includes(searchTerm)
-            )
+            (org: any) =>
+              org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              org.id?.toString().includes(searchTerm)
+          )
           : (data.organizations || []);
 
         orgs.forEach((org: any) => {
@@ -2299,13 +2300,13 @@ export default function JobView() {
         const data = await jobSeekersRes.value.json();
         const seekers = searchTerm
           ? (data.jobSeekers || []).filter(
-              (seeker: any) =>
-                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.id?.toString().includes(searchTerm)
-            )
+            (seeker: any) =>
+              seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.id?.toString().includes(searchTerm)
+          )
           : (data.jobSeekers || []);
         seekers.forEach((seeker: any) => {
           const name =
@@ -2326,12 +2327,12 @@ export default function JobView() {
         const data = await leadsRes.value.json();
         const leads = searchTerm
           ? (data.leads || []).filter(
-              (lead: any) =>
-                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.id?.toString().includes(searchTerm)
-            )
+            (lead: any) =>
+              lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.id?.toString().includes(searchTerm)
+          )
           : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
@@ -2349,10 +2350,10 @@ export default function JobView() {
         const data = await tasksRes.value.json();
         const tasks = searchTerm
           ? (data.tasks || []).filter(
-              (task: any) =>
-                task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                task.id?.toString().includes(searchTerm)
-            )
+            (task: any) =>
+              task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              task.id?.toString().includes(searchTerm)
+          )
           : (data.tasks || []);
         tasks.forEach((task: any) => {
           suggestions.push({
@@ -2369,11 +2370,11 @@ export default function JobView() {
         const data = await placementsRes.value.json();
         const placements = searchTerm
           ? (data.placements || []).filter(
-              (placement: any) =>
-                placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                placement.id?.toString().includes(searchTerm)
-            )
+            (placement: any) =>
+              placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              placement.id?.toString().includes(searchTerm)
+          )
           : (data.placements || []);
         placements.forEach((placement: any) => {
           suggestions.push({
@@ -2650,6 +2651,7 @@ export default function JobView() {
         return {
           key: `custom:${String(k)}`,
           label: f.field_label || f.field_name || String(k),
+          name: f.field_name || f.field_key || String(k),
           fieldType: (f.field_type ?? f.fieldType ?? "") as string,
           lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
           multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
@@ -2683,7 +2685,7 @@ export default function JobView() {
 
   const getHeaderFieldInfo = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
-    return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+    return found as { key: string; label: string; name?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
   };
 
   const getHeaderFieldValue = (key: string) => {
@@ -2955,7 +2957,7 @@ export default function JobView() {
         customFields: customFieldsObj, // Use our properly parsed object
         archived_at: data.job.archived_at
       };
-      
+
       setJob(formattedJob);
 
       // Now fetch notes, history, documents, and tasks
@@ -3498,8 +3500,8 @@ export default function JobView() {
       const type = String(job?.jobType || "").toLowerCase().replace(/\s+/g, "-");
       const addPath =
         type === "direct-hire" ? "/dashboard/jobs/add/direct-hire" :
-        type === "executive-search" ? "/dashboard/jobs/add/executive-search" :
-        "/dashboard/jobs/add/contract";
+          type === "executive-search" ? "/dashboard/jobs/add/executive-search" :
+            "/dashboard/jobs/add/contract";
       router.push(`${addPath}?id=${jobId}`);
     }
   };
@@ -3509,8 +3511,8 @@ export default function JobView() {
     const type = String(job?.jobType || "").toLowerCase().replace(/\s+/g, "-");
     const addPath =
       type === "direct-hire" ? "/dashboard/jobs/add/direct-hire" :
-      type === "executive-search" ? "/dashboard/jobs/add/executive-search" :
-      "/dashboard/jobs/add/contract";
+        type === "executive-search" ? "/dashboard/jobs/add/executive-search" :
+          "/dashboard/jobs/add/contract";
     router.push(`${addPath}?cloneFrom=${jobId}`);
   };
 
@@ -3543,7 +3545,7 @@ export default function JobView() {
       setShowPublishModal(true);
       setPublishMessage(null);
       setPublishTargets({ linkedin: false, job_board: true });
-    } else if (action === "add-client-submission") {  
+    } else if (action === "add-client-submission") {
       setClientSubmissionCandidate(null);
       setShowClientSubmissionModal(true);
       fetchSubmittedCandidates();
@@ -3801,9 +3803,9 @@ export default function JobView() {
     const candidateJobId =
       candidate?.applicationId != null || candidate?.rawApplication
         ? candidate?.rawApplication?.job_id ??
-          candidate?.rawApplication?.jobId ??
-          candidate?.rawApplication?.job_id_id ??
-          null
+        candidate?.rawApplication?.jobId ??
+        candidate?.rawApplication?.job_id_id ??
+        null
         : null;
     const effectiveJobId = candidateJobId ?? jobId;
 
@@ -3880,9 +3882,8 @@ export default function JobView() {
         const jsName =
           candidate.name ||
           candidate.rawJobSeeker?.full_name ||
-          `${candidate.rawJobSeeker?.first_name || ""} ${
-            candidate.rawJobSeeker?.last_name || ""
-          }`.trim() ||
+          `${candidate.rawJobSeeker?.first_name || ""} ${candidate.rawJobSeeker?.last_name || ""
+            }`.trim() ||
           `Job Seeker #${candidate.id}`;
         const jsRecord = candidate.rawJobSeeker?.record_number ?? candidate.id;
         const jsDisplay = `${formatRecordId(
@@ -3900,9 +3901,8 @@ export default function JobView() {
       if (newStatus === "Client Rejected" && jobHiringManager?.id) {
         const hmName =
           jobHiringManager.fullName ||
-          `${jobHiringManager.firstName || ""} ${
-            jobHiringManager.lastName || ""
-          }`.trim() ||
+          `${jobHiringManager.firstName || ""} ${jobHiringManager.lastName || ""
+            }`.trim() ||
           `Hiring Manager #${jobHiringManager.id}`;
         const hmDisplay = `${formatRecordId(
           jobHiringManager.record_number ?? jobHiringManager.id,
@@ -3929,7 +3929,7 @@ export default function JobView() {
       updateApplicationStatus(candidate.id, applicationId, newStatus);
     }
   };
-  
+
   useEffect(() => {
     if (jobId) {
       fetchSubmittedCandidates();
@@ -4324,16 +4324,16 @@ export default function JobView() {
   const actionOptions = isArchived
     ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
     : [
-        { label: "Add Note", action: () => handleActionSelected("add-note") },
-        { label: "Add Task", action: () => handleActionSelected("add-task") },
-        { label: "Add Placement", action: () => handleActionSelected("add-placement") },
-        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-        { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
-        { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
-        { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
-        { label: "Clone", action: () => handleActionSelected("clone") },
-        { label: "Delete", action: () => handleActionSelected("delete") },
-      ];
+      { label: "Add Note", action: () => handleActionSelected("add-note") },
+      { label: "Add Task", action: () => handleActionSelected("add-task") },
+      { label: "Add Placement", action: () => handleActionSelected("add-placement") },
+      { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+      { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
+      { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
+      { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
+      { label: "Clone", action: () => handleActionSelected("clone") },
+      { label: "Delete", action: () => handleActionSelected("delete") },
+    ];
 
   // Tabs from the image
   const tabs = [
@@ -4573,9 +4573,8 @@ export default function JobView() {
                 switch (item.action) {
                   case "CREATE":
                     actionDisplay = "Job Created";
-                    detailsDisplay = `Created by ${
-                      item.performed_by_name || "Unknown"
-                    }`;
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
                     break;
                   case "UPDATE":
                     actionDisplay = "Job Updated";
@@ -4719,10 +4718,10 @@ export default function JobView() {
   const renderAppliedTab = () => {
     const filteredSubmittedCandidates = appliedStatusFilter
       ? submittedCandidates.filter((c: any) => {
-          const statusNorm = String(c?.status || "").trim().toLowerCase();
-          const filterNorm = appliedStatusFilter.trim().toLowerCase();
-          return statusNorm === filterNorm;
-        })
+        const statusNorm = String(c?.status || "").trim().toLowerCase();
+        const filterNorm = appliedStatusFilter.trim().toLowerCase();
+        return statusNorm === filterNorm;
+      })
       : submittedCandidates;
     const totalApplied = filteredSubmittedCandidates.length;
 
@@ -4743,11 +4742,11 @@ export default function JobView() {
               const submissionsLatest =
                 submittedCandidates.length > 0
                   ? submittedCandidates.reduce((latest, c: any) => {
-                      const ts = c.appliedAt
-                        ? new Date(c.appliedAt).getTime()
-                        : 0;
-                      return ts > latest ? ts : latest;
-                    }, 0)
+                    const ts = c.appliedAt
+                      ? new Date(c.appliedAt).getTime()
+                      : 0;
+                    return ts > latest ? ts : latest;
+                  }, 0)
                   : 0;
 
               const latest = submissionsLatest;
@@ -4780,9 +4779,9 @@ export default function JobView() {
                   : null;
                 const formattedDate = appliedDate
                   ? `${appliedDate.toLocaleDateString()} ${appliedDate.toLocaleTimeString(
-                      [],
-                      { hour: "2-digit", minute: "2-digit" }
-                    )}`
+                    [],
+                    { hour: "2-digit", minute: "2-digit" }
+                  )}`
                   : "—";
                 return (
                   <tr
@@ -5410,7 +5409,7 @@ export default function JobView() {
               </span>
             ) : (
               headerFields.map((fk) => {
-                const info = getHeaderFieldInfo(fk);
+                const info = getHeaderFieldInfo(fk) as { key: string; label: string; name?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
                 return (
                   <div key={fk} className="min-w-[140px]">
                     <div className="text-xs text-gray-500">
@@ -5418,9 +5417,10 @@ export default function JobView() {
                     </div>
                     <FieldValueRenderer
                       value={getHeaderFieldValue(fk)}
-                      fieldInfo={info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
+                      fieldInfo={info ? { key: info.key, label: info.label, name: info.name, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk), name: fk }}
                       emptyPlaceholder="-"
                       clickable
+                      entityType="job"
                     />
                   </div>
                 );
@@ -5527,28 +5527,27 @@ export default function JobView() {
                 ? submittedCandidates.length
                 : action.id === "client-submissions"
                   ? submittedCandidates.filter((c: any) => {
+                    const statusNorm = String(c?.status || "")
+                      .trim()
+                      .toLowerCase();
+                    return statusNorm === "client submission";
+                  }).length
+                  : action.id === "interviews"
+                    ? submittedCandidates.filter((c: any) => {
                       const statusNorm = String(c?.status || "")
                         .trim()
                         .toLowerCase();
-                      return statusNorm === "client submission";
+                      return statusNorm === "interview";
                     }).length
-                  : action.id === "interviews"
-                    ? submittedCandidates.filter((c: any) => {
-                        const statusNorm = String(c?.status || "")
-                          .trim()
-                          .toLowerCase();
-                        return statusNorm === "interview";
-                      }).length
                     : quickTabCounts[action.countKey] ?? 0;
 
             return (
               <button
                 key={action.id}
-                className={`${
-                  activeQuickTab === action.id
+                className={`${activeQuickTab === action.id
                     ? "bg-white text-blue-600 font-medium"
                     : "bg-white text-gray-700 hover:bg-gray-100"
-                } px-4 py-1 rounded-full shadow`}
+                  } px-4 py-1 rounded-full shadow`}
                 onClick={() => {
                   if (action.id === "applied") {
                     setActiveQuickTab("applied");
@@ -5776,137 +5775,137 @@ export default function JobView() {
               </button>
             </div>
             <div className="p-6">
-                <>
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">
-                      Available Fields from Modify Page:
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                      {isLoadingFields ? (
-                        <div className="text-center py-4 text-gray-500">
-                          Loading fields...
-                        </div>
-                      ) : availableFields.length > 0 ? (
-                        availableFields.map((field) => {
-                          const fieldKey =
-                            field.field_name || field.field_label || field.id;
-                          const isVisible =
-                            visibleFields[editingPanel]?.includes(fieldKey) ||
-                            false;
-                          return (
-                            <div
-                              key={field.id || fieldKey}
-                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isVisible}
-                                  onChange={() =>
-                                    toggleFieldVisibility(editingPanel, fieldKey)
-                                  }
-                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <label className="text-sm text-gray-700">
-                                  {field.field_label ||
-                                    field.field_name ||
-                                    fieldKey}
-                                </label>
-                              </div>
-                              <span className="text-xs text-gray-500">
-                                {field.field_type || "text"}
-                              </span>
+              <>
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">
+                    Available Fields from Modify Page:
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                    {isLoadingFields ? (
+                      <div className="text-center py-4 text-gray-500">
+                        Loading fields...
+                      </div>
+                    ) : availableFields.length > 0 ? (
+                      availableFields.map((field) => {
+                        const fieldKey =
+                          field.field_name || field.field_label || field.id;
+                        const isVisible =
+                          visibleFields[editingPanel]?.includes(fieldKey) ||
+                          false;
+                        return (
+                          <div
+                            key={field.id || fieldKey}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() =>
+                                  toggleFieldVisibility(editingPanel, fieldKey)
+                                }
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <label className="text-sm text-gray-700">
+                                {field.field_label ||
+                                  field.field_name ||
+                                  fieldKey}
+                              </label>
                             </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-center py-4 text-gray-500">
-                          <p>No custom fields available</p>
-                          <p className="text-xs mt-1">
-                            Fields from the modify page will appear here
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                            <span className="text-xs text-gray-500">
+                              {field.field_type || "text"}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center py-4 text-gray-500">
+                        <p>No custom fields available</p>
+                        <p className="text-xs mt-1">
+                          Fields from the modify page will appear here
+                        </p>
+                      </div>
+                    )}
                   </div>
+                </div>
 
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Standard Fields:</h3>
-                    <div className="space-y-2 border border-gray-200 rounded p-3">
-                      {(() => {
-                        const standardFieldsMap: Record<
-                          string,
-                          Array<{ key: string; label: string }>
-                        > = {
-                          details: [
-                            { key: "status", label: "Status" },
-                            { key: "priority", label: "Priority" },
-                            { key: "employmentType", label: "Employment Type" },
-                            { key: "startDate", label: "Start Date" },
-                            { key: "worksite", label: "Worksite Location" },
-                            { key: "dateAdded", label: "Date Added" },
-                            { key: "jobBoardStatus", label: "Job Board Status" },
-                            { key: "owner", label: "User Owner" },
-                          ],
-                          hiringManager: [
-                            { key: "status", label: "Status" },
-                            { key: "organization", label: "Organization" },
-                            { key: "department", label: "Department" },
-                            { key: "email", label: "Email" },
-                            { key: "email2", label: "Email 2" },
-                            { key: "mobilePhone", label: "Mobile Phone" },
-                            { key: "directLine", label: "Direct Line" },
-                            { key: "reportsTo", label: "Reports To" },
-                            { key: "linkedinUrl", label: "LinkedIn URL" },
-                            { key: "dateAdded", label: "Date Added" },
-                            { key: "owner", label: "Owner" },
-                            { key: "address", label: "Address" },
-                          ],
-                          recentNotes: [{ key: "notes", label: "Notes" }],
-                        };
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">Standard Fields:</h3>
+                  <div className="space-y-2 border border-gray-200 rounded p-3">
+                    {(() => {
+                      const standardFieldsMap: Record<
+                        string,
+                        Array<{ key: string; label: string }>
+                      > = {
+                        details: [
+                          { key: "status", label: "Status" },
+                          { key: "priority", label: "Priority" },
+                          { key: "employmentType", label: "Employment Type" },
+                          { key: "startDate", label: "Start Date" },
+                          { key: "worksite", label: "Worksite Location" },
+                          { key: "dateAdded", label: "Date Added" },
+                          { key: "jobBoardStatus", label: "Job Board Status" },
+                          { key: "owner", label: "User Owner" },
+                        ],
+                        hiringManager: [
+                          { key: "status", label: "Status" },
+                          { key: "organization", label: "Organization" },
+                          { key: "department", label: "Department" },
+                          { key: "email", label: "Email" },
+                          { key: "email2", label: "Email 2" },
+                          { key: "mobilePhone", label: "Mobile Phone" },
+                          { key: "directLine", label: "Direct Line" },
+                          { key: "reportsTo", label: "Reports To" },
+                          { key: "linkedinUrl", label: "LinkedIn URL" },
+                          { key: "dateAdded", label: "Date Added" },
+                          { key: "owner", label: "Owner" },
+                          { key: "address", label: "Address" },
+                        ],
+                        recentNotes: [{ key: "notes", label: "Notes" }],
+                      };
 
-                        const fields = standardFieldsMap[editingPanel] || [];
-                        return fields.map((field) => {
-                          const isVisible =
-                            visibleFields[editingPanel]?.includes(field.key) ||
-                            false;
-                          return (
-                            <div
-                              key={field.key}
-                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isVisible}
-                                  onChange={() =>
-                                    toggleFieldVisibility(editingPanel, field.key)
-                                  }
-                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <label className="text-sm text-gray-700">
-                                  {field.label}
-                                </label>
-                              </div>
-                              <span className="text-xs text-gray-500">
-                                standard
-                              </span>
+                      const fields = standardFieldsMap[editingPanel] || [];
+                      return fields.map((field) => {
+                        const isVisible =
+                          visibleFields[editingPanel]?.includes(field.key) ||
+                          false;
+                        return (
+                          <div
+                            key={field.key}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() =>
+                                  toggleFieldVisibility(editingPanel, field.key)
+                                }
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <label className="text-sm text-gray-700">
+                                {field.label}
+                              </label>
                             </div>
-                          );
-                        });
-                      })()}
-                    </div>
+                            <span className="text-xs text-gray-500">
+                              standard
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
+                </div>
 
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </>
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <button
+                    onClick={handleCloseEditModal}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
             </div>
           </div>
         </div>
@@ -6699,11 +6698,10 @@ export default function JobView() {
                     }))
                   }
                   placeholder="Please provide a detailed reason for deleting this job..."
-                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
-                    !deleteForm.reason.trim()
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
                       ? "border-red-300 focus:ring-red-500"
                       : "border-gray-300 focus:ring-blue-500"
-                  }`}
+                    }`}
                   rows={5}
                   required
                 />

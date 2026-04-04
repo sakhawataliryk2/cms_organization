@@ -2,6 +2,9 @@
 
 import React, { useState, useCallback } from "react";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import { FileText } from "lucide-react";
+import Tooltip from "@/components/Tooltip";
+import DescriptionModal from "@/components/DescriptionModal";
 
 /** Placeholder when value is empty or N/A */
 const DEFAULT_EMPTY = "—";
@@ -18,6 +21,7 @@ export interface FieldInfo {
   multiSelectLookupType?: string;
   label?: string;
   key?: string;
+  name?: string;
 }
 
 export interface FieldValueRendererProps {
@@ -42,6 +46,8 @@ export interface FieldValueRendererProps {
   showEmailDomain?: boolean;
   /** When true and value is empty, show placeholder in red with warning icon */
   required?: boolean;
+  /** Entity type for context-specific rendering (e.g. 'job') */
+  entityType?: string;
 }
 
 function formatToMMDDYYYY(value: string): string {
@@ -177,14 +183,58 @@ export default function FieldValueRenderer({
   enableCopy = true,
   showEmailDomain = false,
   required = false,
+  entityType,
 }: FieldValueRendererProps) {
   const [copied, setCopied] = useState(false);
+  const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false);
 
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
+  const fieldKey = (fieldInfo?.key || "").toLowerCase();
+  let fieldName = (fieldInfo?.name || "").toLowerCase();
+
+  // If fieldName is missing, try to extract it from the key (e.g., custom:Label:Name)
+  if (!fieldName && fieldKey.startsWith("custom:")) {
+    const parts = fieldKey.split(":");
+    if (parts.length >= 3) {
+      fieldName = parts[2].toLowerCase();
+    } else if (parts.length === 2) {
+      fieldName = parts[1].toLowerCase();
+    }
+  } else if (!fieldName) {
+    fieldName = fieldKey;
+  }
 
   const rawOriginal = value != null && value !== "" ? String(value).trim() : "";
   let raw = rawOriginal;
+
+  console.log("FieldInfo", fieldInfo)
+
+  // Handle Field_6 (Job Description) - ONLY for job entity
+  if (fieldName === "field_6" && entityType === "job") {
+    return (
+      <>
+        <Tooltip text="Click to view description">
+          <button
+            type="button"
+            onClick={(e) => {
+              if (stopPropagation) e.stopPropagation();
+              setIsDescriptionModalOpen(true);
+            }}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors text-blue-600"
+          >
+            <FileText className="w-5 h-5" />
+          </button>
+        </Tooltip>
+        <DescriptionModal
+          isOpen={isDescriptionModalOpen}
+          onClose={() => setIsDescriptionModalOpen(false)}
+          content={rawOriginal}
+          title={fieldInfo?.label || "Job Description"}
+        />
+      </>
+    );
+  }
 
   // Full Address fallback: if this is a Full Address field but its own value is empty/placeholder,
   // try to auto-combine Address, Address 2, City, State, Zip from the full values record.

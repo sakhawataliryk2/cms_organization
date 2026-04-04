@@ -389,7 +389,9 @@ export default function AddExecutiveSearchJob() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("jobs-executive-search");
+  } = useCustomFields("jobs-executive-search", {
+    applyAutoCurrentDefaults: !jobId,
+  });
 
   const hiringManagerCustomField = useMemo(() => {
     return customFields.find((f) => {

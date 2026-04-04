@@ -5,6 +5,10 @@ import LookupField from "./LookupField";
 import MultiSelectLookupField, { type MultiSelectLookupType } from "./MultiSelectLookupField";
 import { FiCalendar, FiLock } from "react-icons/fi";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import {
+  resolveInitialValueFromDefinition,
+  resolveSentinelForSubmission,
+} from "@/lib/custom-field-auto-defaults";
 
 interface CustomFieldDefinition {
   id: string;
@@ -299,28 +303,6 @@ export default function CustomFieldRenderer({
     if (Array.isArray(value) && value.length === 0) return;
     onChange(field.field_name, Array.isArray(value) ? [] : "");
   }, [isDisabledByDependency, dependentOnFieldId, field.field_name, onChange]);
-
-  // Auto-fill Owner lookup field from cookies when empty (lookup_type is "owner" and type is lookup)
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const isOwnerLookupType =
-      String((field as any).lookup_type || "").trim().toLowerCase() === "owner";
-    const isLookupField = field.field_type === "lookup";
-
-    if (!isOwnerLookupType || !isLookupField || readOnly) return;
-
-    const hasValue =
-      value !== undefined &&
-      value !== null &&
-      String(value).trim() !== "";
-    if (hasValue) return;
-
-    const ownerId = getOwnerIdFromCookies();
-    if (ownerId) {
-      onChange(field.field_name, ownerId);
-    }
-  }, [field.field_label, field.field_name, field.field_type, readOnly, value, onChange]);
 
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
@@ -1824,37 +1806,6 @@ function setCachedFields(entityType: string, fields: CustomFieldDefinition[]) {
   fieldManagementCache[entityType] = { fields, cachedAt: Date.now() };
 }
 
-/** Get current user/owner id from cookies (user cookie or JWT token). Used for Owner lookup auto-fill. */
-function getOwnerIdFromCookies(): string {
-  if (typeof document === "undefined" || !document.cookie) return "";
-  try {
-    const cookieString = document.cookie;
-    const cookieMap: Record<string, string> = {};
-    cookieString.split(";").forEach((part) => {
-      const [k, v] = part.split("=").map((s) => s.trim());
-      if (!k) return;
-      cookieMap[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
-    });
-    const userCookie = cookieMap["user"];
-    if (userCookie) {
-      const userData = JSON.parse(userCookie) as { id?: string | number };
-      if (userData?.id != null) return String(userData.id);
-    }
-    if (cookieMap["token"]) {
-      const payloadB64 = cookieMap["token"].split(".")[1];
-      if (payloadB64) {
-        const json = atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"));
-        const decoded = JSON.parse(json) as { userId?: string | number; id?: string | number };
-        const uid = decoded?.userId ?? decoded?.id;
-        if (uid != null) return String(uid);
-      }
-    }
-    return cookieMap["owner_id"] || cookieMap["ownerId"] || cookieMap["user_id"] || cookieMap["userId"] || "";
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Returns whether a single custom field has a valid value (same rules as form validation).
  * Use this for per-field indicators (e.g. ✔ vs * on required fields).
@@ -2036,6 +1987,11 @@ export function isCustomFieldValueValid(field: CustomFieldDefinition, value: any
 export type UseCustomFieldsOptions = {
   /** When provided, these field labels are not treated as required (e.g. when context doesn't require them). */
   skipRequiredForLabels?: string[];
+  /**
+   * When true (default), definition defaults that use “current date/time/user” sentinels are expanded
+   * when opening an add form. Set false while editing an existing record so API-loaded values win.
+   */
+  applyAutoCurrentDefaults?: boolean;
 };
 
 export function useCustomFields(entityType: string, options?: UseCustomFieldsOptions) {
@@ -2048,24 +2004,26 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
   const [isLoading, setIsLoading] = React.useState(true);
 
   const fetchCustomFields = React.useCallback(async () => {
+    const applyAuto = options?.applyAutoCurrentDefaults !== false;
     const cached = getCachedFields(entityType);
     if (cached && cached.length >= 0) {
       setCustomFields(cached);
       setCustomFieldValues((prev) => {
-        const ownerIdFromCookie = getOwnerIdFromCookies();
         const next: Record<string, any> = {};
         cached.forEach((fld: CustomFieldDefinition) => {
           if (prev[fld.field_name] !== undefined) {
             next[fld.field_name] = prev[fld.field_name];
             return;
           }
-          const isOwnerLookup =
-            fld.field_type === "lookup" &&
-            String((fld as any).lookup_type || "").trim().toLowerCase() === "owner";
-          next[fld.field_name] =
-            isOwnerLookup && ownerIdFromCookie
-              ? ownerIdFromCookie
-              : (fld.default_value || "").trim();
+          next[fld.field_name] = resolveInitialValueFromDefinition(
+            {
+              field_type: fld.field_type,
+              field_name: fld.field_name,
+              default_value: fld.default_value,
+              lookup_type: (fld as any).lookup_type ?? null,
+            },
+            applyAuto
+          );
         });
         return next;
       });
@@ -2099,22 +2057,22 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         setCachedFields(entityType, sortedFields);
         setCustomFields(sortedFields);
 
-        // Initialize custom field values (seed Owner lookup from cookies when applicable)
         setCustomFieldValues((prev) => {
-          const ownerIdFromCookie = getOwnerIdFromCookies();
           const next: Record<string, any> = {};
           sortedFields.forEach((fld: CustomFieldDefinition) => {
             if (prev[fld.field_name] !== undefined) {
               next[fld.field_name] = prev[fld.field_name];
               return;
             }
-            const isOwnerLookup =
-              fld.field_type === "lookup" &&
-              String((fld as any).lookup_type || "").trim().toLowerCase() === "owner";
-            next[fld.field_name] =
-              isOwnerLookup && ownerIdFromCookie
-                ? ownerIdFromCookie
-                : (fld.default_value || "").trim();
+            next[fld.field_name] = resolveInitialValueFromDefinition(
+              {
+                field_type: fld.field_type,
+                field_name: fld.field_name,
+                default_value: fld.default_value,
+                lookup_type: (fld as any).lookup_type ?? null,
+              },
+              applyAuto
+            );
           });
           return next;
         });
@@ -2124,7 +2082,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
     } finally {
       setIsLoading(false);
     }
-  }, [entityType]);
+  }, [entityType, options?.applyAutoCurrentDefaults]);
 
   const handleCustomFieldChange = React.useCallback(
     (fieldName: string, value: any) => {
@@ -2229,10 +2187,19 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
   }, [customFields, customFieldValues, options?.skipRequiredForLabels]);
 
   const getCustomFieldsForSubmission = React.useCallback(() => {
+    const applyAuto = options?.applyAutoCurrentDefaults !== false;
     const customFieldsToSend: Record<string, any> = {};
     customFields.forEach((field) => {
       if (!field.is_hidden) {
-        let valueToSend = customFieldValues[field.field_name];
+        let valueToSend = resolveSentinelForSubmission(
+          {
+            field_type: field.field_type,
+            default_value: field.default_value,
+            lookup_type: field.lookup_type ?? null,
+          },
+          customFieldValues[field.field_name],
+          applyAuto
+        );
 
         // Convert date fields from mm/dd/yyyy to YYYY-MM-DD for backend
         if (field.field_type === "date" && valueToSend) {
@@ -2249,7 +2216,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
       }
     });
     return customFieldsToSend;
-  }, [customFields, customFieldValues]);
+  }, [customFields, customFieldValues, options?.applyAutoCurrentDefaults]);
 
   React.useEffect(() => {
     fetchCustomFields();

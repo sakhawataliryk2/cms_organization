@@ -168,7 +168,9 @@ export default function AddPlacement() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("placements");
+  } = useCustomFields("placements", {
+    applyAutoCurrentDefaults: !placementId,
+  });
 
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
