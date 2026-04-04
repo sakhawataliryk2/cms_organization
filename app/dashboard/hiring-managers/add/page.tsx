@@ -94,7 +94,7 @@ export default function AddHiringManager() {
     [customFields]
   );
   const addressFieldIdSet = useMemo(() => {
-    return new Set(addressFields.map((f) => f.id));
+    return new Set(addressFields.map((f: any) => f.id));
   }, [addressFields]);
   const addressAnchorId = addressFields?.[0]?.id; // usually the first address field (Address)
 
