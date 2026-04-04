@@ -24,6 +24,15 @@ interface AddressGroupRendererProps {
   isEditMode?: boolean;
 }
 
+const ADDRESS_FIELD_NAMES = {
+  address: ["Field_12"],
+  address2: ["Field_13"],
+  city: ["Field_14"],
+  state: ["Field_15"],
+  country: ["Field_16"],
+  zip: ["Field_17"],
+};
+
 const ADDRESS_FIELD_LABELS = {
   address: ["address", "address1"],
   address2: ["address2", "address 2"],
@@ -33,20 +42,17 @@ const ADDRESS_FIELD_LABELS = {
 };
 
 export function getAddressFields(customFields: CustomFieldDefinition[]) {
-  const normalize = (s: string) => (s || "").toLowerCase().trim();
+  const pick = (names: string[]) =>
+    customFields.find((f) => names.includes(f.field_name));
 
-  const pick = (labels: string[]) =>
-    customFields.find((f) =>
-      labels.some((l) => normalize(f.field_label) === normalize(l))
-    );
+  const address = pick(ADDRESS_FIELD_NAMES.address);
+  const address2 = pick(ADDRESS_FIELD_NAMES.address2);
+  const city = pick(ADDRESS_FIELD_NAMES.city);
+  const state = pick(ADDRESS_FIELD_NAMES.state);
+  const country = pick(ADDRESS_FIELD_NAMES.country);
+  const zip = pick(ADDRESS_FIELD_NAMES.zip);
 
-  const address = pick(ADDRESS_FIELD_LABELS.address);
-  const address2 = pick(ADDRESS_FIELD_LABELS.address2);
-  const city = pick(ADDRESS_FIELD_LABELS.city);
-  const state = pick(ADDRESS_FIELD_LABELS.state);
-  const zip = pick(ADDRESS_FIELD_LABELS.zip);
-
-  return [address, address2, city, state, zip].filter(
+  return [address, address2, city, state, country, zip].filter(
     Boolean
   ) as CustomFieldDefinition[];
 }
@@ -70,7 +76,8 @@ function checkAddressFieldComplete(
   const isZipCodeField =
     field.field_label?.toLowerCase().includes("zip") ||
     field.field_label?.toLowerCase().includes("postal code") ||
-    field.field_name?.toLowerCase().includes("zip");
+    field.field_name?.toLowerCase().includes("zip") ||
+    field.field_name === "Field_17";
   if (isZipCodeField) return /^\d{5}$/.test(String(value).trim());
   return true;
 }
@@ -135,7 +142,8 @@ function UnderlineField({
     const isZipCodeField =
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
-      field.field_name?.toLowerCase().includes("zip");
+      field.field_name?.toLowerCase().includes("zip") ||
+      field.field_name === "Field_17";
 
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
@@ -199,26 +207,12 @@ export default function AddressGroupRenderer({
 }: AddressGroupRendererProps) {
   const normalize = (s: string) => (s || "").toLowerCase().trim();
 
-  const addressField = fields.find((f) =>
-    ["address", "address1"].some(
-      (l) => normalize(f.field_label) === normalize(l)
-    )
-  );
-
-  const address2Field = fields.find((f) =>
-    ["address2", "address 2"].some(
-      (l) => normalize(f.field_label) === normalize(l)
-    )
-  );
-
-  const cityField = fields.find((f) => normalize(f.field_label) === "city");
-  const stateField = fields.find((f) => normalize(f.field_label) === "state");
-
-  const zipField = fields.find((f) =>
-    ["zip", "zip code", "postal code"].some(
-      (l) => normalize(f.field_label) === normalize(l)
-    )
-  );
+  const addressField = fields.find((f) => f.field_name === "Field_12");
+  const address2Field = fields.find((f) => f.field_name === "Field_13");
+  const cityField = fields.find((f) => f.field_name === "Field_14");
+  const stateField = fields.find((f) => f.field_name === "Field_15");
+  const countryField = fields.find((f) => f.field_name === "Field_16");
+  const zipField = fields.find((f) => f.field_name === "Field_17");
 
   if (
     !addressField &&

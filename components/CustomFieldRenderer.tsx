@@ -1806,10 +1806,7 @@ function setCachedFields(entityType: string, fields: CustomFieldDefinition[]) {
   fieldManagementCache[entityType] = { fields, cachedAt: Date.now() };
 }
 
-/**
- * Returns whether a single custom field has a valid value (same rules as form validation).
- * Use this for per-field indicators (e.g. ✔ vs * on required fields).
- */
+
 export function isCustomFieldValueValid(field: CustomFieldDefinition, value: any): boolean {
   if (value === null || value === undefined) return false;
   if (

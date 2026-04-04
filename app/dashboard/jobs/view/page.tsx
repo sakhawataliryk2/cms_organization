@@ -1838,10 +1838,10 @@ export default function JobView() {
                         {task.priority && (
                           <span
                             className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                ? "bg-red-100 text-red-800"
-                                : task.priority === "Medium"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : "bg-gray-100 text-gray-800"
+                              ? "bg-red-100 text-red-800"
+                              : task.priority === "Medium"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-gray-100 text-gray-800"
                               }`}
                           >
                             {task.priority}
@@ -5545,8 +5545,8 @@ export default function JobView() {
               <button
                 key={action.id}
                 className={`${activeQuickTab === action.id
-                    ? "bg-white text-blue-600 font-medium"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
+                  ? "bg-white text-blue-600 font-medium"
+                  : "bg-white text-gray-700 hover:bg-gray-100"
                   } px-4 py-1 rounded-full shadow`}
                 onClick={() => {
                   if (action.id === "applied") {
@@ -6699,8 +6699,8 @@ export default function JobView() {
                   }
                   placeholder="Please provide a detailed reason for deleting this job..."
                   className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
-                      ? "border-red-300 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-blue-500"
+                    ? "border-red-300 focus:ring-red-500"
+                    : "border-gray-300 focus:ring-blue-500"
                     }`}
                   rows={5}
                   required
