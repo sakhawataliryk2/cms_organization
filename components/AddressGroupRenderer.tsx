@@ -52,11 +52,11 @@ export const ADDRESS_FIELD_NAMES = [
   },
   {
     entity_type: "job-seekers",
-    address: ["Field_12"],
-    address2: ["Field_13"],
-    city: ["Field_14"],
-    state: ["Field_15"],
-    zip: ["Field_17"],
+    address: ["Field_15"],
+    address2: ["Field_16"],
+    city: ["Field_17"],
+    state: ["Field_18"],
+    zip: ["Field_19"],
   }
 ];
 
@@ -70,7 +70,7 @@ export const ADDRESS_FIELD_NAMES = [
 
 export function getAddressFields(customFields: CustomFieldDefinition[], entityType?: string) {
   const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
-  
+
   if (!mapping) {
     // If no entityType provided or found in mapping, return empty array as safety
     return [];
@@ -132,10 +132,9 @@ export function isAddressGroupValid(
 function SearchIcon() {
   return (
     <svg
-      className="w-4 h-4 text-gray-400 shrink-0"
+      className="w-4 h-4 text-gray-500 shrink-0 pointer-events-none"
       viewBox="0 0 20 20"
       fill="currentColor"
-      aria-hidden="true"
     >
       <path
         fillRule="evenodd"
@@ -161,7 +160,15 @@ function UnderlineField({
   withSearchIcon?: boolean;
   entityType?: string;
 }) {
+  const selectRef = React.useRef<HTMLSelectElement>(null);
   const value = values?.[field.field_name] ?? "";
+
+  const handleRowClick = () => {
+    if (selectRef.current) {
+      selectRef.current.focus();
+      selectRef.current.click();
+    }
+  };
 
   const isValid = () => {
     if (field.field_type === "select") {
@@ -202,11 +209,13 @@ function UnderlineField({
   return (
     <div className="min-w-0 w-full">
       <div
+        onClick={field.field_type === "select" ? handleRowClick : undefined}
         className={`
-          flex items-center gap-3 py-2.5 px-1
+          flex items-center gap-2 py-2.5 px-3 pl-4
           border-b border-gray-300
           transition-colors duration-200
           focus-within:border-blue-500
+          ${field.field_type === "select" ? "cursor-pointer" : ""}
         `}
       >
         {field.is_required && (
@@ -220,7 +229,17 @@ function UnderlineField({
 
         {withSearchIcon && <SearchIcon />}
 
-        <div className="address-input flex-1 min-w-0">
+        <div
+          className="address-input flex-1 min-w-0 [&_select]:pr-3"
+          ref={(el) => {
+            if (el && field.field_type === "select") {
+              const select = el.querySelector("select");
+              if (select) {
+                selectRef.current = select;
+              }
+            }
+          }}
+        >
           <CustomFieldRenderer
             field={safeField}
             value={value}

@@ -1,6 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+async function normalizePlacementCustomFields(
+    customFields: Record<string, unknown>,
+    token: string
+) {
+    if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) {
+        return {};
+    }
+
+    try {
+        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+        const defsResponse = await fetch(`${apiUrl}/api/custom-fields/entity/placements`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!defsResponse.ok) {
+            return customFields;
+        }
+
+        const defsData = await defsResponse.json();
+        const defs = Array.isArray(defsData?.customFields) ? defsData.customFields : [];
+        const labelByName = new Map<string, string>();
+        const canonicalLabelByLower = new Map<string, string>();
+
+        defs.forEach((field: { field_name?: string; field_label?: string }) => {
+            const fieldName = String(field.field_name || '').trim();
+            const fieldLabel = String(field.field_label || '').trim();
+            if (!fieldName || !fieldLabel) return;
+            labelByName.set(fieldName, fieldLabel);
+            canonicalLabelByLower.set(fieldName.toLowerCase(), fieldLabel);
+            canonicalLabelByLower.set(fieldLabel.toLowerCase(), fieldLabel);
+        });
+
+        const normalized: Record<string, unknown> = {};
+        Object.entries(customFields).forEach(([rawKey, value]) => {
+            const key = String(rawKey || '').trim();
+            if (!key) return;
+            const mappedKey =
+                labelByName.get(key) ||
+                canonicalLabelByLower.get(key.toLowerCase()) ||
+                key;
+            normalized[mappedKey] = value;
+        });
+
+        return normalized;
+    } catch (error) {
+        console.error('Error normalizing placement custom fields:', error);
+        return customFields;
+    }
+}
+
 export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -101,11 +155,15 @@ export async function PUT(
         }
 
         const customFields = body.custom_fields ?? body.customFields ?? {};
+        const normalizedCustomFields = await normalizePlacementCustomFields(
+            typeof customFields === 'object' && customFields !== null && !Array.isArray(customFields)
+                ? customFields as Record<string, unknown>
+                : {},
+            token
+        );
         const apiData = {
             ...body,
-            custom_fields: typeof customFields === 'object' && customFields !== null && !Array.isArray(customFields)
-                ? customFields
-                : {},
+            custom_fields: normalizedCustomFields,
         };
         delete (apiData as Record<string, unknown>).customFields;
 
@@ -183,4 +241,3 @@ export async function DELETE(
         );
     }
 }
-

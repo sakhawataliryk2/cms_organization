@@ -4575,6 +4575,7 @@ Best regards`;
               emptyPlaceholder="-"
               clickable
               entityType="job-seekers"
+              recordId={jobSeeker.id || ""}
             />
           </div>
           {/* </div> */}
@@ -4716,6 +4717,8 @@ Best regards`;
               valuesRecord={customObj as any}
               emptyPlaceholder="-"
               clickable
+              entityType="job-seekers"
+              recordId={jobSeeker.id || ""}
             />
             {isPhoneField && fieldValue && fieldValue !== "-" && fieldValue !== "No phone provided" && (
               <button
@@ -4925,7 +4928,7 @@ Best regards`;
       <div className="bg-white border-b border-gray-300 px-3 py-2 sm:px-4">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-3 sm:gap-4">
           {/* LEFT: dynamic fields */}
-          <div className="flex flex-wrap gap-x-6 sm:gap-x-10 gap-y-2 flex-1 min-w-0">
+          <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-6 sm:gap-x-8 gap-y-3">
             {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
@@ -4934,7 +4937,7 @@ Best regards`;
               headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const info = getHeaderFieldInfo(fk);
                 return (
-                  <div key={fk} className="min-w-[120px] sm:min-w-[140px]">
+                  <div key={fk} className="min-w-0">
                     <div className="text-xs text-gray-500">
                       {getHeaderFieldLabel(fk)}
                     </div>

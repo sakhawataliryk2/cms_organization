@@ -687,6 +687,7 @@ export default function OrganizationView() {
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const ABOUT_ORGANIZATION_FIELD_NAME = "Field_17";
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -703,17 +704,6 @@ export default function OrganizationView() {
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
     configType: "header",
   });
-
-  // Drop animation config for drag overlay
-  const dropAnimationConfig = useMemo(() => ({
-    sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: "0.5",
-        },
-      },
-    }),
-  }), []);
 
   const buildHeaderFieldCatalog = () => {
     const seen = new Set<string>();
@@ -758,6 +748,17 @@ export default function OrganizationView() {
   const getHeaderFieldInfo = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
     return found as any;
+  };
+
+  const getAboutOrganizationFieldName = () => {
+    const aboutField = (availableFields || []).find(
+      (f: any) => String(f?.field_name || "") === ABOUT_ORGANIZATION_FIELD_NAME
+    );
+
+    return String(
+      aboutField?.field_name ||
+      ABOUT_ORGANIZATION_FIELD_NAME
+    );
   };
 
   const handleUpdateDocument = async () => {
@@ -961,10 +962,14 @@ export default function OrganizationView() {
 
   // Initialize about text from organization
   useEffect(() => {
-    if (organization && organization.about) {
-      setAboutText(organization.about);
-    }
-  }, [organization]);
+    if (!organization) return;
+    const aboutFieldName = getAboutOrganizationFieldName();
+    const aboutValue =
+      organization?.customFields?.[aboutFieldName] ??
+      organization?.about ??
+      "";
+    setAboutText(String(aboutValue || ""));
+  }, [organization, availableFields]);
 
   // Fetch action fields - Field500 / Admin Center field mapping (same logic as Hiring Manager)
   useEffect(() => {
@@ -1623,7 +1628,7 @@ export default function OrganizationView() {
       const data = await response.json();
 
       // Parse custom fields
-      let customFieldsObj = {};
+      let customFieldsObj: Record<string, any> = {};
       if (data.organization.custom_fields) {
         try {
           if (typeof data.organization.custom_fields === "string") {
@@ -1668,7 +1673,10 @@ export default function OrganizationView() {
           address: data.organization.address || "No address provided",
           website: data.organization.website || "https://example.com",
         },
-        about: data.organization.overview || "No description provided",
+        about:
+          customFieldsObj?.[ABOUT_ORGANIZATION_FIELD_NAME] ||
+          data.organization.overview ||
+          "",
         customFields: customFieldsObj,
       };
 
@@ -2967,7 +2975,7 @@ export default function OrganizationView() {
                       {row.label}:
                     </div>
                     <div className="flex-1 p-2">
-                      {row.isStatus ? (
+                      {/* {row.isStatus ? (
                         <select
                           value={value && statusFieldOptions.includes(value) ? value : (statusFieldOptions[0] || "")}
                           onChange={(e) => handleStatusChange(e.target.value)}
@@ -2994,17 +3002,17 @@ export default function OrganizationView() {
                           className={row.isName ? "text-blue-600" : ""}
                           entityType="organizations"
                         />
-                      ) : (
+                      ) : ( */}
                         <FieldValueRenderer
                           value={value}
                           fieldInfo={row.isParentOrg && !parentOrgId ? { ...fieldInfo, fieldType: "text" } : fieldInfo}
-                          // addressParts={addressParts}
                           emptyPlaceholder="-"
                           clickable
                           className={row.isName ? "text-blue-600" : ""}
                           entityType="organizations"
+                          recordId={organization.id}
                         />
-                      )}
+                      {/* )} */}
                     </div>
                   </div>
                 );
@@ -3018,7 +3026,7 @@ export default function OrganizationView() {
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
-            title="About the Organization:"
+            title="About the Organization"
             onEdit={() => {
               setIsEditingAbout(true);
               setTempAboutText(aboutText);
@@ -3393,7 +3401,10 @@ export default function OrganizationView() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          overview: tempAboutText,
+          custom_fields: {
+            ...(organization?.customFields || {}),
+            [getAboutOrganizationFieldName()]: tempAboutText,
+          },
         }),
       });
 
@@ -3404,7 +3415,15 @@ export default function OrganizationView() {
       setAboutText(tempAboutText);
       setIsEditingAbout(false);
       if (organization) {
-        setOrganization({ ...organization, about: tempAboutText });
+        const aboutFieldName = getAboutOrganizationFieldName();
+        setOrganization({
+          ...organization,
+          about: tempAboutText,
+          customFields: {
+            ...(organization.customFields || {}),
+            [aboutFieldName]: tempAboutText,
+          },
+        });
       }
     } catch (err) {
       console.error("Error saving about text:", err);
@@ -5238,7 +5257,7 @@ export default function OrganizationView() {
       <div className="bg-white border-b border-gray-300 px-3 py-2">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
-          <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+          <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-8 gap-y-3">
             {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
@@ -5247,7 +5266,7 @@ export default function OrganizationView() {
               headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const info = getHeaderFieldInfo(fk) as { key?: string; label?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
                 return (
-                  <div key={fk} className="min-w-[140px]">
+                  <div key={fk} className="min-w-0">
                     <div className="text-xs text-gray-500">
                       {getHeaderFieldLabel(fk)}
                     </div>

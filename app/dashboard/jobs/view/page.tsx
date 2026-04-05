@@ -5394,9 +5394,9 @@ export default function JobView() {
       <div className="bg-white border-b border-gray-300 p-3">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
-          <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+          <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-8 gap-y-3">
             {/* Always show Job Type */}
-            <div className="min-w-[140px]">
+            <div className="min-w-0">
               <div className="text-xs text-gray-500">Job Type</div>
               <div className="capitalize text-sm font-medium text-gray-900">
                 {job?.jobType || "Not specified"}
@@ -5411,7 +5411,7 @@ export default function JobView() {
               headerFields.map((fk) => {
                 const info = getHeaderFieldInfo(fk) as { key: string; label: string; name?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
                 return (
-                  <div key={fk} className="min-w-[140px]">
+                  <div key={fk} className="min-w-0">
                     <div className="text-xs text-gray-500">
                       {getHeaderFieldLabel(fk)}
                     </div>

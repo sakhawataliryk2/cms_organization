@@ -325,7 +325,7 @@ export default function ArchivedJobsList() {
   const jobColumnsCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
+      .map((f: any, idx: number) => {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
         const fieldType = (f as any)?.field_type;
         const lookupType = (f as any)?.lookup_type || "";
@@ -333,19 +333,32 @@ export default function ArchivedJobsList() {
         const isBackendCol = name && JOB_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status" || name === "archive_reason") filterType = "select";
+        const customKey = isBackendCol ? name : `custom:${label || name}:${name || `f${idx}`}`;
         return {
           fieldType,
           lookupType,
           multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: customKey,
           label: String(label || name),
+          name: String(name),
           sortable: isBackendCol,
           filterType,
+          customFieldLabel: isBackendCol ? undefined : (label || name),
         };
       });
 
     const merged = [
-      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: undefined, lookupType: "", multiSelectLookupType: "" },
+      {
+        key: "record_number",
+        label: "Record Number",
+        name: "record_number",
+        sortable: true,
+        filterType: "number" as const,
+        fieldType: undefined,
+        lookupType: "",
+        multiSelectLookupType: "",
+        customFieldLabel: undefined as string | undefined,
+      },
       ...fromApi,
     ];
     if (!merged.some((x) => x.key === "archive_reason")) {
@@ -355,8 +368,10 @@ export default function ArchivedJobsList() {
         multiSelectLookupType: "",
         key: "archive_reason",
         label: "Archive Reason",
+        name: "archive_reason",
         sortable: true,
         filterType: "select",
+        customFieldLabel: undefined as string | undefined,
       });
     }
     const seen = new Set<string>();
@@ -385,9 +400,12 @@ export default function ArchivedJobsList() {
       return job.record_number ?? job.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
+      const colInfo = getColumnInfo(key);
+      const lookupKey =
+        (colInfo as any)?.customFieldLabel ??
+        key.replace("custom:", "").replace(/:[^:]+$/, "");
       const cf = job?.customFields || job?.custom_fields || {};
-      const val = cf?.[rawKey];
+      const val = cf?.[lookupKey];
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
@@ -961,7 +979,8 @@ export default function ArchivedJobsList() {
                             stopPropagation
                             forceRenderAsStatus={isArchiveReason}
                             statusVariant={isArchiveReason && String(getColumnValue(job, key) || "").toLowerCase() === "deletion" ? "deletion" : "blue"}
-                            entityType="job"
+                            entityType="jobs"
+                            recordId={job.id}
                           />
                         </td>
                       );

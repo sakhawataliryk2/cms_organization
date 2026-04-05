@@ -196,7 +196,7 @@ function SortableColumnHeader({
       {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
           ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-100 min-w-[150px]"
+          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
           style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -361,17 +361,31 @@ export default function TaskList() {
         const isBackendCol = name && TASK_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status" || name === "priority" || name === "completed") filterType = "select";
+        const lookupType = (f as any)?.lookup_type || (f as any)?.lookupType || "";
+        const multiSelectLookupType =
+          (f as any)?.multiselect_lookup ?? (f as any)?.multiSelectLookupType ?? "";
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type,
-          lookupType: (f as any)?.lookup_type || "",
+          lookupType,
+          multiSelectLookupType,
         };
       });
     return [
-      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: undefined, lookupType: "" },
+      {
+        key: "record_number",
+        label: "Record Number",
+        name: "record_number",
+        sortable: true,
+        filterType: "number" as const,
+        fieldType: undefined,
+        lookupType: "",
+        multiSelectLookupType: "",
+      },
       ...fromApi,
     ];
   }, [availableFields]);
@@ -446,55 +460,41 @@ export default function TaskList() {
       const rawKey = key.replace("custom:", "");
       const cf = task?.customFields || task?.custom_fields || {};
       const val = cf?.[rawKey];
-      return val === undefined || val === null || val === "" ? "—" : String(val);
+      return val === undefined || val === null || val === "" ? "N/A" : String(val);
     }
 
-    // switch (key) {
-    //   case "completed":
-    //     return task.is_completed ? "Yes" : "No";
-
-    //   case "due":
-    //     return formatDateTime(task.due_date, task.due_time) || "Not set";
-
-    //   case "job_seeker":
-    //     return task.job_seeker_name || "—";
-
-    //   case "hiring_manager":
-    //     return task.hiring_manager_name || "—";
-
-    //   case "job":
-    //     return task.job_title || "—";
-
-    //   case "lead":
-    //     return task.lead_name || "—";
-
-    //   case "placement":
-    //     return task.placement_id || "—";
-
-    //   case "owner":
-    //     return task.owner || task.created_by_name || "—";
-
-    //   case "priority":
-    //     return task.priority || "—";
-
-    //   case "status":
-    //     return task.status || "—";
-
-    //   case "title":
-    //     return task.title || "—";
-
-    //   case "dateCreated":
-    //     return formatDateTime(task.created_at) || "—";
-
-    //   case "createdBy":
-    //     return task.created_by_name || "—";
-
-    //   case "assignedTo":
-    //     return task.assigned_to_name || "—";
-
-    //   default:
-    //     return "—";
-    // }
+    switch (key) {
+      case "completed":
+        return task.is_completed ? "Yes" : "No";
+      case "due":
+        return formatDateTime(task.due_date, task.due_time) || "N/A";
+      case "job_seeker":
+        return task.job_seeker_name || "N/A";
+      case "hiring_manager":
+        return task.hiring_manager_name || "N/A";
+      case "job":
+        return task.job_title || "N/A";
+      case "lead":
+        return task.lead_name || "N/A";
+      case "placement":
+        return task.placement_id || "N/A";
+      case "owner":
+        return task.owner || task.created_by_name || "N/A";
+      case "priority":
+        return task.priority || "N/A";
+      case "status":
+        return task.status || "N/A";
+      case "title":
+        return task.title || "N/A";
+      case "dateCreated":
+        return formatDateTime(task.created_at) || "N/A";
+      case "createdBy":
+        return task.created_by_name || "N/A";
+      case "assignedTo":
+        return task.assigned_to_name || "N/A";
+      default:
+        return "N/A";
+    }
   };
 
   const {
@@ -1443,12 +1443,23 @@ export default function TaskList() {
                             value={getColumnValue(task, key)}
                             fieldInfo={(() => {
                               const info = getColumnInfo(key);
-                              return info ? { key: info.key, label: info.label, fieldType: (info as any).fieldType, lookupType: (info as any).lookupType, multiSelectLookupType: (info as any).multiSelectLookupType } : { key, label: getColumnLabel(key) };
+                              return info
+                                ? {
+                                    key: info.key,
+                                    label: info.label,
+                                    name: (info as any).name,
+                                    fieldType: (info as any).fieldType,
+                                    lookupType: (info as any).lookupType,
+                                    multiSelectLookupType: (info as any).multiSelectLookupType,
+                                  }
+                                : { key, label: getColumnLabel(key), name: key };
                             })() as any}
                             emptyPlaceholder="N/A"
                             clickable
                             stopPropagation
                             className="text-sm text-gray-500"
+                            entityType="tasks"
+                            recordId={task.id}
                           />
                         </td>
                       );

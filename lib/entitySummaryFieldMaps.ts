@@ -27,12 +27,13 @@ export type FieldManagementEntityType = (typeof FIELD_MANAGEMENT_ENTITY_TYPES)[n
  * Empty string = no mapped status field for that entity.
  */
 export const statusMappings: Record<string, string> = {
-  "job-seekers": "",
+  "job-seekers": "Field_4",
   "hiring-managers": "Field_4",
   organizations: "Field_2",
-  jobs: "",
-  "jobs-direct-hire": "",
-  "jobs-executive-search": "",
+  /** Custom job status (admin Field_4); list/detail use FieldValueRenderer mapped status */
+  jobs: "Field_4",
+  "jobs-direct-hire": "Field_4",
+  "jobs-executive-search": "Field_4",
   placements: "",
   "placements-direct-hire": "",
   "placements-executive-search": "",
@@ -55,6 +56,7 @@ export function getEntityUpdatePutPath(
   recordId: string | number
 ): string | null {
   const id = encodeURIComponent(String(recordId));
+  const slug = normalizeCrmEntityTypeSlug(entityType);
   const map: Record<string, string> = {
     "job-seekers": `/api/job-seekers/${id}`,
     "hiring-managers": `/api/hiring-managers/${id}`,
@@ -68,13 +70,19 @@ export function getEntityUpdatePutPath(
     tasks: `/api/tasks/${id}`,
     leads: `/api/leads/${id}`,
   };
-  return map[entityType] ?? null;
+  return map[slug] ?? null;
 }
 
-/** Must match cms_organization_backend/controllers/entityCustomFieldsController.js SUPPORTED + normalizeEntityType */
-function normalizeEntityTypeForCustomFieldPatch(raw: string): string {
+/**
+ * Canonical CRM slug for custom-fields PATCH, field-management API, and statusMappings lookup.
+ * Must match cms_organization_backend/controllers/entityCustomFieldsController.js SUPPORTED + normalizeEntityType
+ */
+export function normalizeCrmEntityTypeSlug(raw: string | undefined): string {
+  if (!raw) return "";
   const s = raw.trim().toLowerCase().replace(/_/g, "-");
   const aliases: Record<string, string> = {
+    job: "jobs",
+    task: "tasks",
     "jobs-direct-hire": "jobs",
     "jobs-executive-search": "jobs",
     "placements-direct-hire": "placements",
@@ -104,16 +112,17 @@ export function getEntityCustomFieldsPatchPath(
   if (!entityType || recordId == null || String(recordId).trim() === "") {
     return null;
   }
-  const normalized = normalizeEntityTypeForCustomFieldPatch(entityType);
+  const normalized = normalizeCrmEntityTypeSlug(entityType);
   if (!ENTITY_CUSTOM_FIELD_PATCH_SUPPORTED.has(normalized)) {
     return null;
   }
   const id = encodeURIComponent(String(recordId));
-  return `/api/entity-records/${encodeURIComponent(entityType)}/${id}/custom-fields`;
+  return `/api/entity-records/${encodeURIComponent(normalized)}/${id}/custom-fields`;
 }
 
 export function getMappedStatusFieldName(entityType: string | undefined): string {
   if (!entityType) return "";
-  const v = (statusMappings[entityType] ?? "").trim();
+  const slug = normalizeCrmEntityTypeSlug(entityType);
+  const v = (statusMappings[slug] ?? "").trim();
   return v;
 }

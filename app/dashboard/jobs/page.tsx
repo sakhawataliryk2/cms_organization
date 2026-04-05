@@ -438,6 +438,18 @@ export default function JobList() {
     fetchAvailableFields();
   }, []);
 
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find((f) => {
+      const fieldLabel = (f.field_label || "").toLowerCase();
+      const fieldName = (f.field_name || "").toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel("Owner");
+  const statusField = findFieldByLabel("Status");
+
   useEffect(() => {
     const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
     if (!raw) return;
@@ -691,36 +703,46 @@ export default function JobList() {
         : String(val);
     }
 
-    // switch (key) {
-    //   case "job_title":
-    //     return job.job_title || "N/A";
-    //   case "job_type":
-    //     return job.job_type || "N/A";
-    //   case "category":
-    //     return job.category || "N/A";
-    //   case "organization_name":
-    //     return job.organization_name || "N/A";
-    //   case "worksite_location":
-    //     return job.worksite_location || "N/A";
-    //   case "status":
-    //     return job.status || "N/A";
-    //   case "created_at":
-    //     return job.created_at ? new Date(job.created_at).toLocaleDateString() : "N/A";
-    //   case "created_by_name":
-    //     return job.created_by_name || "N/A";
-    //   default:
-    //     return "N/A";
-    // }
+    switch (key) {
+      case "job_title":
+        return job.job_title || "N/A";
+      case "job_type":
+        return job.job_type || "N/A";
+      case "category":
+        return job.category || "N/A";
+      case "organization_name":
+        return job.organization_name || "N/A";
+      case "worksite_location":
+        return job.worksite_location || "N/A";
+      case "status":
+        return job.status || "N/A";
+      case "created_at":
+        return job.created_at
+          ? new Date(job.created_at).toLocaleDateString()
+          : "N/A";
+      case "created_by_name":
+        return job.created_by_name || "N/A";
+      default:
+        return "N/A";
+    }
   };
 
-  // Get unique status values for filter dropdown
+  // Status filter: legacy column + custom Field_4 (label e.g. "Status") when present
   const statusOptions = useMemo(() => {
     const statuses = new Set<string>();
+    const cfLabel = statusField?.field_label
+      ? String(statusField.field_label).trim()
+      : "";
     jobs.forEach((job) => {
       if (job.status) statuses.add(job.status);
+      if (cfLabel) {
+        const cf = job.customFields || job.custom_fields || {};
+        const v = cf[cfLabel];
+        if (v != null && String(v).trim() !== "") statuses.add(String(v).trim());
+      }
     });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
-  }, [jobs]);
+  }, [jobs, statusField]);
 
   const filteredAndSortedJobs = useMemo(() => {
     // Exclude archived jobs from main listing (same as Organization)
@@ -745,17 +767,24 @@ export default function JobList() {
     // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (job) =>
-          (job.job_title || "").toLowerCase().includes(term) ||
+      result = result.filter((job) => {
+        const idMatch =
           String(job.id || "").toLowerCase().includes(term) ||
-          String(job.record_number ?? "").toLowerCase().includes(term) ||
+          `j${job.id}`.toLowerCase().includes(term) ||
+          String(job.record_number ?? "").toLowerCase().includes(term);
+        const coreMatch =
+          (job.job_title || "").toLowerCase().includes(term) ||
           (job.job_type || "").toLowerCase().includes(term) ||
           (job.organization_name || "").toLowerCase().includes(term) ||
           (job.category || "").toLowerCase().includes(term) ||
           (job.status || "").toLowerCase().includes(term) ||
-          (job.worksite_location || "").toLowerCase().includes(term)
-      );
+          (job.worksite_location || "").toLowerCase().includes(term);
+        const cf = job.customFields || job.custom_fields || {};
+        const customMatch = Object.values(cf).some((val) =>
+          String(val || "").toLowerCase().includes(term)
+        );
+        return idMatch || coreMatch || customMatch;
+      });
     }
 
     // Apply filters
@@ -1041,19 +1070,6 @@ export default function JobList() {
       year: "numeric",
     }).format(date);
   };
-
-  // Find custom field definitions for actions
-  const findFieldByLabel = (label: string) => {
-    return availableFields.find(f => {
-      const fieldLabel = (f.field_label || '').toLowerCase();
-      const fieldName = (f.field_name || '').toLowerCase();
-      const searchLabel = label.toLowerCase();
-      return fieldLabel === searchLabel || fieldName === searchLabel;
-    });
-  };
-
-  const ownerField = findFieldByLabel('Owner');
-  const statusField = findFieldByLabel('Status');
 
   const handleIndividualActionSuccess = () => {
     fetchJobs();
@@ -1749,7 +1765,8 @@ export default function JobList() {
                               clickable
                               stopPropagation
                               className=""
-                              entityType="job"
+                              entityType="jobs"
+                              recordId={job.id}
                             />
                           </td>
                         );
