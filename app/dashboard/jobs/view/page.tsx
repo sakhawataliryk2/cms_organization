@@ -1435,7 +1435,7 @@ export default function JobView() {
               fieldInfo={fieldInfo}
               allFields={customFieldDefs as any}
               valuesRecord={customObj as any}
-              entityType="job"
+              entityType="jobs"
             />
           </div>
         </div>
@@ -1535,7 +1535,7 @@ export default function JobView() {
                   fieldInfo={fieldInfo as any}
                   allFields={customFieldDefs as any}
                   valuesRecord={job.customFields as any}
-                  entityType="job"
+                  entityType="jobs"
                 />
               </div>
             </div>

@@ -19,6 +19,7 @@ export async function middleware(request: NextRequest) {
 
   // Define public paths that don't require authentication
   const isPublicPath =
+    path === "/jobs/feed" ||
     path === "/auth/login" ||
     path === "/auth/signup" ||
     path === "/auth/forgot-password" ||
@@ -36,7 +37,7 @@ export async function middleware(request: NextRequest) {
     try {
       // If it's a relative path (starts with /), it's same site
       if (url.startsWith("/")) return true;
-      
+
       // If it's a full URL, check the origin
       const urlObj = new URL(url, baseUrl);
       return urlObj.origin === baseUrl.origin;
@@ -49,7 +50,7 @@ export async function middleware(request: NextRequest) {
   // Helper function to check if URL is an action page (approve/deny) that should be preserved
   const isActionPage = (url: string): boolean => {
     return (url.includes('/transfer/') && (url.includes('/approve') || url.includes('/deny'))) ||
-           (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
+      (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
   };
 
   // If the path is public and user is logged in, check for redirect param
@@ -59,7 +60,7 @@ export async function middleware(request: NextRequest) {
     const redirectParam = request.nextUrl.searchParams.get("redirect");
     if (redirectParam && path === "/auth/login") {
       const redirectUrl = decodeURIComponent(redirectParam);
-      
+
       if (isSameSite(redirectUrl, request.nextUrl)) {
         // Same site: check if it's an action page (approve/deny)
         if (isActionPage(redirectUrl)) {

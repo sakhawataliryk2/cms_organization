@@ -13,7 +13,7 @@ interface LookupOption {
 interface LookupFieldProps {
   value: string;
   onChange: (value: string) => void;
-  lookupType: 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner';
+  lookupType: 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner' | 'leads' | 'placements';
   placeholder?: string;
   required?: boolean;
   className?: string;
@@ -92,6 +92,22 @@ export default function LookupField({
             name: js.full_name || `${js.first_name} ${js.last_name}`,
             record_number: js.record_number || ''
           }));
+      } else if (lookupType === 'leads') {
+        fetchedOptions = (data.leads || [])
+          .filter(isNotArchived)
+          .map((lead: any) => ({
+            id: lead.id.toString(),
+            name: lead.full_name || `${lead.firstName || lead.first_name || ''} ${lead.lastName || lead.last_name || ''}`.trim() || 'Untitled Lead',
+            record_number: lead.record_number || ''
+          }));
+      } else if (lookupType === 'placements') {
+        fetchedOptions = (data.placements || [])
+          .filter(isNotArchived)
+          .map((p: any) => ({
+            id: p.id.toString(),
+            name: `${p.job_seeker_name || 'Candidate'} - ${p.job_title || p.job_name || 'Job'}`,
+            record_number: p.record_number || ''
+          }));
       } else if (lookupType === 'jobs') {
         fetchedOptions = (data.jobs || [])
           .filter(isNotArchived)
@@ -153,7 +169,14 @@ export default function LookupField({
     >
       <option value="">{placeholder}</option>
       {options.map((option) => {
-        const prefix = lookupType === 'organizations' ? 'O' : lookupType === 'hiring-managers' ? 'HM' : lookupType === 'job-seekers' ? 'JS' : lookupType === 'jobs' ? 'J' : lookupType === 'owner' ? 'U' : '';
+        const prefix =
+          lookupType === "organizations" ? "O" :
+          lookupType === "hiring-managers" ? "HM" :
+          lookupType === "job-seekers" ? "JS" :
+          lookupType === "jobs" ? "J" :
+          lookupType === "owner" ? "U" :
+          lookupType === "leads" ? "L" :
+          lookupType === "placements" ? "P" : "";
         const baseLabel =
           lookupType === 'owner'
             ? `${option.name} (${option.email})`|| option.email

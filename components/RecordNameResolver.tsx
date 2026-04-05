@@ -42,8 +42,8 @@ type CacheEntry = {
 
 // 🔥 ID validator (adjust based on your backend)
 function isValidRecordId(id: string) {
-  // Accept numeric OR Mongo-like IDs (6+ hex chars)
-  return /^[0-9a-fA-F]{6,}$/.test(id);
+  // Accept only numeric IDs, reject words
+  return /^\d+$/.test(id);
 }
 
 /* ---------------------------------------------
@@ -225,10 +225,10 @@ export default function RecordNameResolver({
 
   const ids = id
     ? id
-        .toString()
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean)
+      .toString()
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean)
     : [];
 
   /* ---------- MULTIPLE IDS ---------- */

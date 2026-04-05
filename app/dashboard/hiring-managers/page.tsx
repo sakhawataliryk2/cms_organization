@@ -1266,7 +1266,7 @@ export default function HiringManagerList() {
                     </td>
 
                     {/* Dynamic cells (including Record #) */}
-                    {columnFields.map((key) => {
+                    {columnFields.filter(k => hmColumnsCatalog.some(c => c.key === k)).map((key) => {
                       if (key === "record_number") {
                         return (
                           <td key={key} className="px-6 py-4 whitespace-nowrap">
@@ -1426,7 +1426,17 @@ export default function HiringManagerList() {
           }}
           saveButtonText="Done"
           isSaveDisabled={!!isSavingColumns}
-          onReset={() => setColumnFields(hmColumnsCatalog.map((c) => c.key))}
+          onReset={() => {
+            const required = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => {
+                const name = f.field_name || f.fieldName || "";
+                const isBackendCandidate = HM_BACKEND_COLUMN_KEYS.includes(name);
+                return isBackendCandidate ? name : `custom:${f.field_label || f.fieldLabel || f.field_name || f.id}`;
+              });
+            const defaults = Array.from(new Set(["record_number", ...HM_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
+            setColumnFields(defaults);
+          }}
           resetButtonText="Reset"
           listMaxHeight="60vh"
         />

@@ -1211,7 +1211,7 @@ export default function LeadList() {
                     items={columnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.map((key) => {
+                    {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -1304,7 +1304,7 @@ export default function LeadList() {
                       {
                         label: "Convert to Opportunity",
                         action: () => {
-                          router.push(`/dashboard/jobs/add?leadId=${lead.id}`);
+                          router.push(`/dashboard/jobs/add/contract?leadId=${lead.id}`);
                         },
                       },
                     ]}
@@ -1312,7 +1312,7 @@ export default function LeadList() {
                 </td>
 
                 {/* Dynamic columns (including Record #) */}
-                {columnFields.map((key) => {
+                {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                     if (key === "record_number") {
                       return (
                         <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
@@ -1470,7 +1470,18 @@ export default function LeadList() {
           }}
           saveButtonText="Done"
           isSaveDisabled={isSavingColumns}
-          onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+          onReset={() => {
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => {
+                const name = String(f.field_name ?? f.fieldName ?? "").trim();
+                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
+                const isBackendCol = name && LEAD_BACKEND_COLUMN_KEYS.includes(name);
+                return isBackendCol ? name : `custom:${label || name}`;
+              });
+            const defaults = Array.from(new Set(["record_number", "name", "status", ...requiredCustom]));
+            setColumnFields(defaults);
+          }}
           resetButtonText="Reset"
           listMaxHeight="60vh"
         />

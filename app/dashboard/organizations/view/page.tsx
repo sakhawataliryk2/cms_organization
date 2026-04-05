@@ -2992,6 +2992,7 @@ export default function OrganizationView() {
                           clickable
                           lookupFallback={(organization as any)?.parentOrganization || value}
                           className={row.isName ? "text-blue-600" : ""}
+                          entityType="organizations"
                         />
                       ) : (
                         <FieldValueRenderer
@@ -3001,6 +3002,7 @@ export default function OrganizationView() {
                           emptyPlaceholder="-"
                           clickable
                           className={row.isName ? "text-blue-600" : ""}
+                          entityType="organizations"
                         />
                       )}
                     </div>
@@ -5237,12 +5239,12 @@ export default function OrganizationView() {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.length === 0 ? (
+            {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
+              headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const info = getHeaderFieldInfo(fk) as { key?: string; label?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
                 return (
                   <div key={fk} className="min-w-[140px]">
@@ -7120,8 +7122,13 @@ export default function OrganizationView() {
           saveButtonText="Done"
           isSaveDisabled={headerFields.length === 0}
           onReset={() => {
-            setHeaderFields(ORG_DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(ORG_DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+            
+            const defaults = Array.from(new Set([...ORG_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
         />
