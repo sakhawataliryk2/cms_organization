@@ -360,6 +360,12 @@ export default function AddJobSeeker() {
     [addressFields]
   );
 
+  // Find the resume field (Field_40)
+  const resumeField = useMemo(
+    () => customFields.find((f) => f.field_name === "Field_40"),
+    [customFields]
+  );
+
   const emailPhoneValuesKey = useMemo(() => {
     let emailVal = "";
     let phoneVal = "";
@@ -405,183 +411,183 @@ export default function AddJobSeeker() {
     setFormFields((prev) => {
       if (prev.length > 0) return prev;
       return [
-      {
-        id: "firstName",
-        name: "firstName",
-        label: "First Name",
-        type: "text",
-        required: true,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "lastName",
-        name: "lastName",
-        label: "Last Name",
-        type: "text",
-        required: true,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "email",
-        name: "email",
-        label: "Email",
-        type: "email",
-        required: true,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "phone",
-        name: "phone",
-        label: "Phone",
-        type: "tel",
-        required: true,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "mobilePhone",
-        name: "mobilePhone",
-        label: "Mobile Phone",
-        type: "tel",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "address",
-        name: "address",
-        label: "Address",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "city",
-        name: "city",
-        label: "City",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "state",
-        name: "state",
-        label: "State",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "zip",
-        name: "zip",
-        label: "ZIP Code",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "status",
-        name: "status",
-        label: "Status",
-        type: "select",
-        required: true,
-        visible: true,
-        options: ["New lead", "Active", "Qualified", "Placed", "Inactive"],
-        value: "New lead",
-      },
-      {
-        id: "currentOrganization",
-        name: "currentOrganization",
-        label: "Current Organization",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "title",
-        name: "title",
-        label: "Title",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "resumeText",
-        name: "resumeText",
-        label: "Resume Text",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "resumeUpload",
-        name: "resumeUpload",
-        label: "Upload Resume",
-        type: "file",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "skills",
-        name: "skills",
-        label: "Skills",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "Enter skills separated by commas",
-      },
-      {
-        id: "desiredSalary",
-        name: "desiredSalary",
-        label: "Desired Salary",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "e.g. $75,000",
-      },
-      {
-        id: "owner",
-        name: "owner",
-        label: "Owner",
-        type: "select",
-        required: false,
-        visible: true,
-        value: currentUser?.name || "",
-        options: [], // Will be populated with active users
-      },
-      {
-        id: "dateAdded",
-        name: "dateAdded",
-        label: "Date Added",
-        type: "date",
-        required: false,
-        visible: true,
-        value: new Date().toISOString().split("T")[0],
-      },
-      {
-        id: "lastContactDate",
-        name: "lastContactDate",
-        label: "Last Contact Date",
-        type: "date",
-        required: false,
-        visible: true,
-        value: "",
-        locked: true, // This field is now locked and auto-updated
-      },
-    ];
+        {
+          id: "firstName",
+          name: "firstName",
+          label: "First Name",
+          type: "text",
+          required: true,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "lastName",
+          name: "lastName",
+          label: "Last Name",
+          type: "text",
+          required: true,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "email",
+          name: "email",
+          label: "Email",
+          type: "email",
+          required: true,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "phone",
+          name: "phone",
+          label: "Phone",
+          type: "tel",
+          required: true,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "mobilePhone",
+          name: "mobilePhone",
+          label: "Mobile Phone",
+          type: "tel",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "address",
+          name: "address",
+          label: "Address",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "city",
+          name: "city",
+          label: "City",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "state",
+          name: "state",
+          label: "State",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "zip",
+          name: "zip",
+          label: "ZIP Code",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "status",
+          name: "status",
+          label: "Status",
+          type: "select",
+          required: true,
+          visible: true,
+          options: ["New lead", "Active", "Qualified", "Placed", "Inactive"],
+          value: "New lead",
+        },
+        {
+          id: "currentOrganization",
+          name: "currentOrganization",
+          label: "Current Organization",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "title",
+          name: "title",
+          label: "Title",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "resumeText",
+          name: "resumeText",
+          label: "Resume Text",
+          type: "textarea",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "resumeUpload",
+          name: "resumeUpload",
+          label: "Upload Resume",
+          type: "file",
+          required: false,
+          visible: true,
+          value: "",
+        },
+        {
+          id: "skills",
+          name: "skills",
+          label: "Skills",
+          type: "textarea",
+          required: false,
+          visible: true,
+          value: "",
+          placeholder: "Enter skills separated by commas",
+        },
+        {
+          id: "desiredSalary",
+          name: "desiredSalary",
+          label: "Desired Salary",
+          type: "text",
+          required: false,
+          visible: true,
+          value: "",
+          placeholder: "e.g. $75,000",
+        },
+        {
+          id: "owner",
+          name: "owner",
+          label: "Owner",
+          type: "select",
+          required: false,
+          visible: true,
+          value: currentUser?.name || "",
+          options: [], // Will be populated with active users
+        },
+        {
+          id: "dateAdded",
+          name: "dateAdded",
+          label: "Date Added",
+          type: "date",
+          required: false,
+          visible: true,
+          value: new Date().toISOString().split("T")[0],
+        },
+        {
+          id: "lastContactDate",
+          name: "lastContactDate",
+          label: "Last Contact Date",
+          type: "date",
+          required: false,
+          visible: true,
+          value: "",
+          locked: true, // This field is now locked and auto-updated
+        },
+      ];
     });
   }, []);
 
@@ -941,55 +947,6 @@ export default function AddJobSeeker() {
     }
   }, [jobSeekerId, customFieldsLoading, customFields.length, fetchJobSeeker]);
 
-  // Auto-populate Field_17 (Owner) field in UI when customFields are loaded
-  useEffect(() => {
-    // Wait for customFields to load
-    if (customFieldsLoading || customFields.length === 0) return;
-
-    // Find Field_17 specifically - check both field_name and field_label
-    const ownerField = customFields.find(
-      (f) =>
-        f.field_name === "Field_17" ||
-        f.field_name === "field_17" ||
-        f.field_name?.toLowerCase() === "field_17" ||
-        (f.field_label === "Owner" &&
-          (f.field_name?.includes("17") ||
-            f.field_name?.toLowerCase().includes("field_17")))
-    );
-
-    if (ownerField) {
-      const currentOwnerValue = customFieldValues[ownerField.field_name];
-      // Only auto-populate if field is empty (works in both create and edit mode)
-      if (!currentOwnerValue || currentOwnerValue.trim() === "") {
-        try {
-          const userCookie = document.cookie.replace(
-            /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          );
-          if (userCookie) {
-            const userData = JSON.parse(decodeURIComponent(userCookie));
-            if (userData.name) {
-              setCustomFieldValues((prev) => ({
-                ...prev,
-                [ownerField.field_name]: userData.name,
-              }));
-              console.log(
-                "Auto-populated Field_17 (Owner) with current user:",
-                userData.name
-              );
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
-        }
-      }
-    }
-  }, [
-    customFields,
-    customFieldsLoading,
-    customFieldValues,
-    setCustomFieldValues,
-  ]);
 
   // ✅ Sync formFields changes to custom fields (two-way binding)
   // When user types in basic fields, update matching custom fields
@@ -1186,31 +1143,67 @@ export default function AddJobSeeker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams.get("parseResume"), customFieldsLoading]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Form validation state
+  const getFormValidationState = useCallback(() => {
+    const issues: string[] = [];
 
     // Check email validation
     if (!emailValidation.isValid) {
-      setError("Please provide a valid email address");
-      return;
+      issues.push("Please provide a valid email address");
     }
 
     // Check address validation if address is provided
     const hasAddress = formFields.some(
       (f) => (f.id === "address" || f.id === "city") && f.value.trim()
     );
-
     if (hasAddress && !addressValidation.isValid) {
-      setError(
-        "Please provide a valid address or use one of the suggested addresses"
-      );
-      return;
+      issues.push("Please provide a valid address or use one of the suggested addresses");
     }
 
     // Validate required custom fields
     const customFieldValidation = validateCustomFields();
     if (!customFieldValidation.isValid) {
-      setError(customFieldValidation.message);
+      issues.push(customFieldValidation.message);
+    }
+
+    return {
+      isValid: issues.length === 0,
+      issues,
+    };
+  }, [emailValidation.isValid, formFields, addressValidation.isValid, validateCustomFields]);
+
+  // Compute whether all required fields are satisfied (for disabling Update/Save until valid)
+  const isFormValid = useMemo(() => {
+    const { isValid } = getFormValidationState();
+    return isValid;
+  }, [getFormValidationState]);
+
+  useEffect(() => {
+    const { isValid, issues } = getFormValidationState();
+
+    if (!isValid) {
+      console.groupCollapsed(
+        "[AddJobSeeker] Form is invalid - Save/Update button will be disabled"
+      );
+      console.log("Validation issues preventing save:", issues);
+      console.log("Current customFieldValues:", customFieldValues);
+      console.log("Address fields definition:", addressFields);
+      console.log("Custom fields definition:", customFields);
+      console.groupEnd();
+    } else {
+      console.log(
+        "[AddJobSeeker] Form is currently valid - Save/Update button should be enabled"
+      );
+    }
+  }, [getFormValidationState, customFieldValues, customFields, addressFields]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Check overall form validation
+    const { isValid, issues } = getFormValidationState();
+    if (!isValid) {
+      setError(issues.join("\n"));
       return;
     }
 
@@ -1305,8 +1298,8 @@ export default function AddJobSeeker() {
             if (!hasConfirmedDuplicateSave) {
               setError(
                 "Possible duplicate job seeker(s) detected.\n\n" +
-                  messages.join("\n") +
-                  "\n\nReview the matches below. If you still want to create this record, confirm and click Save again."
+                messages.join("\n") +
+                "\n\nReview the matches below. If you still want to create this record, confirm and click Save again."
               );
               setIsSubmitting(false);
               return;
@@ -1633,7 +1626,13 @@ export default function AddJobSeeker() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="relative space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div
+            className={
+              resumeField && !resumeField.is_hidden
+                ? "grid grid-cols-1 lg:grid-cols-2 gap-6"
+                : "grid grid-cols-1 gap-6"
+            }
+          >
             {(() => {
               const renderCustomFieldRow = (field: any) => {
                 // Don't render hidden fields at all (neither label nor input)
@@ -1642,7 +1641,7 @@ export default function AddJobSeeker() {
                 const isFullAddressField =
                   labelNorm.includes("full") && labelNorm.includes("address");
                 if (isFullAddressField) return null;
-                
+
                 if (field.is_hidden) return null;
 
                 // ✅ Render Address Group exactly where first address field exists
@@ -1691,14 +1690,6 @@ export default function AddJobSeeker() {
                   normalizedLabel === "mobile phone" ||
                   normalizedLabel === "telephone";
 
-                const isOwnerField =
-                  field.field_name === "Field_17" ||
-                  field.field_name === "field_17" ||
-                  field.field_name?.toLowerCase() === "field_17" ||
-                  (field.field_label === "Owner" &&
-                    (field.field_name?.includes("17") ||
-                      field.field_name?.toLowerCase().includes("field_17")));
-
                 const isSkillsField =
                   field.field_name === "Field_32" ||
                   field.field_name === "field_32" ||
@@ -1741,22 +1732,7 @@ export default function AddJobSeeker() {
                     </label>
 
                     <div className="flex-1 relative">
-                      {isOwnerField ? (
-                        <select
-                          value={fieldValue}
-                          onChange={(e) =>
-                            handleCustomFieldChange(field.field_name, e.target.value)
-                          }
-                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                        >
-                          <option value="">Select Owner</option>
-                          {activeUsers.map((user) => (
-                            <option key={user.id} value={user.name}>
-                              {user.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : isMultiValueField ? (
+                      {isMultiValueField ? (
                         <MultiValueTagInput
                           values={multiValueArray}
                           onChange={(newValues) => {
@@ -1813,154 +1789,29 @@ export default function AddJobSeeker() {
                     )}
                   </div>
 
-                  <div>
-                    <div className="bg-white border border-gray-200 rounded p-4">
-                      <div className="font-semibold mb-3">Resume</div>
-
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Resume Text
-                      </label>
-                      <textarea
-                        value={formFields.find((f) => f.id === "resumeText")?.value || ""}
-                        onChange={(e) => handleChange("resumeText", e.target.value)}
-                        className="w-full min-h-[60vh] border border-gray-300 rounded p-3 text-sm font-mono leading-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Paste or type resume content here..."
-                      />
+                  {/* Resume Section - only show if Field_40 is not hidden */}
+                  {resumeField && !resumeField.is_hidden && (
+                    <div>
+                      <div className="bg-white border border-gray-200 rounded p-4">
+                        <div className="font-semibold mb-3">Resume</div>
+                        <CustomFieldRenderer
+                          field={resumeField}
+                          value={customFieldValues[resumeField.field_name] || ""}
+                          onChange={handleCustomFieldChange}
+                          validationIndicator={
+                            resumeField.is_required
+                              ? isCustomFieldValueValid(resumeField, customFieldValues[resumeField.field_name] || "")
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               );
             })()}
-            {/* {formFields.map((field, index) => (
-              <div key={field.id} className="flex items-center">
-                <label className="w-48 font-medium">
-                  {field.label}:
-                  {field.locked && (
-                    <span className="ml-1 text-xs text-gray-500">(Auto)</span>
-                  )}
-                </label>
-
-                <div className="flex-1 relative">
-                  {field.type === "text" ||
-                  field.type === "email" ||
-                  field.type === "tel" ? (
-                    <div className="relative">
-                      <input
-                        type={field.type}
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) => handleChange(field.id, e.target.value)}
-                        placeholder={field.placeholder}
-                        className={`w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 ${
-                          field.locked ? "bg-gray-100 cursor-not-allowed" : ""
-                        } ${
-                          field.id === "email" && !emailValidation.isValid
-                            ? "border-red-500"
-                            : ""
-                        }`}
-                        required={field.required}
-                        disabled={field.locked}
-                        readOnly={field.locked}
-                      />
-
-                      {field.id === "email" && field.value && (
-                        <div className="absolute right-2 top-2">
-                          {emailValidation.isChecking ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500"></div>
-                          ) : (
-                            <span
-                              className={
-                                emailValidation.isValid
-                                  ? "text-green-500"
-                                  : "text-red-500"
-                              }
-                            >
-                              {emailValidation.isValid ? "✓" : "✗"}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : field.type === "date" ? (
-                    <div className="relative">
-                      <input
-                        type="date"
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) => handleChange(field.id, e.target.value)}
-                        className={`w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 ${
-                          field.locked ? "bg-gray-100 cursor-not-allowed" : ""
-                        }`}
-                        required={field.required}
-                        disabled={field.locked}
-                        readOnly={field.locked}
-                      />
-                      {!field.locked && (
-                        <button
-                          type="button"
-                          className="absolute right-2 top-2"
-                        >
-                          <Image
-                            src="/calendar.svg"
-                            alt="Calendar"
-                            width={16}
-                            height={16}
-                          />
-                        </button>
-                      )}
-                    </div>
-                  ) : field.type === "select" ? (
-                    <select
-                      name={field.name}
-                      value={field.value}
-                      onChange={(e) => handleChange(field.id, e.target.value)}
-                      className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                      required={field.required}
-                      disabled={field.locked}
-                    >
-                      <option value="">Select {field.label}</option>
-                      {field.options?.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  ) : field.type === "textarea" ? (
-                    <textarea
-                      name={field.name}
-                      value={field.value}
-                      onChange={(e) => handleChange(field.id, e.target.value)}
-                      rows={field.name === "resumeText" ? 5 : 3}
-                      placeholder={field.placeholder}
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                      required={field.required}
-                      disabled={field.locked}
-                    />
-                  ) : field.type === "file" ? (
-                    <div>
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={handleFileChange}
-                        className="w-full p-2 text-gray-700"
-                        required={field.required}
-                        disabled={field.locked}
-                      />
-                      <p className="text-sm text-gray-500 mt-1">
-                        Accepted formats: PDF, DOC, DOCX
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {field.required && !field.locked && (
-                    <span className="absolute text-red-500 left-[-10px] top-2">
-                      *
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))} */}
-
           </div>
 
           {/* Duplicate warning section with links to possible matches and confirmation */}
@@ -2085,14 +1936,13 @@ export default function AddJobSeeker() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600"
+                } text-white`}
               disabled={
-                !emailValidation.isValid ||
-                (!addressValidation.isValid &&
-                  formFields.some(
-                    (f) =>
-                      (f.id === "address" || f.id === "city") && f.value.trim()
-                  )) ||
+                isSubmitting ||
+                !isFormValid ||
                 (duplicateWarning !== null &&
                   ((duplicateWarning.email?.length ?? 0) > 0 ||
                     (duplicateWarning.phone?.length ?? 0) > 0) &&

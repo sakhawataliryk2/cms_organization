@@ -504,15 +504,6 @@ export default function CustomFieldRenderer({
 
   if (field.is_hidden) return null;
 
-  function formatNumberWithCommas(value: string | number) {
-    let num = Number(value);
-    if (isNaN(num)) return "";
-    return num.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  }
-
   // Format salary values for display
   const formatSalaryValue = (val: any) => {
     if (field.field_name === "minSalary" || field.field_name === "maxSalary") {

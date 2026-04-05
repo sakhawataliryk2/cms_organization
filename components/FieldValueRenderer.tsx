@@ -6,11 +6,11 @@ import { CheckIcon, FileText } from "lucide-react";
 import Tooltip from "@/components/Tooltip";
 import DescriptionModal from "@/components/DescriptionModal";
 import { toast } from "sonner";
-import { CopyrightIcon } from "lucide-react";
 import {
   getEntityCustomFieldsPatchPath,
   getEntityUpdatePutPath,
   getMappedStatusFieldName,
+  normalizeCrmEntityTypeSlug,
 } from "@/lib/entitySummaryFieldMaps";
 import { ADDRESS_FIELD_NAMES } from "@/components/AddressGroupRenderer";
 
@@ -306,8 +306,9 @@ export default function FieldValueRenderer({
           /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
           "$1"
         );
+        const slug = normalizeCrmEntityTypeSlug(entityType);
         const res = await fetch(
-          `/api/admin/field-management/${encodeURIComponent(entityType)}`,
+          `/api/admin/field-management/${encodeURIComponent(slug)}`,
           {
             headers: {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -375,8 +376,13 @@ export default function FieldValueRenderer({
 
   let raw = rawOriginal;
 
-  // Handle Field_6 (Job Description) - ONLY for job entity
-  if (fieldName === "field_6" && entityType === "job") {
+  // Field_6 = job description (HTML / rich text); summary grid uses icon + modal like tasks long text
+  const isJobsEntity =
+    entityType != null &&
+    ["job", "jobs", "jobs-direct-hire", "jobs-executive-search"].includes(
+      entityType.trim().toLowerCase()
+    );
+  if (fieldName === "field_6" && isJobsEntity) {
     return (
       <>
         <Tooltip text="Click to view description">
@@ -556,7 +562,12 @@ export default function FieldValueRenderer({
   const isStatus =
     forceRenderAsStatus ||
     fieldType === "status" ||
-    (label === "status" && !matchesMappedStatus);
+    (label === "status" && !matchesMappedStatus) ||
+    (matchesMappedStatus &&
+      !statusDefLoading &&
+      (!statusUpdateUrl ||
+        !statusStorageLabelResolved ||
+        statusDefOptions.length === 0));
 
   // Required field empty: red placeholder + warning icon
   if (isEmpty) {
