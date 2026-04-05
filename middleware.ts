@@ -17,9 +17,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Skip middleware for jobs XML feed
+  if (path === "/jobs/feed") {
+    return NextResponse.next();
+  }
+
   // Define public paths that don't require authentication
   const isPublicPath =
-    path === "/jobs/feed" ||
     path === "/auth/login" ||
     path === "/auth/signup" ||
     path === "/auth/forgot-password" ||
