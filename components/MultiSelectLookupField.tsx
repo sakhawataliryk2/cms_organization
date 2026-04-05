@@ -9,7 +9,7 @@ interface LookupOption {
   [key: string]: any;
 }
 
-export type MultiSelectLookupType = 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner';
+export type MultiSelectLookupType = 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner' | 'leads' | 'placements';
 
 interface MultiSelectLookupFieldProps {
   /** Value: comma-separated IDs or array of IDs */
@@ -109,6 +109,22 @@ export default function MultiSelectLookupField({
             name: job.job_title,
             record_number: job.record_number || ''
           }));
+      } else if (lookupType === 'leads') {
+        fetchedOptions = (data.leads || [])
+          .filter(isNotArchived)
+          .map((lead: any) => ({
+            id: lead.id.toString(),
+            name: lead.full_name || `${lead.firstName || lead.first_name || ''} ${lead.lastName || lead.last_name || ''}`.trim() || 'Untitled Lead',
+            record_number: lead.record_number || ''
+          }));
+      } else if (lookupType === 'placements') {
+        fetchedOptions = (data.placements || [])
+          .filter(isNotArchived)
+          .map((p: any) => ({
+            id: p.id.toString(),
+            name: `${p.job_seeker_name || 'Candidate'} - ${p.job_title || p.job_name || 'Job'}`,
+            record_number: p.record_number || ''
+          }));
       } else if (lookupType === 'owner') {
         fetchedOptions = (data.users || [])
           .filter(isNotArchived)
@@ -140,9 +156,11 @@ export default function MultiSelectLookupField({
   const q = searchQuery.trim().toLowerCase();
   const filteredOptions = q
     ? options.filter(
-        (o) =>
-          o.name?.toLowerCase().includes(q) || String(o.id).toLowerCase().includes(q)
-      )
+      (o) =>
+        o.name?.toLowerCase().includes(q) ||
+        String(o.id).toLowerCase().includes(q) ||
+        String(o.record_number || "").toLowerCase().includes(q)
+    )
     : options;
   const selectedSet = new Set(selectedIds);
   const selectableOptions = filteredOptions.filter((o) => !selectedSet.has(o.id));
@@ -150,7 +168,7 @@ export default function MultiSelectLookupField({
   const addSelection = (option: LookupOption) => {
     const next = [...selectedIds, option.id];
     onChange(next);
-    setSearchQuery('');
+    setSearchQuery("");
     setShowDropdown(false);
   };
 
@@ -161,7 +179,7 @@ export default function MultiSelectLookupField({
 
   if (isLoading) {
     return (
-      <div className={className + ' bg-gray-50 text-gray-500'} style={{ minHeight: 42 }}>
+      <div className={className + " bg-gray-50 text-gray-500"} style={{ minHeight: 42 }}>
         Loading...
       </div>
     );
@@ -169,29 +187,45 @@ export default function MultiSelectLookupField({
 
   if (error) {
     return (
-      <div className={className + ' bg-red-50 text-red-600'} style={{ minHeight: 42 }}>
+      <div className={className + " bg-red-50 text-red-600"} style={{ minHeight: 42 }}>
         {error}
       </div>
     );
   }
+
+  const getOptionLabel = (opt: LookupOption) => {
+    if (!opt) return "";
+    const prefix = lookupType === "organizations" ? "O" : 
+                   lookupType === "hiring-managers" ? "HM" : 
+                   lookupType === "job-seekers" ? "JS" : 
+                   lookupType === "jobs" ? "J" : 
+                   lookupType === "owner" ? "U" :
+                   lookupType === "leads" ? "L" :
+                   lookupType === "placements" ? "P" : "";
+    
+    const baseLabel = lookupType === "owner" ? `${opt.name} (${opt.email || ""})` : opt.name;
+    return opt.record_number ? `${prefix}${opt.record_number} - ${baseLabel}` : baseLabel;
+  };
 
   return (
     <div ref={containerRef} className="relative">
       <div
         className={
           className +
-          ' min-h-[42px] flex flex-wrap items-center gap-2 ' +
-          (disabled ? ' bg-gray-100 cursor-not-allowed opacity-70' : '')
+          " min-h-[42px] flex flex-wrap items-center gap-2 " +
+          (disabled ? " bg-gray-100 cursor-not-allowed opacity-70" : "")
         }
       >
         {selectedIds.map((id) => {
           const opt = options.find((o) => o.id === id);
+          const displayName = opt ? getOptionLabel(opt) : id;
+
           return (
             <span
               key={id}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
             >
-              {opt?.name ?? id}
+              {displayName}
               {!disabled && (
                 <button
                   type="button"
@@ -214,7 +248,7 @@ export default function MultiSelectLookupField({
               setShowDropdown(true);
             }}
             onFocus={() => setShowDropdown(true)}
-            placeholder={selectedIds.length === 0 ? placeholder : 'Add more...'}
+            placeholder={selectedIds.length === 0 ? placeholder : "Add more..."}
             className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
           />
         )}
@@ -229,7 +263,7 @@ export default function MultiSelectLookupField({
                 onClick={() => addSelection(opt)}
                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 text-sm"
               >
-                {opt.name}
+                {getOptionLabel(opt)}
               </button>
             ))
           ) : (

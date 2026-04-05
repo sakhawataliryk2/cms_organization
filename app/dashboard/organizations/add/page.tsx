@@ -92,7 +92,7 @@ export default function AddOrganization() {
   const parseOrgInputRef = useRef<HTMLInputElement | null>(null);
   const parseOrgAbortRef = useRef<AbortController | null>(null);
   const addressFields = useMemo(
-    () => getAddressFields(customFields as any),
+    () => getAddressFields(customFields as any, "organizations"),
     [customFields]
   );
   const sortedCustomFields = useMemo(() => {
@@ -1755,6 +1755,7 @@ export default function AddOrganization() {
                             values={customFieldValues}
                             onChange={handleCustomFieldChange}
                             isEditMode={isEditMode}
+                            entityType="organizations"
                           />
                         </div>
                       </div>

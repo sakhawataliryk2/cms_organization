@@ -557,10 +557,8 @@ export default function AddLead() {
     router.back();
   };
 
-  const isFormValid = useMemo(() => {
-    const customFieldValidation = validateCustomFields();
-    return customFieldValidation.isValid;
-  }, [customFieldValues, validateCustomFields]);
+  const formValidation = useMemo(() => validateCustomFields(), [customFieldValues, validateCustomFields]);
+  const isFormValid = formValidation.isValid;
 
   // Show loading screen when loading existing lead data or custom fields
   if (isLoading || customFieldsLoading) {
@@ -983,7 +981,16 @@ export default function AddLead() {
           )}
 
           <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex items-center justify-end space-x-4">
+            {
+              process.env.NODE_ENV === "development" && (
+                !isFormValid && (
+                  <div className="flex-1 text-sm text-red-600 font-medium">
+                    Debug: {formValidation.message || "Form is invalid"}
+                  </div>
+                ) 
+              )
+            }
             <button
               type="button"
               onClick={handleGoBack}

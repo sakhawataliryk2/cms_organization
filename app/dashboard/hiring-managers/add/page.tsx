@@ -36,10 +36,6 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Last Name": "lastName", Last: "lastName", LName: "lastName",
   "Email": "email", "Email 1": "email", "Email Address": "email", "E-mail": "email",
   "Email 2": "email2",
-  "Phone": "phone", "Phone Number": "phone", Telephone: "phone",
-  "Mobile Phone": "mobilePhone", Mobile: "mobilePhone", "Cell Phone": "mobilePhone",
-  "Direct Line": "directLine",
-  "Company Phone": "companyPhone", "Contact Phone": "companyPhone", "Main Phone": "companyPhone",
   "Status": "status", "Current Status": "status",
   "Title": "title", "Job Title": "title", Position: "title",
   "Organization": "organizationId", "Organization Name": "organizationId", Company: "organizationId",
@@ -90,7 +86,7 @@ export default function AddHiringManager() {
     applyAutoCurrentDefaults: !hiringManagerId,
   });
   const addressFields = useMemo(
-    () => getAddressFields(customFields as any),
+    () => getAddressFields(customFields as any, "hiring-managers"),
     [customFields]
   );
   const addressFieldIdSet = useMemo(() => {
@@ -922,6 +918,7 @@ export default function AddHiringManager() {
                           values={customFieldValues}
                           onChange={handleCustomFieldChange}
                           isEditMode={isEditMode}
+                          entityType="hiring-managers"
                         />
                       </div>
                     </div>

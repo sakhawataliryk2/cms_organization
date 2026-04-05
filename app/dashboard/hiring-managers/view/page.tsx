@@ -18,6 +18,8 @@ import {
 } from "@/lib/googleCalendar";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
+import LookupEntityDetailsGrid from '@/components/LookupEntityDetailsGrid';
+import { HM_ORGANIZATION_ID_FIELD_NAME } from '@/lib/entitySummaryFieldMaps';
 import RequestActionModal from '@/components/RequestActionModal';
 // Drag and drop imports
 import {
@@ -224,7 +226,7 @@ export default function HiringManagerView() {
     return out;
   }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
-  
+
 
   // When opening Notes tab with noteId in URL, scroll to that note and highlight it
   useEffect(() => {
@@ -408,8 +410,6 @@ export default function HiringManagerView() {
     placements: 0,
   });
   const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
-  const [isSavingStatus, setIsSavingStatus] = useState(false);
-
   // Tasks state
   const [tasks, setTasks] = useState<Array<any>>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
@@ -417,10 +417,8 @@ export default function HiringManagerView() {
 
   // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  // Organization details: field definitions from admin (organizations entity) and fetched org record
+  // Organization details: field definitions from admin (organizations entity) for edit modal + catalog keys
   const [organizationAvailableFields, setOrganizationAvailableFields] = useState<any[]>([]);
-  const [fetchedOrganization, setFetchedOrganization] = useState<any>(null);
-  const [isLoadingOrganization, setIsLoadingOrganization] = useState(false);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
     if (typeof window === "undefined") {
       return { details: [], organizationDetails: [], recentNotes: ["notes"] };
@@ -705,40 +703,23 @@ export default function HiringManagerView() {
     return [...fromApi];
   }, [availableFields]);
 
-  // Status field options from admin field definitions (same as organization summary)
-  const statusFieldOptions = useMemo((): string[] => {
-    const statusField = (availableFields || []).find(
+  const organizationIdFromField3 = useMemo(() => {
+    if (!hiringManager?.customFields) return null;
+    const cf = hiringManager.customFields as Record<string, unknown>;
+    const def = (availableFields || []).find(
       (f: any) =>
-        (f.field_label || "").toLowerCase() === "status" ||
-        (f.field_name || "").toLowerCase() === "status"
+        String(f.field_name || "").toLowerCase() === HM_ORGANIZATION_ID_FIELD_NAME.toLowerCase()
     );
-    if (!statusField || !statusField.options) {
-      return ["Active", "Inactive", "Archived", "On Hold"];
-    }
-    let options = statusField.options;
-    if (typeof options === "string") {
-      try {
-        options = JSON.parse(options);
-      } catch {
-        return options
-          .split(/\r?\n/)
-          .map((opt: string) => opt.trim())
-          .filter((opt: string) => opt.length > 0);
-      }
-    }
-    if (Array.isArray(options)) {
-      return options
-        .filter((opt: any): opt is string => typeof opt === "string" && opt.trim().length > 0)
-        .map((opt: string) => opt.trim());
-    }
-    if (typeof options === "object" && options !== null) {
-      const values = Object.values(options) as unknown[];
-      return values
-        .filter((opt): opt is string => typeof opt === "string" && opt.trim().length > 0)
-        .map((opt: string) => opt.trim());
-    }
-    return ["Active", "Inactive", "Archived", "On Hold"];
-  }, [availableFields]);
+    const label = def?.field_label != null ? String(def.field_label) : "";
+    const raw =
+      label && cf[label] !== undefined && cf[label] !== null && String(cf[label]).trim() !== ""
+        ? cf[label]
+        : cf[HM_ORGANIZATION_ID_FIELD_NAME];
+    if (raw === undefined || raw === null) return null;
+    const s = String(raw).trim();
+    if (!/^\d+$/.test(s)) return null;
+    return s;
+  }, [hiringManager, availableFields]);
 
   // Organization Details field catalog: from admin field definitions for organizations + fetched org custom_fields (same as organizations view)
   const organizationDetailsFieldCatalog = useMemo(() => {
@@ -765,86 +746,46 @@ export default function HiringManagerView() {
       detailsFieldCatalog.find((f) => f.key === key)?.label ||
       customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
       key;
-    const isStatusField = (key: string) => {
-      const k = (key || "").toLowerCase();
-      const label = (getDetailsLabel(key) || "").toLowerCase();
-      return k === "status" || label === "status";
-    };
 
     const getDetailsValue = (key: string): string => {
-      if (isStatusField(key)) {
-        const statusVal = (hiringManager as any).status ?? customObj["Status"] ?? customObj["status"];
-        const str = statusVal !== undefined && statusVal !== null && String(statusVal).trim() !== "" ? String(statusVal).trim() : "Active";
-        return statusFieldOptions.includes(str) ? str : (statusFieldOptions[0] || "Active");
-      }
       const fieldDef = customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key);
       const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
       const v = customObj[fieldLabel] ?? customObj[key];
       return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
     };
 
-
-
     const detailsKeys = Array.from(new Set(visibleFields.details || []));
-    const effectiveRows: { key: string; label: string; isStatus?: boolean }[] = [];
-    let statusRowAdded = false;
-    for (const key of detailsKeys) {
-      if (isStatusField(key)) statusRowAdded = true;
-      effectiveRows.push({
-        key,
-        label: getDetailsLabel(key),
-        isStatus: isStatusField(key),
-      });
-    }
-    if (!statusRowAdded) {
-      const statusFieldFromCatalog = detailsFieldCatalog.find(
-        (f) => f.label?.toLowerCase() === "status" || f.key?.toLowerCase() === "status"
-      );
-      const statusKey = statusFieldFromCatalog?.key || "status";
-      effectiveRows.push({ key: statusKey, label: "Status", isStatus: true });
-    }
+    const effectiveRows = detailsKeys.map((key) => ({
+      key,
+      label: getDetailsLabel(key),
+    }));
 
-    const renderDetailsRow = (row: { key: string; label: string; isStatus?: boolean }) => {
+    const renderDetailsRow = (row: { key: string; label: string }) => {
       const value = getDetailsValue(row.key);
       const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
       const fieldInfo = {
         key: row.key,
         label: row.label,
+        name: def?.field_name ?? row.key,
         fieldType: def?.field_type ?? def?.fieldType,
         lookupType: def?.lookup_type ?? def?.lookupType,
         multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
       };
+
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
           <div className="flex-1 p-2 text-sm">
-            {row.isStatus ? (
-              <select
-                value={value && statusFieldOptions.includes(value) ? value : (statusFieldOptions[0] || "")}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                disabled={isSavingStatus}
-                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                {statusFieldOptions.length === 0 ? (
-                  <option value="">Loading...</option>
-                ) : (
-                  statusFieldOptions.map((option: string) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))
-                )}
-              </select>
-            ) : (
-              <FieldValueRenderer
-                value={value}
-                fieldInfo={fieldInfo}
-                allFields={customFieldDefs as any}
-                valuesRecord={customObj as any}
-                emptyPlaceholder="-"
-                clickable
-              />
-            )}
+            <FieldValueRenderer
+              value={value}
+              fieldInfo={fieldInfo}
+              allFields={customFieldDefs as any}
+              valuesRecord={customObj as any}
+              emptyPlaceholder="-"
+              clickable
+              entityType="hiring-managers"
+              recordId={hiringManagerId ?? hiringManager.id}
+            />
           </div>
         </div>
       );
@@ -859,94 +800,17 @@ export default function HiringManagerView() {
     );
   };
 
-  const getOrganizationDetailLabel = (key: string): string => {
-    const entry = organizationDetailsFieldCatalog.find((f) => f.key === key);
-    return entry?.label ?? key;
-  };
-
   const renderOrganizationPanel = () => {
-    if (!hiringManager?.organization) return null;
-
-    // Resolve value from fetched organization (same structure as organizations view)
-    const getOrganizationDetailValue = (key: string): string => {
-      if (!fetchedOrganization) return "-";
-      const o = fetchedOrganization as any;
-      // Standard backend columns (snake_case from API or camelCase)
-      const standard: Record<string, string> = {
-        name: o.name ?? o.Name ?? "",
-        website: o.website ?? o.Website ?? "",
-        contact_phone: o.contact_phone ?? o.contactPhone ?? o.phone ?? "",
-        address: o.address ?? o.Address ?? "",
-        overview: o.overview ?? o.Overview ?? o.about ?? "",
-        status: o.status ?? o.Status ?? "",
-        nicknames: o.nicknames ?? o.Nicknames ?? "",
-        parent_organization: o.parent_organization ?? o.parentOrganization ?? "",
-        contract_on_file: o.contract_on_file ?? o.contractOnFile ?? "",
-        date_contract_signed: o.date_contract_signed ?? o.dateContractSigned ?? "",
-        year_founded: o.year_founded ?? o.yearFounded ?? "",
-        perm_fee: o.perm_fee ?? o.permFee ?? "",
-        num_employees: o.num_employees != null ? String(o.num_employees) : o.numEmployees != null ? String(o.numEmployees) : "",
-        num_offices: o.num_offices != null ? String(o.num_offices) : o.numOffices != null ? String(o.numOffices) : "",
-      };
-      if (standard[key] !== undefined && standard[key] !== null && String(standard[key]).trim() !== "") {
-        return String(standard[key]);
-      }
-      const direct = o[key] ?? o[key?.replace(/(_\w)/g, (m: string) => m[1].toUpperCase())];
-      if (direct !== undefined && direct !== null && String(direct).trim() !== "") return String(direct);
-      // From custom_fields by label (catalog key may be field_name/field_key – resolve to label)
-      const fieldDef = (organizationAvailableFields || []).find(
-        (f: any) => String(f.field_key ?? f.field_name ?? f.api_name ?? f.id) === key
-      );
-      const label = fieldDef?.field_label ?? fieldDef?.field_name ?? key;
-      const customVal = o.customFields?.[getOrganizationDetailLabel(label)] ?? o.customFields?.[key];
-      if (customVal !== undefined && customVal !== null) return String(customVal);
-      return "-";
-    };
-
-    const orgDetailsKeys = Array.from(new Set(visibleFields.organizationDetails || []));
-    const effectiveRows: { key: string; label: string }[] = [];
-    for (const key of orgDetailsKeys) {
-      effectiveRows.push({ key, label: getOrganizationDetailLabel(key) });
-    }
-
-    const renderOrganizationDetailsRow = (row: { key: string; label: string }) => {
-      const customFieldDefs = (organizationAvailableFields || []).filter((f: any) => {
-        const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
-        return !isHidden;
-      });
-      const value = getOrganizationDetailValue(row.key);
-      const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
-      const fieldInfo = {
-        key: row.key,
-        label: row.label,
-        fieldType: def?.field_type ?? def?.fieldType,
-        lookupType: def?.lookup_type ?? def?.lookupType,
-        multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
-      };
-      return (
-        <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">
-            <FieldValueRenderer
-              value={value}
-              fieldInfo={fieldInfo}
-              emptyPlaceholder="-"
-              clickable
-            />
-          </div>
-        </div>
-      );
-    };
+    if (!hiringManager) return null;
 
     return (
       <PanelWithHeader title="Organization Details" onEdit={() => handleEditPanel("organizationDetails")}>
-        <div className="space-y-0 border border-gray-200 rounded">
-          {isLoadingOrganization ? (
-            <div className="p-4 text-gray-500 text-sm">Loading organization details...</div>
-          ) : (
-            effectiveRows.map((row) => renderOrganizationDetailsRow(row))
-          )}
-        </div>
+        <LookupEntityDetailsGrid
+          lookupType="organizations"
+          recordId={organizationIdFromField3}
+          visibleKeys={visibleFields.organizationDetails || []}
+          emptyPlaceholder="-"
+        />
       </PanelWithHeader>
     );
   };
@@ -1083,7 +947,20 @@ export default function HiringManagerView() {
       );
     }
     return null;
-  }, [hiringManager, visibleFields, notes, availableFields, organizationDetailsFieldCatalog, fetchedOrganization, isLoadingOrganization, organizationAvailableFields]);
+  }, [
+    hiringManager,
+    hiringManagerId,
+    visibleFields,
+    notes,
+    availableFields,
+    organizationDetailsFieldCatalog,
+    organizationAvailableFields,
+    organizationIdFromField3,
+    tasks,
+    isLoadingTasks,
+    tasksError,
+    router,
+  ]);
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -1438,57 +1315,6 @@ export default function HiringManagerView() {
     }
   };
 
-  // Fetch full organization record by ID (for Organization Details panel)
-  const fetchOrganizationById = useCallback(async (orgId: string) => {
-    if (!orgId) {
-      setFetchedOrganization(null);
-      return;
-    }
-    setIsLoadingOrganization(true);
-    setFetchedOrganization(null);
-    try {
-      const response = await fetch(`/api/organizations/${orgId}`);
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to fetch organization");
-      }
-      const data = await response.json();
-      const org = data.organization;
-      if (!org) {
-        setFetchedOrganization(null);
-        return;
-      }
-      let customFieldsObj: Record<string, any> = {};
-      if (org.custom_fields) {
-        try {
-          customFieldsObj =
-            typeof org.custom_fields === "string"
-              ? JSON.parse(org.custom_fields)
-              : org.custom_fields;
-        } catch (_) { }
-      }
-      setFetchedOrganization({
-        ...org,
-        customFields: customFieldsObj,
-      });
-    } catch (err) {
-      console.error("Error fetching organization by ID:", err);
-      setFetchedOrganization(null);
-    } finally {
-      setIsLoadingOrganization(false);
-    }
-  }, []);
-
-  // Fetch full organization record when hiring manager has an organization ID (for Organization Details panel)
-  useEffect(() => {
-    const orgId = hiringManager?.organization?.id;
-    if (orgId) {
-      fetchOrganizationById(String(orgId));
-    } else {
-      setFetchedOrganization(null);
-    }
-  }, [hiringManager?.organization?.id, fetchOrganizationById]);
-
   // When catalog loads, if details/organizationDetails visible list is empty, default to all catalog keys
   useEffect(() => {
     const detailsKeys = detailsFieldCatalog.map((f) => f.key);
@@ -1794,61 +1620,6 @@ export default function HiringManagerView() {
     }
   };
 
-  // Handle status change from summary page dropdown (same as organization summary)
-  const handleStatusChange = async (newStatus: string) => {
-    const id = hiringManagerId || hiringManager?.id;
-    if (!id || isSavingStatus) return;
-    setIsSavingStatus(true);
-    try {
-      const statusField = (availableFields || []).find(
-        (f: any) =>
-          (f.field_label || "").toLowerCase() === "status" ||
-          (f.field_name || "").toLowerCase() === "status"
-      );
-      const statusLabel = statusField?.field_label || "Status";
-      const currentCustomFields = hiringManager?.customFields || {};
-      const updatedCustomFields = {
-        ...currentCustomFields,
-        [statusLabel]: newStatus,
-      };
-      const response = await fetch(`/api/hiring-managers/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-        body: JSON.stringify({
-          status: newStatus,
-          customFields: updatedCustomFields,
-        }),
-      });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to update status");
-      }
-      setHiringManager((prev: any) =>
-        prev
-          ? {
-            ...prev,
-            status: newStatus,
-            customFields: updatedCustomFields,
-          }
-          : prev
-      );
-      toast.success("Status updated successfully");
-      if (id) await fetchHiringManager(id);
-    } catch (err) {
-      console.error("Error updating status:", err);
-      toast.error(err instanceof Error ? err.message : "Failed to update status");
-      if (hiringManagerId) fetchHiringManager(hiringManagerId);
-    } finally {
-      setIsSavingStatus(false);
-    }
-  };
-
   // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
@@ -1885,7 +1656,7 @@ export default function HiringManagerView() {
   const searchAboutReferences = async (query: string) => {
     setIsLoadingAboutSearch(true);
     setShowAboutDropdown(true);
-    
+
     if (!query || query.trim().length < 2) {
       setAboutSuggestions([]);
       return;
@@ -3554,16 +3325,16 @@ export default function HiringManagerView() {
   const actionOptions = isArchived
     ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
     : [
-        { label: "Add Note", action: () => handleActionSelected("add-note") },
-        { label: "Add Job", action: () => handleActionSelected("add-job") },
-        { label: "Send Email", action: () => handleActionSelected("send-email") },
-        { label: "Add Task", action: () => handleActionSelected("add-task") },
-        { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
-        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-        { label: "Password Reset", action: () => handleActionSelected("password-reset") },
-        { label: "Transfer", action: () => handleActionSelected("transfer") },
-        { label: "Delete", action: () => handleActionSelected("delete") },
-      ];
+      { label: "Add Note", action: () => handleActionSelected("add-note") },
+      { label: "Add Job", action: () => handleActionSelected("add-job") },
+      { label: "Send Email", action: () => handleActionSelected("send-email") },
+      { label: "Add Task", action: () => handleActionSelected("add-task") },
+      { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
+      { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+      { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+      { label: "Transfer", action: () => handleActionSelected("transfer") },
+      { label: "Delete", action: () => handleActionSelected("delete") },
+    ];
 
   // Tabs from the interface
   const tabs = [
@@ -4284,12 +4055,12 @@ export default function HiringManagerView() {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* Header Fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.length === 0 ? (
+            {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
+              headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const fieldInfo = getHeaderFieldInfo(fk);
                 return (
                   <div key={fk} className="min-w-[140px]">
@@ -4299,12 +4070,12 @@ export default function HiringManagerView() {
                       fieldInfo={fieldInfo ? { key: fieldInfo.key, label: fieldInfo.label, fieldType: fieldInfo.fieldType, lookupType: fieldInfo.lookupType, multiSelectLookupType: fieldInfo.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
+                      entityType="hiring-managers"
                     />
                   </div>
                 );
               })
             )}
-
           </div>
 
           {/* Action Buttons */}
@@ -4754,85 +4525,31 @@ export default function HiringManagerView() {
             </div>
             <div className="p-6">
               <>
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">
-                      Available Fields from Modify Page:
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                      {isLoadingFields ? (
-                        <div className="text-center py-4 text-gray-500">
-                          Loading fields...
-                        </div>
-                      ) : (() => {
-                        const visibleAvailableFields = availableFields.filter((field) => {
-                          const isHidden = field.is_hidden === true || field.hidden === true || field.isHidden === true;
-                          return !isHidden;
-                        });
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">
+                    Available Fields from Modify Page:
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                    {isLoadingFields ? (
+                      <div className="text-center py-4 text-gray-500">
+                        Loading fields...
+                      </div>
+                    ) : (() => {
+                      const visibleAvailableFields = availableFields.filter((field) => {
+                        const isHidden = field.is_hidden === true || field.hidden === true || field.isHidden === true;
+                        return !isHidden;
+                      });
 
-                        return visibleAvailableFields.length > 0 ? (
-                          visibleAvailableFields.map((field) => {
-                            const fieldKey =
-                              field.field_name || field.field_label || field.id;
-                            const isVisible =
-                              visibleFields[editingPanel]?.includes(fieldKey) ||
-                              false;
-                            return (
-                              <div
-                                key={field.id || fieldKey}
-                                className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                              >
-                                <div className="flex items-center space-x-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isVisible}
-                                    onChange={() =>
-                                      toggleFieldVisibility(editingPanel, fieldKey)
-                                    }
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <label className="text-sm text-gray-700">
-                                    {field.field_label ||
-                                      field.field_name ||
-                                      fieldKey}
-                                  </label>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  {field.field_type || "text"}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="text-center py-4 text-gray-500">
-                            <p>No visible fields available</p>
-                            <p className="text-xs mt-1">
-                              Only non-hidden fields from the modify page will appear here
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Standard Fields:</h3>
-                    <div className="space-y-2 border border-gray-200 rounded p-3">
-                      {(() => {
-                        const standardFieldsMap: Record<
-                          string,
-                          Array<{ key: string; label: string }>
-                        > = {
-                          recentNotes: [{ key: "notes", label: "Notes" }],
-                        };
-
-                        const fields = standardFieldsMap[editingPanel] || [];
-                        return fields.map((field) => {
+                      return visibleAvailableFields.length > 0 ? (
+                        visibleAvailableFields.map((field) => {
+                          const fieldKey =
+                            field.field_name || field.field_label || field.id;
                           const isVisible =
-                            visibleFields[editingPanel]?.includes(field.key) ||
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
                             false;
                           return (
                             <div
-                              key={field.key}
+                              key={field.id || fieldKey}
                               className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
                             >
                               <div className="flex items-center space-x-2">
@@ -4840,32 +4557,86 @@ export default function HiringManagerView() {
                                   type="checkbox"
                                   checked={isVisible}
                                   onChange={() =>
-                                    toggleFieldVisibility(editingPanel, field.key)
+                                    toggleFieldVisibility(editingPanel, fieldKey)
                                   }
                                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                 />
                                 <label className="text-sm text-gray-700">
-                                  {field.label}
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
                                 </label>
                               </div>
                               <span className="text-xs text-gray-500">
-                                standard
+                                {field.field_type || "text"}
                               </span>
                             </div>
                           );
-                        });
-                      })()}
-                    </div>
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No visible fields available</p>
+                          <p className="text-xs mt-1">
+                            Only non-hidden fields from the modify page will appear here
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
+                </div>
 
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Close
-                    </button>
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">Standard Fields:</h3>
+                  <div className="space-y-2 border border-gray-200 rounded p-3">
+                    {(() => {
+                      const standardFieldsMap: Record<
+                        string,
+                        Array<{ key: string; label: string }>
+                      > = {
+                        recentNotes: [{ key: "notes", label: "Notes" }],
+                      };
+
+                      const fields = standardFieldsMap[editingPanel] || [];
+                      return fields.map((field) => {
+                        const isVisible =
+                          visibleFields[editingPanel]?.includes(field.key) ||
+                          false;
+                        return (
+                          <div
+                            key={field.key}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() =>
+                                  toggleFieldVisibility(editingPanel, field.key)
+                                }
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <label className="text-sm text-gray-700">
+                                {field.label}
+                              </label>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              standard
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <button
+                    onClick={handleCloseEditModal}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Close
+                  </button>
+                </div>
               </>
             </div>
           </div>
@@ -5545,8 +5316,13 @@ export default function HiringManagerView() {
           saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
           isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
-            setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => String(f.field_name || f.field_key || f.api_name || f.id));
+            
+            const defaults = Array.from(new Set([...HIRING_MANAGER_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
           listMaxHeight="50vh"

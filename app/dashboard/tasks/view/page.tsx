@@ -2240,25 +2240,30 @@ export default function TaskView() {
                         <PanelWithHeader title="Task Overview" onEdit={() => handleEditPanel("taskOverview")}
                         >
                             <div className="border-b border-gray-300 pb-3 mb-4">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold">{task.title}</h2>
-                                    <div
-                                        className={`text-xs px-2 py-1 rounded ${task.isCompleted
-                                            ? "bg-green-100 text-green-800"
-                                            : "bg-yellow-100 text-yellow-800"
-                                            }`}
-                                    >
-                                        {task.isCompleted ? "Completed" : task.status}
-                                    </div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <h2 className="text-xl font-bold">{getTaskFieldValue('Field_1')}</h2>
+                                    <FieldValueRenderer
+                                        value={getTaskFieldValue('Field_3')}
+                                        fieldInfo={(() => {
+                                            const info = getTaskFieldInfo('Field_3') || getTaskFieldInfo('status');
+                                            return info ? { key: info.key ?? 'Field_3', label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: 'Field_3', label: 'Status' };
+                                        })() as any}
+                                        emptyPlaceholder="-"
+                                        clickable
+                                        stopPropagation
+                                        entityType="tasks"
+                                        recordId={task.id}
+                                        forceRenderAsStatus={false}
+                                    />
                                 </div>
-                                <div className="text-sm text-gray-600 mt-1">
-                                    Due: {task.dueDateTimeFormatted} • Priority: {task.priority}
+                                <div className="text-sm text-gray-600">
+                                    Due: {getTaskFieldValue('Field_7')} • Priority: {getTaskFieldValue('Field_11')}
                                 </div>
                             </div>
 
                             <div className="mb-6">
                                 <h3 className="font-bold text-lg mb-2">Description</h3>
-                                <div className="whitespace-pre-line text-gray-700">{task.description}</div>
+                                <div className="whitespace-pre-line text-gray-700">{getTaskFieldValue('Field_2')}</div>
                             </div>
 
                             {Array.from(new Set(visibleFields.taskOverview || [])).length > 0 && (
@@ -2312,6 +2317,8 @@ export default function TaskView() {
                                                             emptyPlaceholder="-"
                                                             clickable
                                                             stopPropagation
+                                                            entityType="tasks"
+                                                            recordId={task.id}
                                                         />
                                                     </div>
                                                 </div>
@@ -2362,6 +2369,8 @@ export default function TaskView() {
                                                     emptyPlaceholder="-"
                                                     clickable
                                                     stopPropagation
+                                                    entityType="tasks"
+                                                    recordId={task.id}
                                                 />
                                             </div>
                                         </div>
@@ -2488,12 +2497,12 @@ export default function TaskView() {
                 <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
                     {/* LEFT: dynamic fields */}
                     <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-                        {headerFields.length === 0 ? (
+                        {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
                             <span className="text-sm text-gray-500">
                                 No header fields selected
                             </span>
                         ) : (
-                            headerFields.map((fk) => {
+                            headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                                 const info = getHeaderFieldInfo(fk);
                                 const fieldInfo = info
                                     ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType }
@@ -2508,6 +2517,8 @@ export default function TaskView() {
                                             fieldInfo={fieldInfo}
                                             emptyPlaceholder="-"
                                             clickable
+                                            entityType="tasks"
+                                            recordId={task.id}
                                         />
                                     </div>
                                 );
@@ -2888,8 +2899,13 @@ export default function TaskView() {
                     saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
                     isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
                     onReset={() => {
-                        setHeaderFields(TASK_DEFAULT_HEADER_FIELDS);
-                        setHeaderFieldsOrder(TASK_DEFAULT_HEADER_FIELDS);
+                        const requiredCustom = (availableFields || [])
+                            .filter(f => f.is_required || f.required || f.isRequired)
+                            .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+                        
+                        const defaults = Array.from(new Set([...TASK_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+                        setHeaderFields(defaults);
+                        setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
                     }}
                     resetButtonText="Reset"
                     listMaxHeight="50vh"

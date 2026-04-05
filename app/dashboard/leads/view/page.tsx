@@ -3321,12 +3321,12 @@ export default function LeadView() {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.length === 0 ? (
+            {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
+              headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const info = getHeaderFieldInfo(fk);
                 return (
                   <div key={fk} className="min-w-[140px]">
@@ -3893,8 +3893,13 @@ export default function LeadView() {
           saveButtonText="Done"
           isSaveDisabled={headerFields.length === 0}
           onReset={() => {
-            setHeaderFields(LEAD_DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(LEAD_DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+            
+            const defaults = Array.from(new Set([...LEAD_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
         />

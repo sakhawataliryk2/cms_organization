@@ -682,7 +682,7 @@ export default function AddJob() {
 
   // Calculate address fields once using useMemo
   const addressFields = useMemo(
-    () => getAddressFields(customFields as any),
+    () => getAddressFields(customFields as any, "jobs"),
     [customFields]
   );
   const addressAnchorId = useMemo(
@@ -2044,6 +2044,7 @@ export default function AddJob() {
                               values={customFieldValues}
                               onChange={handleCustomFieldChange}
                               isEditMode={isEditMode}
+                              entityType="jobs"
                             />
                           </div>
                         </div>

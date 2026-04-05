@@ -14,7 +14,90 @@ export interface FieldLockConfig {
 }
 
 export const organizationsBaseFields: FieldLockConfig[] = [
-
+    {
+        name: "Field_1", // Organizaiton Name
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_2", // Status
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_5", // Organization Website
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_6", // Main Phone
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_8", // 	Address Line 1
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_9", // 	Address Line 2
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_10", // 	City
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_11", // 	State
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_12", // 	ZIP Code
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_30", // 	Oasis Key
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_69", // 	Owner
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    // {
+    //     name: "Field_70", // 	Date Added
+    //     is_field_type_locked: true,
+    //     is_required_locked: true,
+    //     is_hidden_locked: true,
+    //     is_read_only_locked: true,
+    // },
 ];
 export const jobsBaseFields: FieldLockConfig[] = [
     {
@@ -48,7 +131,7 @@ export const jobsBaseFields: FieldLockConfig[] = [
     },
 ];
 export const jobsDirectHireBaseFields: FieldLockConfig[] = [
-    
+
 ];
 export const jobsExecutiveSearchBaseFields: FieldLockConfig[] = [];
 export const jobSeekerBaseFields: FieldLockConfig[] = [];

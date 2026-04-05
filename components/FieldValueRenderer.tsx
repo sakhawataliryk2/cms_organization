@@ -1,10 +1,18 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import RecordNameResolver from "@/components/RecordNameResolver";
-import { FileText } from "lucide-react";
+import { CheckIcon, FileText } from "lucide-react";
 import Tooltip from "@/components/Tooltip";
 import DescriptionModal from "@/components/DescriptionModal";
+import { toast } from "sonner";
+import { CopyrightIcon } from "lucide-react";
+import {
+  getEntityCustomFieldsPatchPath,
+  getEntityUpdatePutPath,
+  getMappedStatusFieldName,
+} from "@/lib/entitySummaryFieldMaps";
+import { ADDRESS_FIELD_NAMES } from "@/components/AddressGroupRenderer";
 
 /** Placeholder when value is empty or N/A */
 const DEFAULT_EMPTY = "—";
@@ -14,6 +22,55 @@ const PHONE_PATTERN = /^\(\d{3}\)\s*\d{3}-\d{4}$/;
 
 /** Matches common date formats so we don't treat them as phones (YYYY-MM-DD, MM/DD/YYYY, etc.) */
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{2,4}$|^\d{1,2}-\d{1,2}-\d{2,4}$/;
+
+function extractFieldManagementFields(data: Record<string, unknown> | null): unknown[] {
+  if (!data || typeof data !== "object") return [];
+  const d = data as Record<string, unknown>;
+  const nested = d.data as Record<string, unknown> | undefined;
+  const deep = nested && typeof nested === "object"
+    ? (nested.data as Record<string, unknown> | undefined)
+    : undefined;
+  const candidates = [
+    d.customFields,
+    d.fields,
+    nested?.customFields,
+    nested?.fields,
+    deep?.fields,
+    d.organizationFields,
+    d.hiringManagerFields,
+    d.jobSeekerFields,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+  return [];
+}
+
+/** Parse admin field definition `options` into display strings for status select */
+function parseStatusOptionsFromDefinition(options: unknown): string[] {
+  if (options == null) return [];
+  if (typeof options === "string") {
+    try {
+      return parseStatusOptionsFromDefinition(JSON.parse(options));
+    } catch {
+      return options
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+  }
+  if (Array.isArray(options)) {
+    return options
+      .filter((opt): opt is string => typeof opt === "string" && opt.trim().length > 0)
+      .map((opt) => opt.trim());
+  }
+  if (typeof options === "object") {
+    return Object.values(options as Record<string, unknown>)
+      .filter((opt): opt is string => typeof opt === "string" && opt.trim().length > 0)
+      .map((opt) => opt.trim());
+  }
+  return [];
+}
 
 export interface FieldInfo {
   fieldType?: string;
@@ -46,8 +103,10 @@ export interface FieldValueRendererProps {
   showEmailDomain?: boolean;
   /** When true and value is empty, show placeholder in red with warning icon */
   required?: boolean;
-  /** Entity type for context-specific rendering (e.g. 'job') */
+  /** Entity type for context-specific rendering (e.g. 'job', 'hiring-managers') */
   entityType?: string;
+  /** Record id for mapped status PUT (see statusMappings; field defs + options fetched inside this component) */
+  recordId?: string | number;
 }
 
 function formatToMMDDYYYY(value: string): string {
@@ -184,9 +243,15 @@ export default function FieldValueRenderer({
   showEmailDomain = false,
   required = false,
   entityType,
+  recordId,
 }: FieldValueRendererProps) {
   const [copied, setCopied] = useState(false);
   const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusDefOptions, setStatusDefOptions] = useState<string[]>([]);
+  const [statusStorageLabelResolved, setStatusStorageLabelResolved] = useState("");
+  const [statusDefLoading, setStatusDefLoading] = useState(false);
+  const [localStatusOverride, setLocalStatusOverride] = useState<string | null>(null);
 
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
@@ -206,9 +271,109 @@ export default function FieldValueRenderer({
   }
 
   const rawOriginal = value != null && value !== "" ? String(value).trim() : "";
-  let raw = rawOriginal;
 
-  console.log("FieldInfo", fieldInfo)
+  const mappedStatusName = getMappedStatusFieldName(entityType);
+  const definitionFieldName = (fieldInfo?.name || fieldInfo?.key || "").trim();
+  const matchesMappedStatus =
+    Boolean(mappedStatusName) &&
+    definitionFieldName.length > 0 &&
+    definitionFieldName.toLowerCase() === mappedStatusName.toLowerCase();
+  const customFieldsPatchPath =
+    entityType && recordId != null && String(recordId) !== ""
+      ? getEntityCustomFieldsPatchPath(entityType, recordId)
+      : null;
+  const legacyPutPath =
+    entityType && recordId != null && String(recordId) !== ""
+      ? getEntityUpdatePutPath(entityType, recordId)
+      : null;
+  const statusUpdateUrl = customFieldsPatchPath ?? legacyPutPath;
+  const statusUpdateMethod = customFieldsPatchPath ? "PATCH" : "PUT";
+
+  useEffect(() => {
+    if (!matchesMappedStatus || !entityType || !mappedStatusName) {
+      setStatusDefOptions([]);
+      setStatusStorageLabelResolved("");
+      setStatusDefLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    setStatusDefLoading(true);
+
+    (async () => {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+        const res = await fetch(
+          `/api/admin/field-management/${encodeURIComponent(entityType)}`,
+          {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            signal: ac.signal,
+          }
+        );
+        const text = await res.text();
+        let data: Record<string, unknown> = {};
+        try {
+          data = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          /* keep {} */
+        }
+        const fields = extractFieldManagementFields(data);
+        const def = fields.find(
+          (f) =>
+            typeof f === "object" &&
+            f !== null &&
+            String((f as { field_name?: string }).field_name || "").toLowerCase() ===
+            mappedStatusName.toLowerCase()
+        ) as { field_label?: string; field_name?: string; options?: unknown } | undefined;
+
+        const storageLabel = String(def?.field_label ?? def?.field_name ?? "").trim();
+        const options = parseStatusOptionsFromDefinition(def?.options);
+
+        if (!ac.signal.aborted) {
+          setStatusStorageLabelResolved(storageLabel);
+          setStatusDefOptions(options);
+        }
+      } catch (e: unknown) {
+        if ((e as { name?: string })?.name === "AbortError") return;
+        if (!ac.signal.aborted) {
+          setStatusStorageLabelResolved("");
+          setStatusDefOptions([]);
+        }
+      } finally {
+        if (!ac.signal.aborted) setStatusDefLoading(false);
+      }
+    })();
+
+    return () => ac.abort();
+  }, [matchesMappedStatus, entityType, mappedStatusName]);
+
+  useEffect(() => {
+    setLocalStatusOverride(null);
+  }, [rawOriginal]);
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (stopPropagation) e.stopPropagation();
+  };
+
+  const handleCopy = useCallback((text: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success("Copied to clipboard");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    })
+      .catch(() => {
+        toast.error("Failed to copy to clipboard");
+      });
+  }, []);
+
+  let raw = rawOriginal;
 
   // Handle Field_6 (Job Description) - ONLY for job entity
   if (fieldName === "field_6" && entityType === "job") {
@@ -253,24 +418,36 @@ export default function FieldValueRenderer({
     if (Array.isArray(allFields) && valuesRecord && typeof valuesRecord === "object") {
       const normalize = (s: string) => (s || "").toLowerCase().trim();
 
-      const findAddressField = (labels: string[]) =>
-        allFields.find((f) => labels.some((l) => normalize(f.field_label || "") === normalize(l)));
+      // Find identifying mapping for the entity
+      const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
 
-      const addressField = findAddressField(["address", "address1"]);
-      const address2Field = findAddressField(["address2", "address 2"]);
-      const cityField = findAddressField(["city"]);
-      const stateField = findAddressField(["state"]);
-      const zipField = findAddressField(["zip", "zip code", "postal code"]);
+      const findAddressField = (labels: string[], mappedNames?: string[]) => {
+        // First try the mapped Field_X names if we have a mapping
+        if (mappedNames?.length) {
+          const found = allFields.find(f => mappedNames.includes(f.field_name || ""));
+          if (found) return found;
+        }
+        // Fallback to labels
+        return allFields.find((f) => labels.some((l) => normalize(f.field_label || "") === normalize(l)));
+      };
+
+      const addressField = findAddressField(["address", "address1"], mapping?.address);
+      const address2Field = findAddressField(["address2", "address 2"], mapping?.address2);
+      const cityField = findAddressField(["city"], mapping?.city);
+      const stateField = findAddressField(["state"], mapping?.state);
+      const zipField = findAddressField(["zip", "zip code", "postal code"], mapping?.zip);
 
       const getVal = (fld?: { field_name?: string; field_label?: string }) => {
         if (!fld) return "";
         const nameKey = fld.field_name;
         const labelKey = fld.field_label;
 
-        if (nameKey && Object.prototype.hasOwnProperty.call(valuesRecord, nameKey)) {
+        // Try access by nameKey first (Field_X)
+        if (nameKey && valuesRecord[nameKey] !== undefined) {
           return String(valuesRecord[nameKey] ?? "").trim();
         }
-        if (labelKey && Object.prototype.hasOwnProperty.call(valuesRecord, labelKey)) {
+        // Fallback to label
+        if (labelKey && valuesRecord[labelKey] !== undefined) {
           return String(valuesRecord[labelKey] ?? "").trim();
         }
         return "";
@@ -293,23 +470,93 @@ export default function FieldValueRenderer({
     }
   }
 
+  // Mapped status: fetch defs + select; save via unified PATCH custom-fields or legacy PUT
+  if (matchesMappedStatus && statusUpdateUrl) {
+    if (statusDefLoading) {
+      return (
+        <span
+          className={`inline-flex items-center gap-2 text-sm text-gray-500 ${className}`}
+        >
+          <span
+            className="inline-block h-3.5 w-3.5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"
+            aria-hidden
+          />
+          Loading…
+        </span>
+      );
+    }
+
+    if (
+      statusStorageLabelResolved &&
+      Array.isArray(statusDefOptions) &&
+      statusDefOptions.length > 0
+    ) {
+      const effectiveRaw = localStatusOverride ?? raw;
+      const normalizedDisplay =
+        effectiveRaw &&
+          effectiveRaw !== emptyPlaceholder &&
+          effectiveRaw !== "-" &&
+          effectiveRaw !== "N/A" &&
+          statusDefOptions.includes(effectiveRaw)
+          ? effectiveRaw
+          : statusDefOptions[0] || "";
+
+      const saveStatus = async (next: string) => {
+        setStatusSaving(true);
+        try {
+          const token = document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          );
+          const res = await fetch(statusUpdateUrl, {
+            method: statusUpdateMethod,
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              customFields: { [statusStorageLabelResolved]: next },
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(
+              (data as { message?: string })?.message || "Failed to update status"
+            );
+          }
+          setLocalStatusOverride(next);
+          toast.success("Updated");
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Update failed");
+        } finally {
+          setStatusSaving(false);
+        }
+      };
+
+      return (
+        <select
+          value={normalizedDisplay}
+          disabled={statusSaving}
+          onChange={(e) => saveStatus(e.target.value)}
+          className={`border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${className}`}
+        >
+          {statusDefOptions.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      );
+    }
+  }
+
   const isEmpty = raw === "";
   const str = isEmpty ? emptyPlaceholder : raw;
 
-  const isStatus = forceRenderAsStatus || fieldType === "status" || label === "status";
-
-  const handleClick = (e: React.MouseEvent) => {
-    if (stopPropagation) e.stopPropagation();
-  };
-
-  const handleCopy = useCallback((text: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, []);
+  const isStatus =
+    forceRenderAsStatus ||
+    fieldType === "status" ||
+    (label === "status" && !matchesMappedStatus);
 
   // Required field empty: red placeholder + warning icon
   if (isEmpty) {
@@ -353,12 +600,12 @@ export default function FieldValueRenderer({
       statusVariant === "deletion"
         ? "bg-red-100 text-red-800"
         : statusVariant === "archived"
-        ? "bg-amber-100 text-amber-800"
-        : statusVariant === "blue"
-        ? "bg-blue-100 text-blue-800"
-        : statusVariant === "gray"
-        ? "bg-gray-100 text-gray-800"
-        : "bg-green-100 text-green-800";
+          ? "bg-amber-100 text-amber-800"
+          : statusVariant === "blue"
+            ? "bg-blue-100 text-blue-800"
+            : statusVariant === "gray"
+              ? "bg-gray-100 text-gray-800"
+              : "bg-green-100 text-green-800";
     return (
       <span
         className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass} ${className}`}
@@ -455,7 +702,7 @@ export default function FieldValueRenderer({
             title="Copy email"
           >
             {copied ? (
-              <span className="text-xs text-green-600">Copied!</span>
+              <CheckIcon size={14} className="shrink-0 text-green-600" />
             ) : (
               <CopyIcon className="shrink-0" />
             )}
@@ -489,7 +736,7 @@ export default function FieldValueRenderer({
             title="Copy phone"
           >
             {copied ? (
-              <span className="text-xs text-green-600">Copied!</span>
+              <CheckIcon size={14} className="shrink-0 text-green-600" />
             ) : (
               <CopyIcon className="shrink-0" />
             )}

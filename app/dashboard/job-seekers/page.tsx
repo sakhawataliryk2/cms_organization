@@ -1100,7 +1100,7 @@ export default function JobSeekerList() {
                   items={columnFields}
                   strategy={horizontalListSortingStrategy}
                 >
-                  {columnFields.map((key) => {
+                  {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                     const columnInfo = getColumnInfo(key);
                     if (!columnInfo) return null;
 
@@ -1201,7 +1201,7 @@ export default function JobSeekerList() {
                     </td>
 
                     {/* Dynamic columns (including Record #) */}
-                    {columnFields.map((key) => {
+                    {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                       if (key === "record_number") {
                         return (
                           <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1359,7 +1359,17 @@ export default function JobSeekerList() {
           }}
           saveButtonText="Done"
           isSaveDisabled={isSavingColumns}
-          onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+          onReset={() => {
+            const required = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => {
+                const name = f.field_name || f.fieldName || "";
+                const isBackendCandidate = JS_BACKEND_COLUMN_KEYS.includes(name);
+                return isBackendCandidate ? name : `custom:${f.field_label || f.fieldLabel || f.field_name || f.id}`;
+              });
+            const defaults = Array.from(new Set(["record_number", ...JS_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
+            setColumnFields(defaults);
+          }}
           resetButtonText="Reset"
           listMaxHeight="60vh"
         />

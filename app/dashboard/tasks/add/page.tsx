@@ -150,7 +150,10 @@ export default function AddTask() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("tasks", { applyAutoCurrentDefaults: !taskId });
+  } = useCustomFields("tasks", { 
+    applyAutoCurrentDefaults: !taskId,
+    skipRequiredForLabels: ["Related Entity ID"] 
+  });
 
   // Initialize and load users
   useEffect(() => {
@@ -282,58 +285,73 @@ export default function AddTask() {
                          (relatedEntityIds && relatedEntityIds.trim() !== "");
     if (!hasEntityIds) return;
     
-    const entity = relatedEntity.toLowerCase();
-    if (!["job", "job_seeker", "hiring_manager", "lead", "placement"].includes(entity)) return;
+    // Normalize and check against supported entity types
+    const entityRaw = relatedEntity.toLowerCase();
+    const entity = entityRaw.replace("-", "_");
+    
+    if (!["job", "job_seeker", "hiring_manager", "lead", "placement", "organization"].includes(entity)) {
+      return;
+    }
+    
     if (customFieldsLoading || customFields.length === 0) return;
-    if (hasPrefilledRelatedFromUrlRef.current.has(entity)) return;
 
-    const isLookup = (f: any) => String(f.field_type || "").toLowerCase() === "lookup";
-    const lookupType = (f: any) => String(f.lookup_type || "").toLowerCase();
-
-    // Map entity types to their lookup_type values
-    const entityLookupTypeMap: Record<string, string[]> = {
-      "job": ["jobs", "job"],
-      "job_seeker": ["job-seekers", "jobseekers", "job_seeker"],
-      "hiring_manager": ["hiring-managers", "hiringmanagers", "hiring_manager"],
-      "lead": ["leads", "lead"],
-      "placement": ["placements", "placement"],
-      "organization": ["organizations", "organization"]
+    // Map entity types to Field_4 labels and Field_5 sub-field names
+    const entityToField4Type: Record<string, string> = {
+      "job": "Job",
+      "job_seeker": "Job Seeker",
+      "hiring_manager": "Hiring Manager",
+      "lead": "Lead",
+      "placement": "Placement",
+      "organization": "Organization"
     };
+
+    const field4Type = entityToField4Type[entity];
+    if (!field4Type) return;
+
+    const subFieldName = `Field_5_${field4Type}`;
     
-    const expectedLookupTypes = entityLookupTypeMap[entity] || [];
+    // Check if we've already successfully pre-filled this specific entity for this session
+    // AND if the value is actually in the state now (to avoid overwrites by defaults)
+    const currentField4Value = customFieldValues["Field_4"];
+    const field4Array = Array.isArray(currentField4Value) 
+      ? currentField4Value 
+      : (typeof currentField4Value === "string" ? currentField4Value.split(",").map(v => v.trim()).filter(Boolean) : []);
     
-    // Match ONLY by lookup_type, not by label
-    const targetField = customFields.find((f: any) => {
-      if (!isLookup(f)) return false;
-      const fieldLookupType = lookupType(f);
-      return expectedLookupTypes.some(expected => fieldLookupType === expected);
+    const isAlreadyPreFilled = field4Array.includes(field4Type) && customFieldValues[subFieldName];
+
+    if (isAlreadyPreFilled || hasPrefilledRelatedFromUrlRef.current.has(entity)) {
+      if (isAlreadyPreFilled) hasPrefilledRelatedFromUrlRef.current.add(entity);
+      return;
+    }
+
+    // In bulk mode (multiple IDs), use array; otherwise use single ID
+    const valuesToSet = entityIdsArray.length > 1 ? entityIdsArray : (relatedEntityId || entityIdsArray[0]);
+
+    console.log(`📌 Attempting to pre-fill dynamic field for ${entity}:`, {
+      field4Type,
+      subFieldName,
+      valuesToSet,
+      currentField4: currentField4Value
     });
 
-    if (!targetField?.field_name) return;
-
-    hasPrefilledRelatedFromUrlRef.current.add(entity);
-    
-    // In bulk mode (multiple IDs), use array; otherwise use single ID
-    // Handle bulk mode for ALL entity types, not just hiring_manager
-    if (entityIdsArray.length > 1) {
-      // Bulk mode: pre-populate with array of IDs
-      setCustomFieldValues((prev) => ({
-        ...prev,
-        [targetField.field_name]: entityIdsArray,
-      }));
-      console.log(`📋 Bulk mode - Pre-filled ${entity} field with IDs:`, entityIdsArray);
-    } else {
-      // Single mode: use single ID
-      const singleId = relatedEntityId || (entityIdsArray.length > 0 ? entityIdsArray[0] : "");
-      if (singleId) {
-        setCustomFieldValues((prev) => ({
-          ...prev,
-          [targetField.field_name]: String(singleId),
-        }));
-        console.log(`📋 Single mode - Pre-filled ${entity} field with ID:`, singleId);
+    setCustomFieldValues((prev) => {
+      const field4Val = prev["Field_4"];
+      let arr: string[] = [];
+      if (Array.isArray(field4Val)) {
+        arr = field4Val.map(v => String(v));
+      } else if (field4Val && typeof field4Val === "string") {
+        arr = field4Val.split(",").map(v => v.trim()).filter(Boolean);
       }
-    }
-  }, [isEditMode, relatedEntity, relatedEntityId, relatedEntityIds, entityIdsArray, customFieldsLoading, customFields, setCustomFieldValues]);
+      
+      const nextField4 = arr.includes(field4Type) ? arr : [...arr, field4Type];
+
+      return {
+        ...prev,
+        "Field_4": nextField4,
+        [subFieldName]: valuesToSet
+      };
+    });
+  }, [isEditMode, relatedEntity, relatedEntityId, relatedEntityIds, entityIdsArray, customFieldsLoading, customFields, customFieldValues["Field_4"], setCustomFieldValues]);
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {
@@ -696,11 +714,46 @@ export default function AddTask() {
         apiData.assigned_to = assignedToId;
       }
 
+      // Map dynamic Related Entity choices to backend columns
+      const ENTITY_MAPPING: Record<string, { column: string; lookup: string }> = {
+        "Organization": { column: "organization_id", lookup: "organizations" },
+        "Hiring Manager": { column: "hiring_manager_id", lookup: "hiring-managers" },
+        "Job": { column: "job_id", lookup: "jobs" },
+        "Lead": { column: "lead_id", lookup: "leads" },
+        "Placement": { column: "placement_id", lookup: "placements" },
+        "Job Seeker": { column: "job_seeker_id", lookup: "job-seekers" },
+      };
+
+      const selectedTypes = customFieldValues["Field_4"] || [];
+      const typesArray = Array.isArray(selectedTypes) ? selectedTypes : (selectedTypes ? [selectedTypes] : []);
+
+      // Track if we found multiple IDs for any entity type to support bulk mode from the form
+      let bulkFormEntityType: string | null = null;
+      let bulkFormEntityIds: string[] | null = null;
+
+      for (const type of typesArray) {
+        const mapping = ENTITY_MAPPING[type as string];
+        if (mapping) {
+          const val = customFieldValues[`Field_5_${type}`];
+          if (val) {
+            if (Array.isArray(val)) {
+              if (val.length > 1) {
+                bulkFormEntityType = type as string;
+                bulkFormEntityIds = val.map(id => String(id));
+              }
+              if (val.length > 0) apiData[mapping.column] = parseInt(val[0]);
+            } else if (String(val).trim() !== "") {
+              apiData[mapping.column] = parseInt(val);
+            }
+          }
+        }
+      }
+
       apiData.custom_fields = typeof customFieldsForDB === "object" && !Array.isArray(customFieldsForDB) && customFieldsForDB !== null
         ? JSON.parse(JSON.stringify(customFieldsForDB))
         : {};
 
-      // Only set single entity ID if not in bulk mode
+      // Only set single entity ID if not in bulk mode from URL
       if (!isBulkMode && relatedEntity && relatedEntityId) {
         const rid = Number(relatedEntityId);
         switch (relatedEntity) {
@@ -793,8 +846,12 @@ export default function AddTask() {
           ? JSON.parse(JSON.stringify(apiData.custom_fields))
           : {};
 
-      // Handle bulk creation for multiple entity IDs
-      if (isBulkMode && !isEditMode && relatedEntity && entityIdsArray.length > 0) {
+      // Handle bulk creation if we detected bulk IDs in the form OR from the URL
+      const finalBulkMode = isBulkMode || ((bulkFormEntityIds as string[] | null) !== null && (bulkFormEntityIds as string[] | null)!.length > 1);
+      const finalRelatedEntity = bulkFormEntityType ? (bulkFormEntityType as string).toLowerCase().replace(" ", "_") : relatedEntity;
+      const finalEntityIds = (bulkFormEntityIds as string[] | null) || entityIdsArray;
+
+      if (finalBulkMode && !isEditMode && finalRelatedEntity && finalEntityIds.length > 0) {
         const results = {
           successful: [] as string[],
           failed: [] as string[],
@@ -810,16 +867,16 @@ export default function AddTask() {
           'job_seeker': 'job_seeker_id',
           'placement': 'placement_id'
         };
-        const entityField = entityFieldMap[relatedEntity];
+        const entityField = entityFieldMap[finalRelatedEntity];
 
         if (!entityField) {
-          setError(`Unsupported entity type: ${relatedEntity}`);
+          setError(`Unsupported entity type: ${finalRelatedEntity}`);
           setIsSubmitting(false);
           return;
         }
 
         // Get entity IDs from form if multiselect was used, otherwise use entityIdsArray from URL
-        let entityIdsToProcess = entityIdsArray;
+        let entityIdsToProcess = finalEntityIds;
         
         // Map entity types to their lookup_type values (match ONLY by lookup_type)
         const entityLookupTypeMap: Record<string, string[]> = {
@@ -974,10 +1031,67 @@ export default function AddTask() {
     router.back();
   };
 
-  const isFormValid = useMemo(() => {
-    const customFieldValidation = validateCustomFields();
-    return customFieldValidation.isValid;
-  }, [customFieldValues, validateCustomFields]);
+  // Synchronize dynamic Field_5_* sub-fields with the main Field_5 state
+  useEffect(() => {
+    const field5SubKeys = Object.keys(customFieldValues).filter(k => k.startsWith("Field_5_"));
+    
+    const allIds: string[] = [];
+    field5SubKeys.forEach(k => {
+      const val = customFieldValues[k];
+      if (Array.isArray(val)) {
+        allIds.push(...val.map(String));
+      } else if (val) {
+        allIds.push(String(val));
+      }
+    });
+    
+    const uniqueIds = Array.from(new Set(allIds)).filter(Boolean);
+    const field5Value = uniqueIds.join(",");
+    
+    if (customFieldValues["Field_5"] !== field5Value) {
+      setCustomFieldValues(prev => ({
+        ...prev,
+        Field_5: field5Value
+      }));
+    }
+  }, [customFieldValues, setCustomFieldValues]);
+
+  const formValidation = useMemo(() => {
+    const res = validateCustomFields();
+    if (!res.isValid) return res;
+
+    // Manual validation for Field_5 (Related Entity ID)
+    const field5 = customFields.find(f => f.field_name === "Field_5");
+    if (field5?.is_required && !field5.is_hidden) {
+      const selectedTypes = customFieldValues["Field_4"] || [];
+      const typesArray = Array.isArray(selectedTypes) 
+        ? selectedTypes 
+        : String(selectedTypes).split(",").map(v => v.trim()).filter(v => v);
+      
+      if (typesArray.length > 0) {
+        for (const type of typesArray) {
+          const subFieldName = `Field_5_${type}`;
+          const subValue = customFieldValues[subFieldName];
+          const hasValue = Array.isArray(subValue) ? subValue.length > 0 : !!subValue;
+          
+          if (!hasValue) {
+            return { 
+              isValid: false, 
+              message: `Please select at least one ${type}` 
+            };
+          }
+        }
+      } else {
+        // If Field_5 is required, at least one type in Field_4 must be selected
+        return { isValid: false, message: "Please select a Related Entity Type first" };
+      }
+    }
+    
+    return res;
+  }, [customFields, customFieldValues, validateCustomFields]);
+
+  const isFormValid = formValidation.isValid;
+  const validationError = formValidation.message;
 
   // Show loading screen when submitting
   if (isSubmitting) {
@@ -1190,8 +1304,15 @@ export default function AddTask() {
                   })();
 
                   // In bulk mode, convert related entity lookup to multiselect_lookup
+                  // Also force Field_4 to be a multi-select search for our dynamic lookup system
                   let fieldToRender: any = field;
-                  if (isBulkMode && isRelatedEntityField) {
+                  if (field.field_name === "Field_4") {
+                    fieldToRender = {
+                      ...field,
+                      field_type: "multiselect"
+                    };
+                    console.log("🛠️ Forcing Field_4 to multiselect for dynamic entity mapping");
+                  } else if (isBulkMode && isRelatedEntityField) {
                     // Convert single lookup to multiselect_lookup for bulk operations
                     fieldToRender = {
                       ...field,
@@ -1208,6 +1329,77 @@ export default function AddTask() {
 
                   // Get field value - will be array for multiselect in bulk mode, string for single select
                   let fieldValue = customFieldValues[field.field_name];
+                  
+                  // Special handling for Field_4 (Related Entity Type) mapping to dynamic ID fields
+                  const selectedRelatedEntityTypes = (() => {
+                    const val = customFieldValues["Field_4"];
+                    if (!val) return [];
+                    return Array.isArray(val) ? val : String(val).split(",").map(v => v.trim()).filter(v => v);
+                  })();
+
+                  // ENTITY_MAPPING for dynamic lookups
+                  const ENTITY_MAPPING: Record<string, { column: string; lookup: string }> = {
+                    "Organization": { column: "organization_id", lookup: "organizations" },
+                    "Hiring Manager": { column: "hiring_manager_id", lookup: "hiring-managers" },
+                    "Job": { column: "job_id", lookup: "jobs" },
+                    "Lead": { column: "lead_id", lookup: "leads" },
+                    "Placement": { column: "placement_id", lookup: "placements" },
+                    "Job Seeker": { column: "job_seeker_id", lookup: "job-seekers" },
+                  };
+
+                  // If this is Field_5 (Related Entity ID), we render as many lookups as selected in Field_4
+                  if (field.field_name === "Field_5") {
+                    if (selectedRelatedEntityTypes.length === 0) {
+                      return (
+                        <div key={field.id} className="flex items-center gap-4 mb-4 opacity-50 italic text-sm text-gray-500">
+                          <label className="w-48 font-medium">{field.field_label}:</label>
+                          <div className="flex-1">Please select Related Entity Type(s) first</div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={field.id} className="space-y-4 mb-4 border-l-2 border-blue-100 pl-4 py-2">
+                        {selectedRelatedEntityTypes.map((type) => {
+                          const mapping = ENTITY_MAPPING[type];
+                          if (!mapping) return null;
+
+                          // Use sub-field name like Field_5_Job
+                          const subFieldName = `${field.field_name}_${type}`;
+                          const subFieldValue = customFieldValues[subFieldName];
+
+                          // Create a virtual field definition for the renderer
+                          const virtualField = {
+                            ...field,
+                            field_label: `${type}`,
+                            field_name: subFieldName,
+                            field_type: "multiselect_lookup", // Always multiselect for bulk consistency
+                            lookup_type: mapping.lookup as any
+                          };
+
+                          return (
+                            <div key={type} className="flex items-center gap-4">
+                              <label className="w-48 font-medium">
+                                {type}:
+                              </label>
+                              <div className="flex-1 relative">
+                                <CustomFieldRenderer
+                                  field={virtualField}
+                                  value={subFieldValue}
+                                  allFields={customFields}
+                                  values={customFieldValues}
+                                  onChange={handleCustomFieldChange}
+                                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+
+                  // Note: fieldToRender and Field_4 forcing logic already handled above
                   
                   // Ensure proper format: array for multiselect, string for single select
                   // Handle bulk mode for ALL related entity fields, not just hiring_manager
@@ -1346,24 +1538,33 @@ export default function AddTask() {
           </div>
 
           <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-                }`}
-            >
-              {isEditMode ? "Update" : "Save"}
-            </button>
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex items-center justify-between">
+            <div className="flex-1">
+              {process.env.NODE_ENV === 'development' && !isFormValid && (
+                <div className="text-red-500">
+                  DEBUG: {validationError || "Form invalid"}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-4">
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isFormValid}
+                className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-500 text-white hover:bg-blue-600"
+                  }`}
+              >
+                {isEditMode ? "Update" : "Save"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

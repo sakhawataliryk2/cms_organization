@@ -4574,6 +4574,7 @@ Best regards`;
               valuesRecord={customObj as any}
               emptyPlaceholder="-"
               clickable
+              entityType="job-seekers"
             />
           </div>
           {/* </div> */}
@@ -4766,6 +4767,7 @@ Best regards`;
                   fieldInfo={{ key: row.key, label: row.label }}
                   emptyPlaceholder="-"
                   clickable={false}
+                  entityType="job-seekers"
                 />
               </div>
             </div>
@@ -4924,12 +4926,12 @@ Best regards`;
         <div className="flex flex-col lg:flex-row justify-between items-start gap-3 sm:gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-6 sm:gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.length === 0 ? (
+            {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
+              headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
                 const info = getHeaderFieldInfo(fk);
                 return (
                   <div key={fk} className="min-w-[120px] sm:min-w-[140px]">
@@ -4941,6 +4943,7 @@ Best regards`;
                       fieldInfo={info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
+                      entityType="job-seekers"
                     />
                   </div>
                 );
@@ -7283,8 +7286,15 @@ Best regards`;
           saveButtonText="Done"
           isSaveDisabled={headerFields.length === 0}
           onReset={() => {
-            setHeaderFields(DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => {
+                const k = f.field_name || f.field_key || f.field_label || f.id;
+                return `custom:${String(k)}`;
+              });
+            const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
         />

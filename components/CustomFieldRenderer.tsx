@@ -880,7 +880,7 @@ export default function CustomFieldRenderer({
       const selectedValues = normalizedOptions.filter((opt) =>
         rawSelected.some((v) => v.trim() === opt.trim())
       );
-      return readOnly ? (
+      const multiselectField = readOnly ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
           {selectedValues.length === 0 ? "—" : selectedValues.join(", ")}
         </div>
@@ -895,6 +895,7 @@ export default function CustomFieldRenderer({
           id={field.field_name}
         />
       );
+      return withValidationWrapper(multiselectField, validationIndicator);
     }
     case "multicheckbox": {
       const rawSelected = Array.isArray(value)
@@ -915,7 +916,7 @@ export default function CustomFieldRenderer({
           selectedValues.filter((v) => v !== item)
         );
       };
-      return (
+      return withValidationWrapper(
         <div
           id={field.field_name}
           className="w-full p-4 border border-gray-200 rounded-lg bg-white"
@@ -981,7 +982,8 @@ export default function CustomFieldRenderer({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        validationIndicator
       );
     }
     case "composite": {
@@ -1664,7 +1666,7 @@ export default function CustomFieldRenderer({
       );
 
     case "file":
-      return readOnly ? (
+      const fileField = readOnly ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700 text-sm">
           {value && (typeof value === "string" || value?.name) ? (typeof value === "string" ? value : value.name) : "—"}
         </div>
@@ -1686,8 +1688,9 @@ export default function CustomFieldRenderer({
           </p>
         </div>
       );
+      return withValidationWrapper(fileField, validationIndicator);
     case "lookup":
-      return readOnly || isDisabledByDependency ? (
+      const lookupField = readOnly || isDisabledByDependency ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
           {isDisabledByDependency
             ? "— (select dependent field first)"
@@ -1713,40 +1716,47 @@ export default function CustomFieldRenderer({
           })()}
         />
       );
+      return withValidationWrapper(lookupField, validationIndicator);
     case "multiselect_lookup":
-      return readOnly || isDisabledByDependency ? (
-        <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
-          {isDisabledByDependency
-            ? "— (select dependent field first)"
-            : Array.isArray(value)
-              ? value.join(", ")
-              : value && String(value).trim() !== ""
-                ? String(value)
-                : "—"}
-        </div>
-      ) : (() => {
-        let filterByParam: { key: string; value: string } | undefined;
-        if (field.lookup_type === "hiring-managers") {
-          const orgId = context?.organizationIdOnlyForBillingContacts != null
-            ? (isBillingContactLookupField(field) ? context.organizationIdOnlyForBillingContacts : undefined)
-            : context?.organizationId;
-          filterByParam = orgId ? { key: "organization_id", value: orgId } : undefined;
-        } else {
-          filterByParam = undefined;
-        }
-        return (
-          <MultiSelectLookupField
-            value={value ?? []}
-            onChange={(val) => onChange(field.field_name, Array.isArray(val) ? val : val)}
-            lookupType={(field.lookup_type as MultiSelectLookupType) || "organizations"}
-            placeholder={field.placeholder || "Type to search..."}
-            required={field.is_required}
-            className={className}
-            disabled={readOnly || isDisabledByDependency}
-            filterByParam={filterByParam}
-          />
+      const multiSelectLookupField =
+        readOnly || isDisabledByDependency ? (
+          <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
+            {isDisabledByDependency
+              ? "— (select dependent field first)"
+              : Array.isArray(value)
+                ? value.join(", ")
+                : value && String(value).trim() !== ""
+                  ? String(value)
+                  : "—"}
+          </div>
+        ) : (
+          (() => {
+            let filterByParam: { key: string; value: string } | undefined;
+            if (field.lookup_type === "hiring-managers") {
+              const orgId = context?.organizationIdOnlyForBillingContacts != null
+                ? (isBillingContactLookupField(field)
+                  ? context.organizationIdOnlyForBillingContacts
+                  : undefined)
+                : context?.organizationId;
+              filterByParam = orgId ? { key: "organization_id", value: orgId } : undefined;
+            } else {
+              filterByParam = undefined;
+            }
+            return (
+              <MultiSelectLookupField
+                value={value ?? []}
+                onChange={(val) => onChange(field.field_name, Array.isArray(val) ? val : val)}
+                lookupType={(field.lookup_type as MultiSelectLookupType) || "organizations"}
+                placeholder={field.placeholder || "Type to search..."}
+                required={field.is_required}
+                className={className}
+                disabled={readOnly || isDisabledByDependency}
+                filterByParam={filterByParam}
+              />
+            );
+          })()
         );
-      })();
+      return withValidationWrapper(multiSelectLookupField, validationIndicator);
     default:
       // Check if this is a ZIP code field (label/type only — no field_name)
       const isZipCodeField =

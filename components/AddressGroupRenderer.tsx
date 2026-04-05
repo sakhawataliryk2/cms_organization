@@ -15,6 +15,7 @@ interface CustomFieldDefinition {
   default_value?: string | null;
   sort_order: number;
   lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
+  entity_type?: "organization" | "hiring-manager" | "job-seeker" | "job";
 }
 
 interface AddressGroupRendererProps {
@@ -24,35 +25,67 @@ interface AddressGroupRendererProps {
   isEditMode?: boolean;
 }
 
-const ADDRESS_FIELD_NAMES = {
-  address: ["Field_12"],
-  address2: ["Field_13"],
-  city: ["Field_14"],
-  state: ["Field_15"],
-  country: ["Field_16"],
-  zip: ["Field_17"],
-};
+export const ADDRESS_FIELD_NAMES = [
+  {
+    entity_type: "hiring-managers",
+    address: ["Field_12"],
+    address2: ["Field_13"],
+    city: ["Field_14"],
+    state: ["Field_15"],
+    zip: ["Field_17"],
+  },
+  {
+    entity_type: "organizations",
+    address: ["Field_8"],
+    address2: ["Field_9"],
+    city: ["Field_10"],
+    state: ["Field_11"],
+    zip: ["Field_12"],
+  },
+  {
+    entity_type: "jobs",
+    address: ["Field_12"],
+    address2: ["Field_13"],
+    city: ["Field_14"],
+    state: ["Field_15"],
+    zip: ["Field_17"],
+  },
+  {
+    entity_type: "job-seekers",
+    address: ["Field_12"],
+    address2: ["Field_13"],
+    city: ["Field_14"],
+    state: ["Field_15"],
+    zip: ["Field_17"],
+  }
+];
 
-const ADDRESS_FIELD_LABELS = {
-  address: ["address", "address1"],
-  address2: ["address2", "address 2"],
-  city: ["city"],
-  state: ["state"],
-  zip: ["zip", "zip code", "postal code"],
-};
+// const ADDRESS_FIELD_LABELS = {
+//   address: ["address", "address1"],
+//   address2: ["address2", "address 2"],
+//   city: ["city"],
+//   state: ["state"],
+//   zip: ["zip", "zip code", "postal code"],
+// };
 
-export function getAddressFields(customFields: CustomFieldDefinition[]) {
+export function getAddressFields(customFields: CustomFieldDefinition[], entityType?: string) {
+  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
+  
+  if (!mapping) {
+    // If no entityType provided or found in mapping, return empty array as safety
+    return [];
+  }
+
   const pick = (names: string[]) =>
     customFields.find((f) => names.includes(f.field_name));
 
-  const address = pick(ADDRESS_FIELD_NAMES.address);
-  const address2 = pick(ADDRESS_FIELD_NAMES.address2);
-  const city = pick(ADDRESS_FIELD_NAMES.city);
-  const state = pick(ADDRESS_FIELD_NAMES.state);
-  const country = pick(ADDRESS_FIELD_NAMES.country);
-  const zip = pick(ADDRESS_FIELD_NAMES.zip);
+  const address = pick(mapping.address);
+  const address2 = pick(mapping.address2);
+  const city = pick(mapping.city);
+  const state = pick(mapping.state);
+  const zip = pick(mapping.zip);
 
-  return [address, address2, city, state, country, zip].filter(
+  return [address, address2, city, state, zip].filter(
     Boolean
   ) as CustomFieldDefinition[];
 }
@@ -60,7 +93,8 @@ export function getAddressFields(customFields: CustomFieldDefinition[]) {
 /** Check a single address field value (same rules as AddressGroupRenderer). */
 function checkAddressFieldComplete(
   field: CustomFieldDefinition,
-  values: Record<string, any>
+  values: Record<string, any>,
+  entityType?: string
 ): boolean {
   const value = values?.[field.field_name] ?? "";
   if (field.field_type === "select") {
@@ -73,11 +107,14 @@ function checkAddressFieldComplete(
     return true;
   }
   if (!value || String(value).trim() === "") return false;
+
+  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
   const isZipCodeField =
+    mapping?.zip.includes(field.field_name) ||
     field.field_label?.toLowerCase().includes("zip") ||
     field.field_label?.toLowerCase().includes("postal code") ||
-    field.field_name?.toLowerCase().includes("zip") ||
-    field.field_name === "Field_17";
+    field.field_name?.toLowerCase().includes("zip");
+
   if (isZipCodeField) return /^\d{5}$/.test(String(value).trim());
   return true;
 }
@@ -85,10 +122,11 @@ function checkAddressFieldComplete(
 /** Returns true when all address fields in the group have valid values (for ✔ / * label). */
 export function isAddressGroupValid(
   fields: CustomFieldDefinition[],
-  values: Record<string, any>
+  values: Record<string, any>,
+  entityType?: string
 ): boolean {
   if (!fields.length) return false;
-  return fields.every((f) => checkAddressFieldComplete(f, values));
+  return fields.every((f) => checkAddressFieldComplete(f, values, entityType));
 }
 
 function SearchIcon() {
@@ -114,12 +152,14 @@ function UnderlineField({
   onChange,
   hidePlaceholder = false,
   withSearchIcon = false,
+  entityType,
 }: {
   field: CustomFieldDefinition;
   values: Record<string, any>;
   onChange: (fieldName: string, value: any) => void;
   hidePlaceholder?: boolean;
   withSearchIcon?: boolean;
+  entityType?: string;
 }) {
   const value = values?.[field.field_name] ?? "";
 
@@ -138,12 +178,12 @@ function UnderlineField({
     const hasValue = value && String(value).trim() !== "";
     if (!hasValue) return false;
 
-    // Use label/type only — no field_name (Field_24) so mapping per entity is respected
+    const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
     const isZipCodeField =
+      mapping?.zip.includes(field.field_name) ||
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
-      field.field_name?.toLowerCase().includes("zip") ||
-      field.field_name === "Field_17";
+      field.field_name?.toLowerCase().includes("zip");
 
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
@@ -170,19 +210,12 @@ function UnderlineField({
         `}
       >
         {field.is_required && (
-          fieldIsValid ? (
-            <span
-              className="text-green-600 text-sm shrink-0 transition-opacity duration-300"
-              aria-hidden="true"
-            >
-              ✔
-            </span>
-          ) : (
-            <span
-              className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 transition-colors duration-300"
-              aria-hidden="true"
-            />
-          )
+          <span
+            className={`shrink-0 text-sm font-semibold ${fieldIsValid ? "text-green-500" : "text-red-500"}`}
+            aria-hidden="true"
+          >
+            {fieldIsValid ? "✔" : "*"}
+          </span>
         )}
 
         {withSearchIcon && <SearchIcon />}
@@ -204,15 +237,15 @@ export default function AddressGroupRenderer({
   values,
   onChange,
   isEditMode = false,
-}: AddressGroupRendererProps) {
-  const normalize = (s: string) => (s || "").toLowerCase().trim();
+  entityType,
+}: AddressGroupRendererProps & { entityType?: string }) {
+  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
 
-  const addressField = fields.find((f) => f.field_name === "Field_12");
-  const address2Field = fields.find((f) => f.field_name === "Field_13");
-  const cityField = fields.find((f) => f.field_name === "Field_14");
-  const stateField = fields.find((f) => f.field_name === "Field_15");
-  const countryField = fields.find((f) => f.field_name === "Field_16");
-  const zipField = fields.find((f) => f.field_name === "Field_17");
+  const addressField = fields.find((f) => mapping?.address.includes(f.field_name));
+  const address2Field = fields.find((f) => mapping?.address2.includes(f.field_name));
+  const cityField = fields.find((f) => mapping?.city.includes(f.field_name));
+  const stateField = fields.find((f) => mapping?.state.includes(f.field_name));
+  const zipField = fields.find((f) => mapping?.zip.includes(f.field_name));
 
   if (
     !addressField &&
@@ -225,7 +258,7 @@ export default function AddressGroupRenderer({
   }
 
   const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean =>
-    !field || checkAddressFieldComplete(field, values);
+    !field || checkAddressFieldComplete(field, values, entityType);
 
   const isAddressComplete = addressField ? checkFieldComplete(addressField) : false;
   const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true;
@@ -252,6 +285,7 @@ export default function AddressGroupRenderer({
                 field={addressField}
                 values={values}
                 onChange={onChange}
+                entityType={entityType}
               />
             </div>
           )}
@@ -261,6 +295,7 @@ export default function AddressGroupRenderer({
                 field={address2Field}
                 values={values}
                 onChange={onChange}
+                entityType={entityType}
               />
             </div>
           )}
@@ -276,6 +311,7 @@ export default function AddressGroupRenderer({
                 field={cityField}
                 values={values}
                 onChange={onChange}
+                entityType={entityType}
               />
             </div>
           )}
@@ -286,6 +322,7 @@ export default function AddressGroupRenderer({
                 field={stateField}
                 values={values}
                 onChange={onChange}
+                entityType={entityType}
               />
             </div>
           )}
@@ -295,6 +332,7 @@ export default function AddressGroupRenderer({
                 field={zipField}
                 values={values}
                 onChange={onChange}
+                entityType={entityType}
               />
             </div>
           )}
@@ -315,3 +353,4 @@ export default function AddressGroupRenderer({
     </div>
   );
 }
+
