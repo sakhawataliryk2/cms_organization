@@ -34,6 +34,7 @@ const SECTION_CONFIG: Record<
       { value: "JOB_SEEKER_UNARCHIVE_REQUEST", label: "Job Seeker - Unarchive Request (Onboarding)" },
       { value: "JOB_SEEKER_APPLICATION_SUBMISSION", label: "Application Submission Template" },
       { value: "CLIENT_SUBMISSION_EMAIL", label: "Client Submission Email Template" },
+      { value: "DUPLICATE_CHECK_REPORT", label: "Duplicate Check Report" },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}", "{{jobTitle}}", "{{noteText}}"],
@@ -91,6 +92,7 @@ const SECTION_CONFIG: Record<
         "{{comments}}",
         "{{candidateUrl}}",
       ],
+      DUPLICATE_CHECK_REPORT: ["{{generatedAt}}", "{{totalDuplicates}}", "{{reportTable}}"],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -101,6 +103,7 @@ const SECTION_CONFIG: Record<
       JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_APPLICATION_SUBMISSION: ["{{candidateNameLink}}", "{{viewCandidateUrl}}"],
       CLIENT_SUBMISSION_EMAIL: ["{{candidateName}}", "{{jobTitle}}", "{{candidateUrl}}"],
+      DUPLICATE_CHECK_REPORT: ["{{reportTable}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -224,6 +227,16 @@ const SECTION_CONFIG: Record<
           `<pre style="background:#f5f5f5;padding:10px;border-radius:4px;">{{comments}}</pre>` +
           `<p><strong>View Candidate:</strong> <a href="{{candidateUrl}}">{{candidateUrl}}</a></p>` +
           `<p><em>This is an automated notification from the ATS.</em></p>` +
+          `</div>`,
+      },
+      DUPLICATE_CHECK_REPORT: {
+        template_name: "Duplicate Check Report",
+        subject: "Duplicate Check Report - Job Seekers ({{totalDuplicates}})",
+        body:
+          `<div>` +
+          `<p><strong>Generated At:</strong> {{generatedAt}}</p>` +
+          `<p><strong>Total Duplicate Entries:</strong> {{totalDuplicates}}</p>` +
+          `<p>{{reportTable}}</p>` +
           `</div>`,
       },
     },
