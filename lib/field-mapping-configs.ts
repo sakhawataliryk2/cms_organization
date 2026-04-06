@@ -91,13 +91,13 @@ export const organizationsBaseFields: FieldLockConfig[] = [
         is_hidden_locked: true,
         is_read_only_locked: true,
     },
-    // {
-    //     name: "Field_70", // 	Date Added
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
+    {
+        name: "Field_70", // 	Date Added
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
 ];
 export const jobsBaseFields: FieldLockConfig[] = [
     {
