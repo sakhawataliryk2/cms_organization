@@ -3809,7 +3809,9 @@ export default function PlacementView() {
     value: any,
     fieldDef: any,
     allFields: any[],
-    valuesRecord: Record<string, unknown>
+    valuesRecord: Record<string, unknown>,
+    entityType?: string,
+    recordId?: string | number | undefined
   ) => {
     const fieldInfo = fieldDef ? {
       key,
@@ -3829,6 +3831,8 @@ export default function PlacementView() {
             valuesRecord={valuesRecord as any}
             emptyPlaceholder="-"
             clickable
+            entityType={entityType}
+            recordId={recordId}
           />
         </div>
       </div>
@@ -3854,7 +3858,7 @@ export default function PlacementView() {
               const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
               const label = field?.field_label || field?.field_name || key;
               let value: any = (candidate as any)[key === "name" ? "full_name" : key] ?? (candidate as any)[key] ?? candidate.customFields?.[label] ?? candidate.customFields?.[key];
-              return renderSummaryRow("candidateDetails", key, index, label, value, field, allFields, candidate.customFields || {});
+              return renderSummaryRow("candidateDetails", key, index, label, value, field, allFields, candidate.customFields || {}, "job-seekers", candidate.id);
             })
           )}
         </div>
@@ -3880,7 +3884,7 @@ export default function PlacementView() {
               const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
               const label = field?.field_label || field?.field_name || key;
               const value = (company as any)[key] ?? company.customFields?.[label] ?? company.customFields?.[key];
-              return renderSummaryRow("companyDetails", key, index, label, value, field, allFields, company.customFields || {});
+              return renderSummaryRow("companyDetails", key, index, label, value, field, allFields, company.customFields || {}, "organizations", company.id);
             })
           )}
         </div>
@@ -3944,7 +3948,7 @@ export default function PlacementView() {
               const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
               const label = field?.field_label || field?.field_name || key;
               const value = (billingContact as any)[key === "name" ? "full_name" : key] ?? billingContact.customFields?.[label] ?? billingContact.customFields?.[key];
-              return renderSummaryRow("billingContactDetails", key, index, label, value, field, allFields, billingContact.customFields || {});
+              return renderSummaryRow("billingContactDetails", key, index, label, value, field, allFields, billingContact.customFields || {}, "hiring-managers", billingContact.id);
             })
           )}
         </div>
@@ -3970,7 +3974,7 @@ export default function PlacementView() {
               const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
               const label = field?.field_label || field?.field_name || key;
               const value = (timesheetApprover as any)[key === "name" ? "full_name" : key] ?? timesheetApprover.customFields?.[label] ?? timesheetApprover.customFields?.[key];
-              return renderSummaryRow("timesheetApproverDetails", key, index, label, value, field, allFields, timesheetApprover.customFields || {});
+              return renderSummaryRow("timesheetApproverDetails", key, index, label, value, field, allFields, timesheetApprover.customFields || {}, "hiring-managers", timesheetApprover.id);
             })
           )}
         </div>
@@ -3996,7 +4000,7 @@ export default function PlacementView() {
               const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
               const label = field?.field_label || field?.field_name || key;
               const value = (job as any)[key] ?? job.customFields?.[label] ?? job.customFields?.[key];
-              return renderSummaryRow("jobDetails", key, index, label, value, field, allFields, job.customFields || {});
+              return renderSummaryRow("jobDetails", key, index, label, value, field, allFields, job.customFields || {}, "jobs", job.id);
             })
           )}
         </div>
