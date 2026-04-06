@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 interface LookupOption {
   id: string;
   name: string;
+  email: string;
   record_number: string;
   [key: string]: any;
 }
@@ -50,7 +51,7 @@ export default function MultiSelectLookupField({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedIds = normalizeValue(value);
-  
+
 
   useEffect(() => {
     fetchOptions();
@@ -84,7 +85,7 @@ export default function MultiSelectLookupField({
             id: org.id.toString(),
             name: org.name,
             record_number: org.record_number || ''
-            }));
+          }));
       } else if (lookupType === 'hiring-managers') {
         fetchedOptions = (data.hiringManagers || [])
           .filter(isNotArchived)
@@ -130,7 +131,8 @@ export default function MultiSelectLookupField({
           .filter(isNotArchived)
           .map((user: any) => ({
             id: user.id.toString(),
-            name: user.name || user.email || '',
+            name: user.name || '',
+            email: user.email || '',
             record_number: user.record_number || ''
           }));
       }
@@ -195,15 +197,20 @@ export default function MultiSelectLookupField({
 
   const getOptionLabel = (opt: LookupOption) => {
     if (!opt) return "";
-    const prefix = lookupType === "organizations" ? "O" : 
-                   lookupType === "hiring-managers" ? "HM" : 
-                   lookupType === "job-seekers" ? "JS" : 
-                   lookupType === "jobs" ? "J" : 
-                   lookupType === "owner" ? "U" :
-                   lookupType === "leads" ? "L" :
-                   lookupType === "placements" ? "P" : "";
-    
-    const baseLabel = lookupType === "owner" ? `${opt.name} (${opt.email || ""})` : opt.name;
+    const prefix = lookupType === "organizations" ? "O" :
+      lookupType === "hiring-managers" ? "HM" :
+        lookupType === "job-seekers" ? "JS" :
+          lookupType === "jobs" ? "J" :
+            lookupType === "owner" ? "U" :
+              lookupType === "leads" ? "L" :
+                lookupType === "placements" ? "P" : "";
+
+    console.log("opt", opt);
+
+    const baseLabel =
+      lookupType === 'owner'
+        ? `${opt.name} (${opt.email || ""})` || opt.email
+        : opt.name;
     return opt.record_number ? `${prefix}${opt.record_number} - ${baseLabel}` : baseLabel;
   };
 
