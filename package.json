@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "rename:hidden-field-labels": "node ../cms_organization_backend/scripts/rename-hidden-field-labels-by-sort-order.js",
     "gitadd": "git add . && git commit -m \"Frontend Updated Tasks Done\" && git push origin main"
   },
   "dependencies": {

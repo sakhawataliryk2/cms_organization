@@ -36,7 +36,6 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Description": "description", "Task Description": "description", Details: "description",
   "Status": "status", "Current Status": "status", "Task Status": "status",
   "Priority": "priority", "Task Priority": "priority",
-  "Assigned To": "assigned_to", Assigned: "assigned_to", Assignee: "assigned_to",
   "Due Date": "due_date", Due: "due_date",
   "Due Time": "due_time", Time: "due_time",
 };
@@ -94,52 +93,52 @@ export default function AddTask() {
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
   const hasPrefilledOrgFromUrlRef = useRef(false); // Prefill Organization from relatedEntityId once
   const hasPrefilledRelatedFromUrlRef = useRef<Set<string>>(new Set()); // Prefill Job / Job Seeker / Hiring Manager once per entity type
-  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
-  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
   
-  // Helper function to convert reminder string (e.g., "5 minutes", "1 hour") to minutes
+  
+  // Field_8 reminder now accepts only numeric minutes.
   const parseReminderToMinutes = (reminderValue: string | number | null | undefined): number | null => {
     if (!reminderValue) return null;
-    if (typeof reminderValue === 'number') return reminderValue;
-
-    const str = String(reminderValue).toLowerCase().trim();
-    if (str === '' || str === 'none' || str === 'null') return null;
-
-    // Improved regex to handle plurals and common abbreviations
-    const match = str.match(/(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|d)?/i);
-    if (!match) return null;
-
-    const num = parseInt(match[1], 10);
-    const unit = match[2]?.toLowerCase() || 'minute';
-
-    if (unit.startsWith('d')) return num * 1440; // days to minutes
-    if (unit.startsWith('h')) return num * 60;   // hours to minutes
-    return num; // minutes
+    const parsed =
+      typeof reminderValue === "number"
+        ? Math.trunc(reminderValue)
+        : parseInt(String(reminderValue).trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
   };
 
 
-  // Helper function to convert minutes to reminder string format
+  // Store/display reminder in plain numeric minutes for Field_8.
   const minutesToReminderString = (minutes: number | null | undefined): string => {
-    if (!minutes || minutes <= 0) return '';
-    if (minutes < 60) return `${minutes} minutes`;
-    if (minutes < 1440) {
-      const hours = Math.floor(minutes / 60);
-      return hours === 1 ? '1 hour' : `${hours} hours`;
-    }
-    const days = Math.floor(minutes / 1440);
-    return days === 1 ? '1 day' : `${days} days`;
+    if (!minutes || minutes <= 0) return "";
+    return String(Math.trunc(minutes));
   };
 
-  // Close Assigned To dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
-        setAssignedToDropdownOpen(false);
+  // Field_7 may come as datetime string or plain date; normalize to due_date + due_time.
+  const parseField7DueDateTime = (field7Value: unknown): { dueDate?: string; dueTime?: string } => {
+    if (field7Value == null) return {};
+    const raw = String(field7Value).trim();
+    if (!raw) return {};
+
+    // datetime-local commonly returns YYYY-MM-DDTHH:mm
+    if (raw.includes("T")) {
+      const [datePart, timePartRaw] = raw.split("T");
+      const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})$/);
+      const timeMatch = (timePartRaw || "").match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      const normalized: { dueDate?: string; dueTime?: string } = {};
+      if (dateMatch) normalized.dueDate = dateMatch[1];
+      if (timeMatch) {
+        const [, h, m, s] = timeMatch;
+        normalized.dueTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(s || "00").padStart(2, "0")}`;
       }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+      return normalized;
+    }
+
+    // Date-only fallback.
+    const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})$/);
+    if (dateOnly) return { dueDate: dateOnly[1] };
+
+    return {};
+  };
 
   // Use the custom fields hook
   const {
@@ -408,16 +407,14 @@ export default function AddTask() {
         }
       }
 
-      // Map custom fields from field_label (database key) to field_name (form key)
+      // Map custom fields from stable field_name first, then legacy field_label fallback.
       const mappedCustomFieldValues: Record<string, any> = {};
 
       // First, map any existing custom field values from the database
       if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
         customFields.forEach((field) => {
-          // Try to find the value by field_label (as stored in DB)
-          const value = existingCustomFields[field.field_label];
+          const value = existingCustomFields[field.field_name] ?? existingCustomFields[field.field_label];
           if (value !== undefined) {
-            // Map to field_name for the form
             mappedCustomFieldValues[field.field_name] = value;
           }
         });
@@ -465,7 +462,7 @@ export default function AddTask() {
           // Date Added variations
           "Date Added": task.created_at ? task.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
           "Created Date": task.created_at ? task.created_at.split("T")[0] : "",
-          // Reminder variations - convert minutes to string format
+          // Reminder label mapping kept for legacy fallback only.
           "Reminder": task.reminder_minutes_before_due != null ? minutesToReminderString(task.reminder_minutes_before_due) : "",
         };
 
@@ -480,6 +477,29 @@ export default function AddTask() {
             }
           }
         });
+      }
+
+      // Stable task field mapping by field_name (label-independent).
+      if (mappedCustomFieldValues["Field_7"] === undefined) {
+        const dueDate = task.due_date ? String(task.due_date).split("T")[0] : "";
+        const dueTime = task.due_time ? String(task.due_time) : "";
+        if (dueDate && dueTime) {
+          mappedCustomFieldValues["Field_7"] = `${dueDate}T${dueTime.substring(0, 5)}`;
+        } else {
+          mappedCustomFieldValues["Field_7"] = dueDate;
+        }
+      }
+      if (mappedCustomFieldValues["Field_8"] === undefined) {
+        mappedCustomFieldValues["Field_8"] =
+          task.reminder_minutes_before_due != null
+            ? minutesToReminderString(task.reminder_minutes_before_due)
+            : "";
+      }
+      if (mappedCustomFieldValues["Field_6"] === undefined) {
+        mappedCustomFieldValues["Field_6"] = task.assigned_to ?? "";
+      }
+      if (mappedCustomFieldValues["Field_69"] === undefined) {
+        mappedCustomFieldValues["Field_69"] = task.owner ?? "";
       }
 
       // Set the mapped custom field values
@@ -689,8 +709,8 @@ export default function AddTask() {
 
       console.log('[Task Submit] After time normalization, apiData[timeCol]:', apiData[timeCol]);
 
-      // assigned_to: convert user name/option text to numeric user ID
-      const rawAssignedTo = apiData.assigned_to;
+      // Assigned To now comes from stable field name Field_6.
+      const rawAssignedTo = customFieldValues["Field_6"];
       if (rawAssignedTo !== undefined && rawAssignedTo !== null && String(rawAssignedTo).trim() !== "") {
         const value = String(rawAssignedTo).trim();
         let assignedToId: number | null = null;
@@ -712,7 +732,16 @@ export default function AddTask() {
           }
         }
         apiData.assigned_to = assignedToId;
+      } else {
+        apiData.assigned_to = null;
       }
+
+      // Owner now comes from stable field name Field_69.
+      const rawOwner = customFieldValues["Field_69"];
+      apiData.owner =
+        rawOwner !== undefined && rawOwner !== null && String(rawOwner).trim() !== ""
+          ? String(rawOwner).trim()
+          : null;
 
       // Map dynamic Related Entity choices to backend columns
       const ENTITY_MAPPING: Record<string, { column: string; lookup: string }> = {
@@ -747,6 +776,15 @@ export default function AddTask() {
             }
           }
         }
+      }
+
+      // Stable custom fields for reminders/due datetime (never rely on label renames).
+      const stableDue = parseField7DueDateTime(customFieldValues["Field_7"]);
+      if (stableDue.dueDate !== undefined) {
+        apiData.due_date = stableDue.dueDate;
+      }
+      if (stableDue.dueTime !== undefined) {
+        apiData.due_time = stableDue.dueTime;
       }
 
       apiData.custom_fields = typeof customFieldsForDB === "object" && !Array.isArray(customFieldsForDB) && customFieldsForDB !== null
@@ -786,6 +824,7 @@ export default function AddTask() {
       if (apiData.status !== undefined) cleanPayload.status = apiData.status ?? "Open";
       if (apiData.priority !== undefined) cleanPayload.priority = apiData.priority ?? "";
       if (apiData.assigned_to !== undefined) cleanPayload.assigned_to = apiData.assigned_to ?? null;
+      if (apiData.owner !== undefined) cleanPayload.owner = apiData.owner ?? null;
       // Normalize and set due_date and due_time
       // Final validation: ensure due_time is never a datetime string
       if (apiData.due_date !== undefined) {
@@ -825,21 +864,9 @@ export default function AddTask() {
       if (apiData.hiring_manager_id !== undefined) cleanPayload.hiring_manager_id = apiData.hiring_manager_id;
       if (apiData.job_seeker_id !== undefined) cleanPayload.job_seeker_id = apiData.job_seeker_id;
       if (apiData.placement_id !== undefined) cleanPayload.placement_id = apiData.placement_id;
-      // Map Reminder custom field to reminder_minutes_before_due
-      // Check if there's a custom field with label "Reminder"
-      const reminderField = customFields.find(f => f.field_label === "Reminder");
-      if (reminderField && customFieldValues[reminderField.field_name]) {
-        const reminderValue = customFieldValues[reminderField.field_name];
-        const minutes = parseReminderToMinutes(reminderValue);
-        if (minutes !== null && minutes > 0) {
-          cleanPayload.reminder_minutes_before_due = minutes;
-        } else {
-          cleanPayload.reminder_minutes_before_due = null;
-        }
-      } else {
-        // If no Reminder custom field, set to null
-        cleanPayload.reminder_minutes_before_due = null;
-      }
+      // Field_8 reminder is always numeric minutes.
+      const reminderMinutes = parseReminderToMinutes(customFieldValues["Field_8"]);
+      cleanPayload.reminder_minutes_before_due = reminderMinutes;
 
       cleanPayload.custom_fields =
         typeof apiData.custom_fields === "object" && apiData.custom_fields !== null && !Array.isArray(apiData.custom_fields)
@@ -1264,17 +1291,6 @@ export default function AddTask() {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
 
-                  const labelLower = String(field.field_label || "").toLowerCase();
-                  const nameLower = String(field.field_name || "").toLowerCase();
-                  const isAssignedField =
-                    labelLower === "assigned to" ||
-                    labelLower === "assigned" ||
-                    labelLower === "assignee" ||
-                    labelLower.includes("assigned") ||
-                    labelLower.includes("assignee") ||
-                    nameLower.includes("assigned") ||
-                    nameLower.includes("assignee");
-
                   // Check if this field matches the current relatedEntity (for all entity types)
                   // Match ONLY by lookup_type, not by label
                   const isRelatedEntityField = (() => {
@@ -1450,85 +1466,27 @@ export default function AddTask() {
                     // For other fields, use default behavior
                     fieldValue = fieldValue || "";
                   }
-                  const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
-                  const assignedToMatches = isAssignedField && activeUsers.length > 0
-                    ? activeUsers.filter(
-                      (u) =>
-                        String(u.name || "").toLowerCase().includes(assignedToValue.toLowerCase()) ||
-                        String(u.email || "").toLowerCase().includes(assignedToValue.toLowerCase())
-                    )
-                    : [];
-
                   return (
                     <div key={field.id} className="flex items-center gap-4">
                       <label className="w-48 font-medium">
                         {field.field_label}:
                       </label>
-                      <div className="flex-1 relative flex items-center gap-4" ref={isAssignedField ? assignedToDropdownRef : undefined}>
-                        {isAssignedField ? (
-                          <>
-                            <input
-                              type="text"
-                              value={assignedToValue}
-                              onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
-                              onFocus={() => setAssignedToDropdownOpen(true)}
-                              placeholder="Type to search by name or email..."
-                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                              autoComplete="off"
-                            />
-                            {assignedToDropdownOpen && (
-                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-auto">
-                                {assignedToValue.length === 0
-                                  ? activeUsers.map((u) => (
-                                    <button
-                                      key={u.id}
-                                      type="button"
-                                      className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                                      onClick={() => {
-                                        handleCustomFieldChange(field.field_name, String(u.name || "").trim());
-                                        setAssignedToDropdownOpen(false);
-                                      }}
-                                    >
-                                      {u.name || ""}{u.email ? ` (${u.email})` : ""}
-                                    </button>
-                                  ))
-                                  : assignedToMatches.length > 0
-                                    ? assignedToMatches.map((u) => (
-                                      <button
-                                        key={u.id}
-                                        type="button"
-                                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                                        onClick={() => {
-                                          handleCustomFieldChange(field.field_name, String(u.name || "").trim());
-                                          setAssignedToDropdownOpen(false);
-                                        }}
-                                      >
-                                        {u.name || ""}{u.email ? ` (${u.email})` : ""}
-                                      </button>
-                                    ))
-                                    : (
-                                      <div className="px-3 py-2 text-sm text-gray-500">No matching user</div>
-                                    )}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <CustomFieldRenderer
-                            field={fieldToRender}
-                            value={fieldValue}
-                            allFields={customFields}
-                            values={customFieldValues}
-                            onChange={handleCustomFieldChange}
-                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                            validationIndicator={
-                              field.is_required
-                                ? isCustomFieldValueValid(field, fieldValue)
-                                  ? "valid"
-                                  : "required"
-                                : undefined
-                            }
-                          />
-                        )}
+                      <div className="flex-1 relative flex items-center gap-4">
+                        <CustomFieldRenderer
+                          field={fieldToRender}
+                          value={fieldValue}
+                          allFields={customFields}
+                          values={customFieldValues}
+                          onChange={handleCustomFieldChange}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                          validationIndicator={
+                            field.is_required
+                              ? isCustomFieldValueValid(field, fieldValue)
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
+                        />
                       </div>
                     </div>
                   );

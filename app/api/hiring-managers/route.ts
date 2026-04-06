@@ -15,18 +15,22 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get organization_id from query parameters
+        // Get organization_id from query parameters (backend expects numeric DB id only)
         const { searchParams } = new URL(request.url);
-        const organizationId = searchParams.get('organization_id');
-        console.log('Organization ID:', organizationId);
+        const organizationIdRaw = searchParams.get('organization_id')?.trim() ?? '';
+        const organizationIdNumeric =
+            organizationIdRaw && /^\d+$/.test(organizationIdRaw)
+                ? organizationIdRaw
+                : null;
+        console.log('Organization ID:', organizationIdRaw || '(none)');
 
         // Build API URL with organization_id if provided
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         let backendUrl = `${apiUrl}/api/hiring-managers`;
         
-        // If organization_id is provided, use the backend endpoint that filters by organization
-        if (organizationId) {
-            backendUrl = `${apiUrl}/api/hiring-managers/organization/${organizationId}`;
+        // If organization_id is a valid numeric id, use the backend endpoint that filters by organization
+        if (organizationIdNumeric) {
+            backendUrl = `${apiUrl}/api/hiring-managers/organization/${organizationIdNumeric}`;
         }
 
         const response = await fetch(backendUrl, {

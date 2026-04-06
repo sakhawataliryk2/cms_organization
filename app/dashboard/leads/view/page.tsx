@@ -206,6 +206,19 @@ import {
 // Default header fields for Leads module - defined outside component to ensure stable reference
 const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
+const LEAD_HEADER_FIELD_LABELS: Record<string, string> = {
+  phone: "Phone",
+  email: "Email",
+  status: "Status",
+  owner: "Owner",
+  website: "Website",
+  company: "Company",
+  title: "Title",
+  city: "City",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+};
+
 // Storage keys for Lead Contact Info, Details, Website Jobs, Our Jobs – field lists come from admin (custom field definitions)
 const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
 const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
@@ -687,6 +700,7 @@ export default function LeadView() {
     showHeaderFieldModal,
     setShowHeaderFieldModal,
     saveHeaderConfig,
+    isSaving: isSavingHeaderConfig,
   } = useHeaderConfig({
     entityType: "LEAD",
     configType: "header",
@@ -707,9 +721,9 @@ export default function LeadView() {
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
-    const fromApi = (availableFields || [])
+    return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const k = f.field_name || f.field_key || f.field_label || f.id;
@@ -726,14 +740,57 @@ export default function LeadView() {
         seen.add(x.key);
         return true;
       });
-    return fromApi;
+  }, [availableFields]);
+
+  const formatHeaderValue = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    return str === "" ? null : str;
   };
 
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  const getCustomFieldValue = (customKey: string) => {
+    if (!lead) return null;
+    const direct = formatHeaderValue(lead.customFields?.[customKey]);
+    if (direct) return direct;
 
-  const getHeaderFieldLabel = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    const fieldDef = (availableFields || []).find((f: any) => {
+      const stableKey = f.field_name || f.field_key || f.field_label || f.id;
+      return String(stableKey) === customKey;
+    });
+
+    if (fieldDef) {
+      const labelValue = formatHeaderValue(lead.customFields?.[fieldDef.field_label]);
+      if (labelValue) return labelValue;
+      const nameValue = formatHeaderValue(lead.customFields?.[fieldDef.field_name]);
+      if (nameValue) return nameValue;
+    }
+
+    const labelFallback = headerFieldCatalog.find((f) => f.key === `custom:${customKey}`);
+    if (labelFallback) {
+      const fallbackValue = formatHeaderValue(lead.customFields?.[labelFallback.label]);
+      if (fallbackValue) return fallbackValue;
+    }
+
+    return null;
+  };
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!lead) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const record = lead as Record<string, unknown>;
+
+    if (key.startsWith("custom:")) {
+      const val = getCustomFieldValue(rawKey);
+      return val ?? "-";
+    }
+
+    const standardValue = formatHeaderValue(record[rawKey]);
+    if (standardValue) return standardValue;
+
+    const customFallback = getCustomFieldValue(rawKey);
+    if (customFallback) return customFallback;
+
+    return "-";
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -741,17 +798,10 @@ export default function LeadView() {
     return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
   };
 
-  const getHeaderFieldValue = (key: string) => {
-    if (!lead) return "-";
-    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-    const l = lead as any;
-    let v = l[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    v = lead.customFields?.[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    const field = headerFieldCatalog.find((f) => f.key === key);
-    if (field) v = lead.customFields?.[field.label];
-    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    if (found?.label) return found.label;
+    return LEAD_HEADER_FIELD_LABELS[key] ?? key;
   };
 
   const handleHeaderFieldsDragEnd = (event: DragEndEvent) => {
@@ -3874,7 +3924,7 @@ export default function LeadView() {
           description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records."
           order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
           visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
-          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
               setHeaderFields((prev) => prev.filter((x) => x !== key));
@@ -3890,8 +3940,8 @@ export default function LeadView() {
             const success = await saveHeaderConfig();
             if (success) setShowHeaderFieldModal(false);
           }}
-          saveButtonText="Done"
-          isSaveDisabled={headerFields.length === 0}
+          saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
+          isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
@@ -3902,6 +3952,7 @@ export default function LeadView() {
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
+          listMaxHeight="50vh"
         />
       )}
 

@@ -514,9 +514,12 @@ export default function AddDirectHireJob() {
 
         // When URL or form has organization id, show only hiring managers under that organization
         // (same as organization view → contacts tab). Otherwise show all hiring managers.
-        const orgId = currentOrganizationId || organizationIdFromUrl;
-        const url = orgId
-          ? `/api/hiring-managers?organization_id=${encodeURIComponent(orgId)}`
+        // Backend /organization/:id requires a numeric id; org custom field may briefly hold a name.
+        const orgIdRaw = (currentOrganizationId || organizationIdFromUrl || "").trim();
+        const orgIdNumeric =
+          orgIdRaw && /^\d+$/.test(orgIdRaw) ? orgIdRaw : null;
+        const url = orgIdNumeric
+          ? `/api/hiring-managers?organization_id=${encodeURIComponent(orgIdNumeric)}`
           : "/api/hiring-managers";
 
         const response = await fetch(url, {

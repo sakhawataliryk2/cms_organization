@@ -1255,12 +1255,15 @@ export default function HiringManagerList() {
                             },
                           },
                           {
-                            label: "Create Task",
-                            action: () => {
-                              setSelectedHmId(hm.id);
-                              setShowTaskModal(true);
-                            },
+                          label: "Create Task",
+                          action: () => {
+                            router.push(
+                              `/dashboard/tasks/add?relatedEntity=hiring_manager&relatedEntityId=${encodeURIComponent(
+                                hm.id
+                              )}`
+                            );
                           },
+                        },
                         ]}
                       />
                     </td>

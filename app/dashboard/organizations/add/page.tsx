@@ -55,6 +55,64 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "# of Offices": "num_offices",
 };
 
+/** Stable internal names — labels are resolved via /api/custom-fields/field-label (then matched on submission keys). */
+const ORG_DUPLICATE_WEBSITE_FIELD_NAME = "Field_5";
+const ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME = "Field_6";
+
+function valueFromSubmissionByLabel(
+  submission: Record<string, unknown>,
+  label: string | null | undefined
+): string {
+  if (!label) return "";
+  const v = submission[label];
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
+
+function labelForFieldNameFromDefinitions(
+  fields: Array<{ field_name?: string; field_label?: string | null }>,
+  fieldName: string
+): string | null {
+  const f = fields.find(
+    (x) =>
+      x.field_name === fieldName ||
+      (x.field_name != null &&
+        x.field_name.toLowerCase() === fieldName.toLowerCase())
+  );
+  const l = f?.field_label != null ? String(f.field_label).trim() : "";
+  return l || null;
+}
+
+function fieldDefByStableName(
+  fields: CustomFieldDefinition[],
+  stableName: string
+): CustomFieldDefinition | undefined {
+  const lower = stableName.toLowerCase();
+  return fields.find(
+    (x) => x.field_name === stableName || x.field_name?.toLowerCase() === lower
+  );
+}
+
+type OrgDupMatch = { id: string | number; name: string };
+
+function phoneDupCacheKey(
+  excludeId: string,
+  phoneLabel: string | null | undefined,
+  websiteLabel: string | null | undefined,
+  phone: string
+): string {
+  return `phone|ex:${excludeId}|pl:${phoneLabel ?? ""}|wl:${websiteLabel ?? ""}|p:${phone}`;
+}
+
+function websiteDupCacheKey(
+  excludeId: string,
+  phoneLabel: string | null | undefined,
+  websiteLabel: string | null | undefined,
+  website: string
+): string {
+  return `web|ex:${excludeId}|pl:${phoneLabel ?? ""}|wl:${websiteLabel ?? ""}|w:${website}`;
+}
+
 export default function AddOrganization() {
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -64,14 +122,15 @@ export default function AddOrganization() {
   const [isLoading, setIsLoading] = useState(!!organizationId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
-  const [duplicateWarning, setDuplicateWarning] = useState<{
-    phone: Array<{ id: string | number; name: string }>;
-    website: Array<{ id: string | number; name: string }>;
-    email: Array<{ id: string | number; name: string }>;
-  } | null>(null);
-  const [hasConfirmedDuplicateSave, setHasConfirmedDuplicateSave] = useState(false);
-  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+  const [phoneDupMatches, setPhoneDupMatches] = useState<OrgDupMatch[]>([]);
+  const [websiteDupMatches, setWebsiteDupMatches] = useState<OrgDupMatch[]>([]);
+  const [hasConfirmedPhoneDupSave, setHasConfirmedPhoneDupSave] = useState(false);
+  const [hasConfirmedWebsiteDupSave, setHasConfirmedWebsiteDupSave] = useState(false);
+  const [isCheckingPhoneDup, setIsCheckingPhoneDup] = useState(false);
+  const [isCheckingWebsiteDup, setIsCheckingWebsiteDup] = useState(false);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
+  const phoneDupResponseCache = useRef<Map<string, OrgDupMatch[]>>(new Map());
+  const websiteDupResponseCache = useRef<Map<string, OrgDupMatch[]>>(new Map());
   const [organizationContacts, setOrganizationContacts] = useState<
     Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
   >([]);
@@ -117,6 +176,73 @@ export default function AddOrganization() {
   }, [customFields]);
 
   const addressAnchorId = addressFields?.[0]?.id; // usually Field_20 (Address)
+
+  /** Canonical labels from GET /api/custom-fields/field-label (exact keys used by getCustomFieldsForSubmission). */
+  const [orgDupLabelsFromApi, setOrgDupLabelsFromApi] = useState<{
+    website: string | null;
+    phone: string | null;
+  }>({ website: null, phone: null });
+
+  const websiteLabelForDup = useMemo(() => {
+    return (
+      orgDupLabelsFromApi.website ??
+      labelForFieldNameFromDefinitions(
+        customFields,
+        ORG_DUPLICATE_WEBSITE_FIELD_NAME
+      )
+    );
+  }, [orgDupLabelsFromApi.website, customFields]);
+
+  const phoneLabelForDup = useMemo(() => {
+    return (
+      orgDupLabelsFromApi.phone ??
+      labelForFieldNameFromDefinitions(
+        customFields,
+        ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME
+      )
+    );
+  }, [orgDupLabelsFromApi.phone, customFields]);
+
+  const orgPhoneFieldDef = useMemo(
+    () => fieldDefByStableName(customFields as CustomFieldDefinition[], ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME),
+    [customFields]
+  );
+  const orgWebsiteFieldDef = useMemo(
+    () => fieldDefByStableName(customFields as CustomFieldDefinition[], ORG_DUPLICATE_WEBSITE_FIELD_NAME),
+    [customFields]
+  );
+
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0) return;
+    let cancelled = false;
+
+    const fetchLabel = async (fieldName: string) => {
+      const res = await fetch(
+        `/api/custom-fields/field-label?entity_type=organizations&field_name=${encodeURIComponent(
+          fieldName
+        )}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!data.success || typeof data.field_label !== "string") return null;
+      return data.field_label as string;
+    };
+
+    (async () => {
+      const [web, ph] = await Promise.all([
+        fetchLabel(ORG_DUPLICATE_WEBSITE_FIELD_NAME),
+        fetchLabel(ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME),
+      ]);
+      if (cancelled) return;
+      setOrgDupLabelsFromApi({
+        website: web,
+        phone: ph,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customFieldsLoading, customFields.length]);
 
   // All organization fields come from admin field definitions; values live in customFieldValues
 
@@ -319,74 +445,93 @@ export default function AddOrganization() {
     fetchOrganizationContacts();
   }, [organizationId]);
 
-  // Clear duplicate warning when user changes phone, website, or email so they can fix and save
-  const phoneWebsiteEmailValuesKey = useMemo(() => {
-    const labels = [
-      "Contact Phone",
-      "Main Phone",
-      "Website",
-      "Organization Website",
-      "URL",
-      "Email",
-      "Organization Email",
-    ];
-    const parts: string[] = [];
-    customFields.forEach((f) => {
-      if (labels.some((l) => l === f.field_label || f.field_label?.toLowerCase() === l.toLowerCase())) {
-        parts.push(String(customFieldValues[f.field_name] ?? ""));
-      }
-    });
-    return parts.join("|");
-  }, [customFields, customFieldValues]);
+  // Values sent to duplicate check (submission keys = field_label).
+  const dupCheckValues = useMemo(() => {
+    const submission = getCustomFieldsForSubmission() as Record<string, unknown>;
+    return {
+      phone: valueFromSubmissionByLabel(submission, phoneLabelForDup),
+      website: valueFromSubmissionByLabel(submission, websiteLabelForDup),
+    };
+  }, [
+    customFieldValues,
+    customFields,
+    getCustomFieldsForSubmission,
+    phoneLabelForDup,
+    websiteLabelForDup,
+  ]);
 
-  // Reset user's duplicate confirmation whenever key phone/website/email values change
   useEffect(() => {
-    setHasConfirmedDuplicateSave(false);
-  }, [phoneWebsiteEmailValuesKey]);
+    setHasConfirmedPhoneDupSave(false);
+  }, [dupCheckValues.phone]);
 
-  // Real-time duplicate detection for phone / website / email
+  useEffect(() => {
+    setHasConfirmedWebsiteDupSave(false);
+  }, [dupCheckValues.website]);
+
+  const orgPhoneFieldValue = orgPhoneFieldDef
+    ? customFieldValues[orgPhoneFieldDef.field_name]
+    : undefined;
+  const orgWebsiteFieldValue = orgWebsiteFieldDef
+    ? customFieldValues[orgWebsiteFieldDef.field_name]
+    : undefined;
+
+  const phoneValidForDupCheck = Boolean(
+    orgPhoneFieldDef &&
+      isCustomFieldValueValid(orgPhoneFieldDef, orgPhoneFieldValue)
+  );
+  const websiteValidForDupCheck = Boolean(
+    orgWebsiteFieldDef &&
+      isCustomFieldValueValid(orgWebsiteFieldDef, orgWebsiteFieldValue)
+  );
+
+  const excludeIdForDup =
+    isEditMode && organizationId ? String(organizationId).trim() : "";
+
+  // Phone: deps are only phone-related strings + labels + edit id — not getCustomFieldsForSubmission or whole form.
   useEffect(() => {
     let timeoutId: number | undefined;
     let isCancelled = false;
 
+    if (!phoneValidForDupCheck) {
+      setPhoneDupMatches([]);
+      setIsCheckingPhoneDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const phoneForCheck = dupCheckValues.phone.trim();
+    if (!phoneForCheck) {
+      setPhoneDupMatches([]);
+      setIsCheckingPhoneDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const cacheKey = phoneDupCacheKey(
+      excludeIdForDup,
+      phoneLabelForDup,
+      websiteLabelForDup,
+      phoneForCheck
+    );
+    const cached = phoneDupResponseCache.current.get(cacheKey);
+    if (cached) {
+      setPhoneDupMatches(cached);
+      setIsCheckingPhoneDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
     const runCheck = async () => {
-      const customFieldsToSend = getCustomFieldsForSubmission();
-
-      const phoneForCheck = String(
-        customFieldsToSend["Contact Phone"] ??
-          customFieldsToSend["Main Phone"] ??
-          ""
-      ).trim();
-
-      const websiteForCheck = String(
-        customFieldsToSend["Website"] ??
-          customFieldsToSend["Organization Website"] ??
-          customFieldsToSend["URL"] ??
-          ""
-      ).trim();
-
-      const emailForCheck = String(
-        customFieldsToSend["Email"] ??
-          customFieldsToSend["Organization Email"] ??
-          customFieldsToSend["email"] ??
-          ""
-      ).trim();
-
-      if (!phoneForCheck && !websiteForCheck && !emailForCheck) {
-        if (!isCancelled) {
-          setDuplicateWarning(null);
-          setIsCheckingDuplicates(false);
-        }
-        return;
-      }
-
       try {
-        setIsCheckingDuplicates(true);
+        setIsCheckingPhoneDup(true);
         const params = new URLSearchParams();
-        if (phoneForCheck) params.set("phone", phoneForCheck);
-        if (websiteForCheck) params.set("website", websiteForCheck);
-        if (emailForCheck) params.set("email", emailForCheck);
-        if (isEditMode && organizationId) params.set("excludeId", organizationId);
+        params.set("phone", phoneForCheck);
+        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
+        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
+        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
 
         const dupRes = await fetch(
           `/api/organizations/check-duplicates?${params.toString()}`
@@ -395,38 +540,19 @@ export default function AddOrganization() {
 
         if (isCancelled) return;
 
-        if (dupData.success && dupData.duplicates) {
-          const { phone: dupPhone, website: dupWebsite, email: dupEmail } =
-            dupData.duplicates;
-          const hasDuplicates =
-            (dupPhone?.length ?? 0) > 0 ||
-            (dupWebsite?.length ?? 0) > 0 ||
-            (dupEmail?.length ?? 0) > 0;
-
-          if (hasDuplicates) {
-            setDuplicateWarning({
-              phone: dupPhone ?? [],
-              website: dupWebsite ?? [],
-              email: dupEmail ?? [],
-            });
-          } else {
-            setDuplicateWarning(null);
-          }
-        } else {
-          setDuplicateWarning(null);
-        }
+        const matches =
+          dupData.success && dupData.duplicates
+            ? (dupData.duplicates.phone ?? [])
+            : [];
+        phoneDupResponseCache.current.set(cacheKey, matches);
+        setPhoneDupMatches(matches);
       } catch {
-        if (!isCancelled) {
-          setDuplicateWarning(null);
-        }
+        if (!isCancelled) setPhoneDupMatches([]);
       } finally {
-        if (!isCancelled) {
-          setIsCheckingDuplicates(false);
-        }
+        if (!isCancelled) setIsCheckingPhoneDup(false);
       }
     };
 
-    // Debounce real-time check to avoid spamming the API while typing
     timeoutId = window.setTimeout(runCheck, 600);
 
     return () => {
@@ -434,10 +560,91 @@ export default function AddOrganization() {
       if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [
-    phoneWebsiteEmailValuesKey,
-    getCustomFieldsForSubmission,
-    isEditMode,
-    organizationId,
+    dupCheckValues.phone,
+    phoneValidForDupCheck,
+    phoneLabelForDup,
+    websiteLabelForDup,
+    excludeIdForDup,
+  ]);
+
+  // Website: same pattern — isolated deps + cache.
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let isCancelled = false;
+
+    if (!websiteValidForDupCheck) {
+      setWebsiteDupMatches([]);
+      setIsCheckingWebsiteDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const websiteForCheck = dupCheckValues.website.trim();
+    if (!websiteForCheck) {
+      setWebsiteDupMatches([]);
+      setIsCheckingWebsiteDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const cacheKey = websiteDupCacheKey(
+      excludeIdForDup,
+      phoneLabelForDup,
+      websiteLabelForDup,
+      websiteForCheck
+    );
+    const cached = websiteDupResponseCache.current.get(cacheKey);
+    if (cached) {
+      setWebsiteDupMatches(cached);
+      setIsCheckingWebsiteDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const runCheck = async () => {
+      try {
+        setIsCheckingWebsiteDup(true);
+        const params = new URLSearchParams();
+        params.set("website", websiteForCheck);
+        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
+        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
+        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
+
+        const dupRes = await fetch(
+          `/api/organizations/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (isCancelled) return;
+
+        const matches =
+          dupData.success && dupData.duplicates
+            ? (dupData.duplicates.website ?? [])
+            : [];
+        websiteDupResponseCache.current.set(cacheKey, matches);
+        setWebsiteDupMatches(matches);
+      } catch {
+        if (!isCancelled) setWebsiteDupMatches([]);
+      } finally {
+        if (!isCancelled) setIsCheckingWebsiteDup(false);
+      }
+    };
+
+    timeoutId = window.setTimeout(runCheck, 600);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [
+    dupCheckValues.website,
+    websiteValidForDupCheck,
+    phoneLabelForDup,
+    websiteLabelForDup,
+    excludeIdForDup,
   ]);
 
   // Shared helper: run AI parse on an organization file and apply to custom fields.
@@ -685,7 +892,8 @@ export default function AddOrganization() {
 
     setIsSubmitting(true);
     setError(null);
-    setDuplicateWarning(null);
+    setPhoneDupMatches([]);
+    setWebsiteDupMatches([]);
 
     try {
       // ✅ CRITICAL: Get custom fields from the hook
@@ -728,66 +936,101 @@ export default function AddOrganization() {
         apiData.name = "Unnamed Organization";
       }
 
-      // Check for duplicate phone, website, or email before saving
-      const phoneForCheck = String(apiData.contact_phone ?? "").trim();
-      const websiteForCheck = String(apiData.website ?? "").trim();
-      const emailForCheck = String(
-        customFieldsForDB["Email"] ??
-        customFieldsForDB["Organization Email"] ??
-        customFieldsForDB["email"] ??
-        ""
-      ).trim();
+      // Duplicate check: separate requests per field, only when that field passes form validation (same as save).
+      const phoneForCheck = valueFromSubmissionByLabel(
+        customFieldsToSend as Record<string, unknown>,
+        phoneLabelForDup
+      );
+      const websiteForCheck = valueFromSubmissionByLabel(
+        customFieldsToSend as Record<string, unknown>,
+        websiteLabelForDup
+      );
 
-      if (phoneForCheck || websiteForCheck || emailForCheck) {
+      const rawPhoneVal = orgPhoneFieldDef
+        ? customFieldValues[orgPhoneFieldDef.field_name]
+        : undefined;
+      const rawWebsiteVal = orgWebsiteFieldDef
+        ? customFieldValues[orgWebsiteFieldDef.field_name]
+        : undefined;
+
+      let dupPhone: OrgDupMatch[] = [];
+      let dupWebsite: OrgDupMatch[] = [];
+
+      const runPhoneDup =
+        Boolean(
+          orgPhoneFieldDef &&
+            isCustomFieldValueValid(orgPhoneFieldDef, rawPhoneVal) &&
+            phoneForCheck
+        );
+      const runWebsiteDup =
+        Boolean(
+          orgWebsiteFieldDef &&
+            isCustomFieldValueValid(orgWebsiteFieldDef, rawWebsiteVal) &&
+            websiteForCheck
+        );
+
+      if (runPhoneDup) {
         const params = new URLSearchParams();
-        if (phoneForCheck) params.set("phone", phoneForCheck);
-        if (websiteForCheck) params.set("website", websiteForCheck);
-        if (emailForCheck) params.set("email", emailForCheck);
+        params.set("phone", phoneForCheck);
         if (isEditMode && organizationId) params.set("excludeId", organizationId);
-
+        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
+        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
         const dupRes = await fetch(
           `/api/organizations/check-duplicates?${params.toString()}`
         );
         const dupData = await dupRes.json();
-
         if (dupData.success && dupData.duplicates) {
-          const { phone: dupPhone, website: dupWebsite, email: dupEmail } =
-            dupData.duplicates;
-          const hasDuplicates =
-            (dupPhone?.length ?? 0) > 0 ||
-            (dupWebsite?.length ?? 0) > 0 ||
-            (dupEmail?.length ?? 0) > 0;
+          dupPhone = dupData.duplicates.phone ?? [];
+        }
+      }
 
-          if (hasDuplicates) {
-            const messages: string[] = [];
-            if ((dupPhone?.length ?? 0) > 0) {
-              const names = (dupPhone as Array<{ name: string }>).map((o) => o.name).join(", ");
-              messages.push(`Phone number is already used by: ${names}`);
-            }
-            if ((dupWebsite?.length ?? 0) > 0) {
-              const names = (dupWebsite as Array<{ name: string }>).map((o) => o.name).join(", ");
-              messages.push(`Website is already used by: ${names}`);
-            }
-            if ((dupEmail?.length ?? 0) > 0) {
-              const names = (dupEmail as Array<{ name: string }>).map((o) => o.name).join(", ");
-              messages.push(`Email is already used by: ${names}`);
-            }
-            setDuplicateWarning({
-              phone: dupPhone ?? [],
-              website: dupWebsite ?? [],
-              email: dupEmail ?? [],
-            });
+      if (runWebsiteDup) {
+        const params = new URLSearchParams();
+        params.set("website", websiteForCheck);
+        if (isEditMode && organizationId) params.set("excludeId", organizationId);
+        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
+        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
+        const dupRes = await fetch(
+          `/api/organizations/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+        if (dupData.success && dupData.duplicates) {
+          dupWebsite = dupData.duplicates.website ?? [];
+        }
+      }
 
-            if (!hasConfirmedDuplicateSave) {
-              setError(
-                "Possible duplicate organization(s) detected.\n\n" +
-                messages.join("\n") +
-                "\n\nReview the matches below. If you still want to create this record, confirm and click Save again."
-              );
-              setIsSubmitting(false);
-              return;
-            }
-          }
+      setPhoneDupMatches(dupPhone);
+      setWebsiteDupMatches(dupWebsite);
+
+      const hasDuplicates = dupPhone.length > 0 || dupWebsite.length > 0;
+      if (hasDuplicates) {
+        const messages: string[] = [];
+        if (dupPhone.length > 0) {
+          const names = dupPhone.map((o) => o.name).join(", ");
+          messages.push(`Phone number is already used by: ${names}`);
+        }
+        if (dupWebsite.length > 0) {
+          const names = dupWebsite.map((o) => o.name).join(", ");
+          messages.push(`Website is already used by: ${names}`);
+        }
+
+        const needPhoneConfirm = dupPhone.length > 0 && !hasConfirmedPhoneDupSave;
+        const needWebsiteConfirm = dupWebsite.length > 0 && !hasConfirmedWebsiteDupSave;
+        if (needPhoneConfirm || needWebsiteConfirm) {
+          const hint =
+            needPhoneConfirm && needWebsiteConfirm
+              ? "Confirm both checkboxes (under Main Phone and Organization Website), then save again."
+              : needPhoneConfirm
+                ? "Confirm the checkbox under Main Phone, then save again."
+                : "Confirm the checkbox under Organization Website, then save again.";
+          setError(
+            "Possible duplicate organization(s) detected.\n\n" +
+              messages.join("\n") +
+              "\n\n" +
+              hint
+          );
+          setIsSubmitting(false);
+          return;
         }
       }
 
@@ -1415,7 +1658,7 @@ export default function AddOrganization() {
           </div>
         </div>
 
-        {/* Error message (includes duplicate phone/website/email warning) */}
+        {/* Error message (includes duplicate phone/website warning) */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
             <p className="whitespace-pre-line">{error}</p>
@@ -1787,18 +2030,14 @@ export default function AddOrganization() {
                   }
                   const fieldValue = customFieldValues[field.field_name] || "";
 
-                  const normalizedLabel = (field.field_label ?? "").toLowerCase();
+                  const fn = field.field_name ?? "";
+                  const fnLower = fn.toLowerCase();
                   const isPhoneDuplicateField =
-                    normalizedLabel === "contact phone" ||
-                    normalizedLabel === "main phone";
+                    fn === ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME ||
+                    fnLower === ORG_DUPLICATE_MAIN_PHONE_FIELD_NAME.toLowerCase();
                   const isWebsiteDuplicateField =
-                    normalizedLabel === "website" ||
-                    normalizedLabel === "organization website" ||
-                    normalizedLabel === "url";
-                  const isEmailDuplicateField =
-                    normalizedLabel === "email" ||
-                    normalizedLabel === "organization email";
-
+                    fn === ORG_DUPLICATE_WEBSITE_FIELD_NAME ||
+                    fnLower === ORG_DUPLICATE_WEBSITE_FIELD_NAME.toLowerCase();
                   // Special handling for Field_8 (Contract Signed on File) - detect for conditional validation
                   const isContractSignedOnFileField =
                     field.field_name === "Field_8" ||
@@ -2046,74 +2285,98 @@ export default function AddOrganization() {
                                   : undefined
                               }
                             />
-                            {duplicateWarning && (isPhoneDuplicateField || isWebsiteDuplicateField) && (
-                              <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
-                                <div className="font-semibold mb-1">
-                                  Possible duplicate organization(s) detected
+                            {isCheckingPhoneDup &&
+                              isPhoneDuplicateField &&
+                              isCustomFieldValueValid(field, fieldValue) && (
+                                <p className="mt-2 text-xs text-gray-500">
+                                  Checking for duplicates…
+                                </p>
+                              )}
+                            {isCheckingWebsiteDup &&
+                              isWebsiteDuplicateField &&
+                              isCustomFieldValueValid(field, fieldValue) && (
+                                <p className="mt-2 text-xs text-gray-500">
+                                  Checking for duplicates…
+                                </p>
+                              )}
+                            {isPhoneDuplicateField &&
+                              phoneDupMatches.length > 0 && (
+                                <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                  <div className="font-semibold mb-1">
+                                    Possible duplicate organization(s) detected
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="font-medium">Same phone number:</div>
+                                    <ul className="list-disc list-inside">
+                                      {phoneDupMatches.map((org) => (
+                                        <li key={org.id}>
+                                          <a
+                                            href={`/dashboard/organizations/view?id=${org.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            {org.name}
+                                          </a>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <input
+                                      id="confirm-duplicate-phone"
+                                      type="checkbox"
+                                      className="h-4 w-4"
+                                      checked={hasConfirmedPhoneDupSave}
+                                      onChange={(e) =>
+                                        setHasConfirmedPhoneDupSave(e.target.checked)
+                                      }
+                                    />
+                                    <label htmlFor="confirm-duplicate-phone">
+                                      I have reviewed these phone duplicate(s) and still want to save.
+                                    </label>
+                                  </div>
                                 </div>
-                                {isPhoneDuplicateField &&
-                                  (duplicateWarning.phone?.length ?? 0) > 0 && (
-                                    <div className="space-y-1">
-                                      <div className="font-medium">Same phone number:</div>
-                                      <ul className="list-disc list-inside">
-                                        {duplicateWarning.phone.map((org) => (
-                                          <li key={org.id}>
-                                            <a
-                                              href={`/dashboard/organizations/view?id=${org.id}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-600 hover:underline"
-                                            >
-                                              {org.name}
-                                            </a>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                {isWebsiteDuplicateField &&
-                                  (duplicateWarning.website?.length ?? 0) > 0 && (
-                                    <div className="mt-2 space-y-1">
-                                      <div className="font-medium">Same website:</div>
-                                      <ul className="list-disc list-inside">
-                                        {duplicateWarning.website.map((org) => (
-                                          <li key={org.id}>
-                                            <a
-                                              href={`/dashboard/organizations/view?id=${org.id}`}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-600 hover:underline"
-                                            >
-                                              {org.name}
-                                            </a>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                <div className="mt-2 flex items-center gap-2">
-                                  <input
-                                    id={`confirm-duplicate-save-${field.field_name}`}
-                                    type="checkbox"
-                                    className="h-4 w-4"
-                                    checked={hasConfirmedDuplicateSave}
-                                    onChange={(e) =>
-                                      setHasConfirmedDuplicateSave(e.target.checked)
-                                    }
-                                  />
-                                  <label htmlFor={`confirm-duplicate-save-${field.field_name}`}>
-                                    I have reviewed the possible duplicates and still want to save this
-                                    organization.
-                                  </label>
+                              )}
+                            {isWebsiteDuplicateField &&
+                              websiteDupMatches.length > 0 && (
+                                <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                  <div className="font-semibold mb-1">
+                                    Possible duplicate organization(s) detected
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="font-medium">Same website:</div>
+                                    <ul className="list-disc list-inside">
+                                      {websiteDupMatches.map((org) => (
+                                        <li key={org.id}>
+                                          <a
+                                            href={`/dashboard/organizations/view?id=${org.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            {org.name}
+                                          </a>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <input
+                                      id="confirm-duplicate-website"
+                                      type="checkbox"
+                                      className="h-4 w-4"
+                                      checked={hasConfirmedWebsiteDupSave}
+                                      onChange={(e) =>
+                                        setHasConfirmedWebsiteDupSave(e.target.checked)
+                                      }
+                                    />
+                                    <label htmlFor="confirm-duplicate-website">
+                                      I have reviewed these website duplicate(s) and still want to save.
+                                    </label>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                            {duplicateWarning && isEmailDuplicateField && (
-                              <div className="mt-1 text-xs text-yellow-700">
-                                {(duplicateWarning.email?.length ?? 0) > 0 &&
-                                  "This email matches an existing organization."}
-                              </div>
-                            )}
+                              )}
                           </>
                         )}
                       </div>
@@ -2147,49 +2410,6 @@ export default function AddOrganization() {
             )}
           </div>
 
-          {/* Duplicate warning section with links to possible matches and confirmation */}
-          {duplicateWarning && (duplicateWarning.email?.length ?? 0) > 0 && (
-            <div className="mb-4 p-4 border border-yellow-300 bg-yellow-50 rounded">
-              <div className="font-semibold text-yellow-800 mb-2">
-                Possible duplicate organization(s) detected
-              </div>
-              <div className="space-y-2 text-sm text-yellow-900">
-                {(duplicateWarning.email?.length ?? 0) > 0 && (
-                  <div>
-                    <div className="font-medium">Same email:</div>
-                    <ul className="list-disc list-inside">
-                      {duplicateWarning.email.map((org) => (
-                        <li key={org.id}>
-                          <a
-                            href={`/dashboard/organizations/view?id=${org.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {org.name}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 text-sm text-yellow-900">
-                <input
-                  id="confirm-duplicate-save"
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={hasConfirmedDuplicateSave}
-                  onChange={(e) => setHasConfirmedDuplicateSave(e.target.checked)}
-                />
-                <label htmlFor="confirm-duplicate-save">
-                  I have reviewed the possible duplicates and still want to save this organization.
-                </label>
-              </div>
-            </div>
-          )}
-
           {/* Spacer so content is not hidden behind sticky bar */}
           <div className="h-20" aria-hidden="true" />
 
@@ -2207,19 +2427,13 @@ export default function AddOrganization() {
               disabled={
                 isSubmitting ||
                 !isFormValid ||
-                (duplicateWarning !== null &&
-                  ((duplicateWarning.phone?.length ?? 0) > 0 ||
-                    (duplicateWarning.website?.length ?? 0) > 0 ||
-                    (duplicateWarning.email?.length ?? 0) > 0) &&
-                  !hasConfirmedDuplicateSave)
+                (phoneDupMatches.length > 0 && !hasConfirmedPhoneDupSave) ||
+                (websiteDupMatches.length > 0 && !hasConfirmedWebsiteDupSave)
               }
               className={`px-4 py-2 rounded ${isSubmitting ||
                 !isFormValid ||
-                (duplicateWarning !== null &&
-                  ((duplicateWarning.phone?.length ?? 0) > 0 ||
-                    (duplicateWarning.website?.length ?? 0) > 0 ||
-                    (duplicateWarning.email?.length ?? 0) > 0) &&
-                  !hasConfirmedDuplicateSave)
+                (phoneDupMatches.length > 0 && !hasConfirmedPhoneDupSave) ||
+                (websiteDupMatches.length > 0 && !hasConfirmedWebsiteDupSave)
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-500 text-white hover:bg-blue-600"
                 }`}

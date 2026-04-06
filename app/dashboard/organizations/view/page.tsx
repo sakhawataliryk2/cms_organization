@@ -69,6 +69,20 @@ import AddNoteModal from "@/components/AddNoteModal";
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
+const ORG_HEADER_FIELD_LABELS: Record<string, string> = {
+  phone: "Phone",
+  website: "Website",
+  email: "Email",
+  contact_phone: "Contact Phone",
+  status: "Status",
+  owner: "Owner",
+  city: "City",
+  country: "Country",
+  nickname: "Nickname",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+};
+
 const ORG_PANEL_TITLES: Record<string, string> = {
   contactInfo: "Organization Contact Info:",
   about: "About:",
@@ -699,15 +713,16 @@ export default function OrganizationView() {
     showHeaderFieldModal,
     setShowHeaderFieldModal,
     saveHeaderConfig,
+    isSaving: isSavingHeaderConfig,
   } = useHeaderConfig({
     entityType: "ORGANIZATION",
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
     configType: "header",
   });
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
-    const fromApi = (availableFields || [])
+    return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const k = f.field_name || f.field_key || f.field_label || f.id;
@@ -724,25 +739,76 @@ export default function OrganizationView() {
         seen.add(x.key);
         return true;
       });
-    return fromApi;
+  }, [availableFields]);
+
+  const formatHeaderValue = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    return str === "" ? null : str;
   };
 
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  const getCustomFieldValue = (customKey: string) => {
+    if (!organization) return null;
+    const direct = formatHeaderValue(organization.customFields?.[customKey]);
+    if (direct) return direct;
+
+    const fieldDef = (availableFields || []).find((f: any) => {
+      const stableKey = f.field_name || f.field_key || f.field_label || f.id;
+      return String(stableKey) === customKey;
+    });
+
+    if (fieldDef) {
+      const labelValue = formatHeaderValue(organization.customFields?.[fieldDef.field_label]);
+      if (labelValue) return labelValue;
+      const nameValue = formatHeaderValue(organization.customFields?.[fieldDef.field_name]);
+      if (nameValue) return nameValue;
+    }
+
+    const labelFallback = headerFieldCatalog.find((f) => f.key === `custom:${customKey}`);
+    if (labelFallback) {
+      const fallbackValue = formatHeaderValue(organization.customFields?.[labelFallback.label]);
+      if (fallbackValue) return fallbackValue;
+    }
+
+    return null;
+  };
 
   const getHeaderFieldValue = (key: string) => {
     if (!organization) return "-";
     const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-    const o = organization as any;
-    let v = o[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    if (o.contact?.[rawKey] !== undefined) return String(o.contact[rawKey] ?? "-");
-    if (rawKey === "contact_phone" || rawKey === "phone") return String(o.contact_phone ?? o.phone ?? "(Not provided)");
-    if (rawKey === "nickname") return String(o.nicknames ?? o.contact?.nickname ?? "-");
-    v = o.customFields?.[rawKey];
-    if (v !== undefined && v !== null) return String(v);
-    const field = headerFieldCatalog.find((f) => f.key === key);
-    if (field) v = o.customFields?.[field.label];
-    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+    const o = organization as Record<string, unknown>;
+
+    if (key.startsWith("custom:")) {
+      const val = getCustomFieldValue(rawKey);
+      return val ?? "-";
+    }
+
+    if (rawKey === "contact_phone" || rawKey === "phone") {
+      const phone =
+        o["contact_phone"] ??
+        o["phone"] ??
+        (organization.contact?.["phone"] ?? organization.contact_phone ?? organization.phone);
+      return String(phone ?? "(Not provided)");
+    }
+
+    if (rawKey === "nickname") {
+      const nick = organization.nicknames ?? organization.contact?.nickname;
+      if (nick) return String(nick);
+      return "-";
+    }
+
+    const standardValue = formatHeaderValue(o[rawKey]);
+    if (standardValue) return standardValue;
+
+    const contactValue = formatHeaderValue(
+      (organization.contact as Record<string, unknown> | undefined)?.[rawKey]
+    );
+    if (contactValue) return contactValue;
+
+    const customFallback = getCustomFieldValue(rawKey);
+    if (customFallback) return customFallback;
+
+    return "-";
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -815,7 +881,8 @@ export default function OrganizationView() {
 
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    if (found?.label) return found.label;
+    return ORG_HEADER_FIELD_LABELS[key] ?? key;
   };
 
 
@@ -7122,7 +7189,7 @@ export default function OrganizationView() {
           description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all organization records."
           order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
           visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
-          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
               setHeaderFields((prev) => prev.filter((x) => x !== key));
@@ -7138,8 +7205,8 @@ export default function OrganizationView() {
             const success = await saveHeaderConfig();
             if (success) setShowHeaderFieldModal(false);
           }}
-          saveButtonText="Done"
-          isSaveDisabled={headerFields.length === 0}
+          saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
+          isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
@@ -7150,6 +7217,7 @@ export default function OrganizationView() {
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
+          listMaxHeight="50vh"
         />
       )}
 

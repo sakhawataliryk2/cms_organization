@@ -304,6 +304,17 @@ function SortableColumnHeader({
 // Move DEFAULT_HEADER_FIELDS outside component to ensure stable reference
 const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
+const JOB_HEADER_FIELD_LABELS: Record<string, string> = {
+  phone: "Phone",
+  website: "Website",
+  status: "Status",
+  owner: "Owner",
+  organization: "Organization",
+  jobType: "Job Type",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+};
+
 // Storage keys for Job Details, Details, Hiring Manager – field lists come from admin (custom field definitions)
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
 
@@ -2642,7 +2653,7 @@ export default function JobView() {
     );
   }, [editingPanel, visibleFields.hiringManager, hiringManagerFieldCatalog]);
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
@@ -2663,9 +2674,7 @@ export default function JobView() {
         return true;
       });
     return fromApi;
-  };
-
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  }, [availableFields]);
 
   // Initialize headerFieldsOrder when headerFields or catalog changes
   useEffect(() => {
@@ -2680,7 +2689,8 @@ export default function JobView() {
 
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    if (found?.label) return found.label;
+    return JOB_HEADER_FIELD_LABELS[key] ?? key;
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -5403,28 +5413,39 @@ export default function JobView() {
               </div>
             </div>
 
-            {headerFields.length === 0 ? (
+            {headerFields.filter((fk) => headerFieldCatalog.some((cat) => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
-                const info = getHeaderFieldInfo(fk) as { key: string; label: string; name?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
-                return (
-                  <div key={fk} className="min-w-0">
-                    <div className="text-xs text-gray-500">
-                      {getHeaderFieldLabel(fk)}
+              headerFields
+                .filter((fk) => headerFieldCatalog.some((cat) => cat.key === fk))
+                .map((fk) => {
+                  const info = getHeaderFieldInfo(fk) as { key: string; label: string; name?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                  return (
+                    <div key={fk} className="min-w-0">
+                      <div className="text-xs text-gray-500">{getHeaderFieldLabel(fk)}</div>
+                      <FieldValueRenderer
+                        value={getHeaderFieldValue(fk)}
+                        fieldInfo={
+                          info
+                            ? {
+                                key: info.key,
+                                label: info.label,
+                                name: info.name,
+                                fieldType: info.fieldType,
+                                lookupType: info.lookupType,
+                                multiSelectLookupType: info.multiSelectLookupType,
+                              }
+                            : { key: fk, label: getHeaderFieldLabel(fk), name: fk }
+                        }
+                        emptyPlaceholder="-"
+                        clickable
+                        entityType="job"
+                      />
                     </div>
-                    <FieldValueRenderer
-                      value={getHeaderFieldValue(fk)}
-                      fieldInfo={info ? { key: info.key, label: info.label, name: info.name, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk), name: fk }}
-                      emptyPlaceholder="-"
-                      clickable
-                      entityType="job"
-                    />
-                  </div>
-                );
-              })
+                  );
+                })
             )}
           </div>
 
@@ -6589,7 +6610,7 @@ export default function JobView() {
           description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records."
           order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
           visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
-          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
               setHeaderFields((prev) => prev.filter((x) => x !== key));
@@ -6608,8 +6629,13 @@ export default function JobView() {
           saveButtonText="Done"
           isSaveDisabled={headerFields.length === 0}
           onReset={() => {
-            setHeaderFields(DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+
+            const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map((f) => f.key));
           }}
           resetButtonText="Reset"
         />

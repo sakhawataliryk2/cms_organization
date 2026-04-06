@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+const ORG_WEBSITE_FIELD_NAME = "Field_5";
+const ORG_MAIN_PHONE_FIELD_NAME = "Field_6";
+
 function normalizePhone(value: string | null | undefined): string {
   if (value == null || typeof value !== "string") return "";
   return value.replace(/\D/g, "").trim();
@@ -19,9 +22,108 @@ function normalizeWebsite(value: string | null | undefined): string {
   }
 }
 
-function normalizeEmail(value: string | null | undefined): string {
-  if (value == null || typeof value !== "string") return "";
-  return value.trim().toLowerCase();
+function parseCustomFields(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
+async function fetchFieldLabelFromBackend(
+  apiUrl: string,
+  token: string,
+  entityType: string,
+  fieldName: string
+): Promise<string | null> {
+  const qs = new URLSearchParams({
+    entity_type: entityType,
+    field_name: fieldName,
+  });
+  const res = await fetch(`${apiUrl}/api/custom-fields/field-label?${qs.toString()}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.success || typeof data.field_label !== "string") return null;
+  const label = data.field_label.trim();
+  return label || null;
+}
+
+/**
+ * Prefer labels from query (client already resolved via /api/custom-fields/field-label),
+ * otherwise resolve Field_5 / Field_6 via backend GET /api/custom-fields/field-label.
+ */
+async function resolvePhoneWebsiteLabels(
+  searchParams: URLSearchParams,
+  token: string,
+  apiUrl: string
+): Promise<{ phoneLabel: string | null; websiteLabel: string | null }> {
+  const phoneFromQuery =
+    (searchParams.get("phone_label") ?? searchParams.get("phoneFieldLabel") ?? "").trim() ||
+    null;
+  const websiteFromQuery =
+    (searchParams.get("website_label") ?? searchParams.get("websiteFieldLabel") ?? "").trim() ||
+    null;
+
+  let phoneLabel = phoneFromQuery;
+  let websiteLabel = websiteFromQuery;
+
+  if (!phoneLabel) {
+    phoneLabel = await fetchFieldLabelFromBackend(
+      apiUrl,
+      token,
+      "organizations",
+      ORG_MAIN_PHONE_FIELD_NAME
+    );
+  }
+  if (!websiteLabel) {
+    websiteLabel = await fetchFieldLabelFromBackend(
+      apiUrl,
+      token,
+      "organizations",
+      ORG_WEBSITE_FIELD_NAME
+    );
+  }
+
+  return { phoneLabel, websiteLabel };
+}
+
+function orgPhoneForDuplicate(
+  cf: Record<string, unknown>,
+  phoneLabel: string | null,
+  contactPhoneColumn: unknown
+): string {
+  if (phoneLabel && cf[phoneLabel] != null && String(cf[phoneLabel]).trim() !== "") {
+    const fromCf = normalizePhone(String(cf[phoneLabel]));
+    if (fromCf) return fromCf;
+  }
+  return normalizePhone(
+    contactPhoneColumn == null ? "" : String(contactPhoneColumn)
+  );
+}
+
+function orgWebsiteForDuplicate(
+  cf: Record<string, unknown>,
+  websiteLabel: string | null,
+  websiteColumn: unknown
+): string {
+  if (websiteLabel && cf[websiteLabel] != null && String(cf[websiteLabel]).trim() !== "") {
+    const fromCf = normalizeWebsite(String(cf[websiteLabel]));
+    if (fromCf) return fromCf;
+  }
+  return normalizeWebsite(websiteColumn == null ? "" : String(websiteColumn));
 }
 
 export async function GET(request: NextRequest) {
@@ -39,18 +141,24 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const phone = searchParams.get("phone") ?? "";
     const website = searchParams.get("website") ?? "";
-    const email = searchParams.get("email") ?? "";
     const excludeId = searchParams.get("excludeId") ?? "";
 
-    const hasAny = normalizePhone(phone) || normalizeWebsite(website) || normalizeEmail(email);
+    const hasAny = normalizePhone(phone) || normalizeWebsite(website);
     if (!hasAny) {
       return NextResponse.json({
         success: true,
-        duplicates: { phone: [], website: [], email: [] },
+        duplicates: { phone: [], website: [] },
       });
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+
+    const { phoneLabel, websiteLabel } = await resolvePhoneWebsiteLabels(
+      searchParams,
+      token,
+      apiUrl
+    );
+
     const response = await fetch(`${apiUrl}/api/organizations`, {
       method: "GET",
       headers: {
@@ -82,51 +190,28 @@ export async function GET(request: NextRequest) {
     const exclude = excludeId ? String(excludeId).trim() : null;
     const normPhone = normalizePhone(phone);
     const normWebsite = normalizeWebsite(website);
-    const normEmail = normalizeEmail(email);
 
     const duplicatePhone: Array<{ id: string | number; name: string }> = [];
     const duplicateWebsite: Array<{ id: string | number; name: string }> = [];
-    const duplicateEmail: Array<{ id: string | number; name: string }> = [];
 
     for (const org of organizations) {
       const orgId = org.id != null ? String(org.id) : "";
       if (exclude && orgId === exclude) continue;
 
       const orgName = org.name ?? "Unnamed";
+      const cf = parseCustomFields(org.custom_fields);
 
       if (normPhone) {
-        const orgPhone = normalizePhone(org.contact_phone);
+        const orgPhone = orgPhoneForDuplicate(cf, phoneLabel, org.contact_phone);
         if (orgPhone && orgPhone === normPhone) {
           duplicatePhone.push({ id: org.id, name: orgName });
         }
       }
 
       if (normWebsite) {
-        const orgWeb = normalizeWebsite(org.website);
+        const orgWeb = orgWebsiteForDuplicate(cf, websiteLabel, org.website);
         if (orgWeb && orgWeb === normWebsite) {
           duplicateWebsite.push({ id: org.id, name: orgName });
-        }
-      }
-
-      if (normEmail) {
-        let orgEmail = "";
-        if (org.custom_fields) {
-          const cf =
-            typeof org.custom_fields === "string"
-              ? (() => {
-                  try {
-                    return JSON.parse(org.custom_fields) as Record<string, unknown>;
-                  } catch {
-                    return {};
-                  }
-                })()
-              : (org.custom_fields as Record<string, unknown>);
-          const raw =
-            cf["Email"] ?? cf["Organization Email"] ?? cf["email"] ?? "";
-          orgEmail = normalizeEmail(String(raw ?? ""));
-        }
-        if (orgEmail && orgEmail === normEmail) {
-          duplicateEmail.push({ id: org.id, name: orgName });
         }
       }
     }
@@ -136,7 +221,6 @@ export async function GET(request: NextRequest) {
       duplicates: {
         phone: duplicatePhone,
         website: duplicateWebsite,
-        email: duplicateEmail,
       },
     });
   } catch (error) {

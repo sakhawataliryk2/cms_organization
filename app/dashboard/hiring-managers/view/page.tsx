@@ -66,6 +66,18 @@ import AddNoteModal from "@/components/AddNoteModal";
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
+const HIRING_MANAGER_HEADER_FIELD_LABELS: Record<string, string> = {
+  phone: "Phone",
+  email: "Email",
+  status: "Status",
+  organization: "Organization",
+  organizationName: "Organization",
+  owner: "Owner",
+  jobTitle: "Job Title",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+};
+
 // Storage keys for Hiring Manager Details and Organization Details – field lists come from admin (custom field definitions)
 const HM_DETAILS_STORAGE_KEY = "hiringManagerDetailsFields";
 const HM_ORGANIZATION_DETAILS_STORAGE_KEY = "hiringManagerOrganizationDetailsFields";
@@ -989,9 +1001,9 @@ export default function HiringManagerView() {
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
-    const fromApi = (availableFields || [])
+    return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const k = f.field_name || f.field_key || f.field_label || f.id;
@@ -1008,14 +1020,60 @@ export default function HiringManagerView() {
         seen.add(x.key);
         return true;
       });
-    return fromApi;
+  }, [availableFields]);
+
+  const formatHeaderValue = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    return str === "" ? null : str;
   };
 
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  const getCustomFieldValue = (customKey: string) => {
+    if (!hiringManager) return null;
+    const direct = formatHeaderValue(hiringManager.customFields?.[customKey]);
+    if (direct) return direct;
 
-  const getHeaderFieldLabel = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    const fieldDef = (availableFields || []).find((f: any) => {
+      const stableKey = f.field_key || f.api_name || f.field_name || f.id;
+      return String(stableKey) === customKey;
+    });
+
+    if (fieldDef) {
+      const labelValue = formatHeaderValue(hiringManager.customFields?.[fieldDef.field_label]);
+      if (labelValue) return labelValue;
+      const nameValue = formatHeaderValue(hiringManager.customFields?.[fieldDef.field_name]);
+      if (nameValue) return nameValue;
+    }
+
+    const labelFallback = headerFieldCatalog.find((f) => f.key === `custom:${customKey}`);
+    if (labelFallback) {
+      const fallbackValue = formatHeaderValue(hiringManager.customFields?.[labelFallback.label]);
+      if (fallbackValue) return fallbackValue;
+    }
+
+    return null;
+  };
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!hiringManager) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+
+    if (key.startsWith("custom:")) {
+      const val = getCustomFieldValue(rawKey);
+      return val ?? "-";
+    }
+
+    if (rawKey === "organization" || rawKey === "organizationName") {
+      return hiringManager.organization?.name || "-";
+    }
+
+    const standardValue = formatHeaderValue((hiringManager as Record<string, unknown>)[rawKey]);
+    if (standardValue) return standardValue;
+
+    const customFallback = getCustomFieldValue(rawKey);
+    if (customFallback) return customFallback;
+
+    return "-";
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -1023,66 +1081,10 @@ export default function HiringManagerView() {
     return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
   };
 
-  const getHeaderFieldValue = (key: string) => {
-    if (!hiringManager) return "-";
-    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-
-    // Helper to get value from custom fields by key or label
-    const getCustomValue = (k: string) => {
-      // 1. Try direct key lookup
-      if (hiringManager.customFields?.[k] !== undefined && hiringManager.customFields?.[k] !== null && String(hiringManager.customFields?.[k]).trim() !== "") {
-        return String(hiringManager.customFields?.[k]);
-      }
-
-      // 2. Try lookup by label/field_name from availableFields
-      const fieldDef = (availableFields || []).find((f: any) =>
-        (f.field_key || f.api_name || f.field_name || f.id) === k
-      );
-
-      if (fieldDef) {
-        // Try field_label
-        if (fieldDef.field_label) {
-          const val = hiringManager.customFields?.[fieldDef.field_label];
-          if (val !== undefined && val !== null && String(val).trim() !== "") {
-            return String(val);
-          }
-        }
-        // Try field_name
-        if (fieldDef.field_name) {
-          const val = hiringManager.customFields?.[fieldDef.field_name];
-          if (val !== undefined && val !== null && String(val).trim() !== "") {
-            return String(val);
-          }
-        }
-      }
-
-      return null;
-    };
-
-    // Check customFields first if it's explicitly a custom key
-    if (key.startsWith("custom:")) {
-      const val = getCustomValue(rawKey);
-      return val === null ? "-" : val;
-    }
-
-    // Special case for organization object
-    if (rawKey === "organization" || rawKey === "organizationName") {
-      return hiringManager.organization?.name || "-";
-    }
-
-    // Try standard field on the object itself
-    const std = (hiringManager as any)[rawKey];
-    if (std !== undefined && std !== null && String(std).trim() !== "") {
-      return String(std);
-    }
-
-    // Fallback to customFields without prefix (for fields in details panel without custom: prefix)
-    const custom = getCustomValue(rawKey);
-    if (custom !== null) {
-      return custom;
-    }
-
-    return "-";
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    if (found?.label) return found.label;
+    return HIRING_MANAGER_HEADER_FIELD_LABELS[key] ?? key;
   };
 
 
@@ -5318,8 +5320,8 @@ export default function HiringManagerView() {
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => String(f.field_name || f.field_key || f.api_name || f.id));
-            
+              .map(f => `custom:${f.field_name || f.field_key || f.api_name || f.id}`);
+           
             const defaults = Array.from(new Set([...HIRING_MANAGER_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));

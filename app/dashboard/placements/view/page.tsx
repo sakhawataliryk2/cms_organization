@@ -61,6 +61,20 @@ import AddNoteModal from "@/components/AddNoteModal";
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
 
+const PLACEMENT_HEADER_FIELD_LABELS: Record<string, string> = {
+  status: "Status",
+  owner: "Owner",
+  assignedTo: "Assigned To",
+  priority: "Priority",
+  jobSeeker: "Job Seeker",
+  hiringManager: "Hiring Manager",
+  job: "Job",
+  organization: "Organization",
+  lead: "Lead",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+};
+
 // Storage keys for all summary panels – field lists come from admin (custom field definitions)
 const CANDIDATE_DETAILS_STORAGE_KEY = "placementSummaryCandidateFields";
 const COMPANY_DETAILS_STORAGE_KEY = "placementSummaryCompanyFields";
@@ -766,7 +780,7 @@ export default function PlacementView() {
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
@@ -786,9 +800,7 @@ export default function PlacementView() {
         return true;
       });
     return fromApi;
-  };
-
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  }, [availableFields]);
 
   const getHeaderFieldInfo = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
@@ -797,20 +809,37 @@ export default function PlacementView() {
 
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    if (found?.label) return found.label;
+    return PLACEMENT_HEADER_FIELD_LABELS[key] ?? key;
   };
 
   const getHeaderFieldValue = (key: string) => {
     if (!placement) return "-";
-    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-    const p = placement as any;
-    let v = p[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    v = placement.customFields?.[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    const field = headerFieldCatalog.find((f) => f.key === key);
-    if (field) v = placement.customFields?.[field.label];
-    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+    const p = placement as Record<string, unknown>;
+
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      let v = p[rawKey];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+      v = placement.customFields?.[rawKey];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+      const field = headerFieldCatalog.find((f) => f.key === key);
+      if (field) v = placement.customFields?.[field.label];
+      return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+    }
+
+    const std = (placement as any)[key];
+    if (std !== undefined && std !== null && String(std).trim() !== "") {
+      return String(std);
+    }
+
+    const field = headerFieldCatalog.find((f) => f.key === `custom:${key}`);
+    const customCandidate = field ? placement.customFields?.[field.label] : null;
+    if (customCandidate !== undefined && customCandidate !== null && String(customCandidate).trim() !== "") {
+      return String(customCandidate);
+    }
+
+    return "-";
   };
 
   // Initialize headerFieldsOrder when headerFields or catalog changes
@@ -4605,30 +4634,40 @@ export default function PlacementView() {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-8 gap-y-3">
-            {headerFields.length === 0 ? (
+            {headerFields.filter((fk) => headerFieldCatalog.some((cat) => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => {
-                const info = getHeaderFieldInfo(fk);
-                const fieldInfo = info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) };
-                return (
-                  <div key={fk} className="min-w-0">
-                    <div className="text-xs text-gray-500">
-                      {getHeaderFieldLabel(fk)}
+              headerFields
+                .filter((fk) => headerFieldCatalog.some((cat) => cat.key === fk))
+                .map((fk) => {
+                  const info = getHeaderFieldInfo(fk);
+                  const fieldInfo = info
+                    ? {
+                        key: info.key,
+                        label: info.label,
+                        fieldType: info.fieldType,
+                        lookupType: info.lookupType,
+                        multiSelectLookupType: info.multiSelectLookupType,
+                      }
+                    : { key: fk, label: getHeaderFieldLabel(fk) };
+                  return (
+                    <div key={fk} className="min-w-0">
+                      <div className="text-xs text-gray-500">
+                        {getHeaderFieldLabel(fk)}
+                      </div>
+                      <div className="text-sm font-medium">
+                        <FieldValueRenderer
+                          value={getHeaderFieldValue(fk)}
+                          fieldInfo={fieldInfo}
+                          emptyPlaceholder="-"
+                          clickable
+                        />
+                      </div>
                     </div>
-                    <div className="text-sm font-medium">
-                      <FieldValueRenderer
-                        value={getHeaderFieldValue(fk)}
-                        fieldInfo={fieldInfo}
-                        emptyPlaceholder="-"
-                        clickable
-                      />
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })
             )}
           </div>
 
@@ -5158,8 +5197,13 @@ export default function PlacementView() {
           saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
           isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
-            setHeaderFields(PLACEMENT_DEFAULT_HEADER_FIELDS);
-            setHeaderFieldsOrder(PLACEMENT_DEFAULT_HEADER_FIELDS);
+            const requiredCustom = (availableFields || [])
+              .filter(f => f.is_required || f.required || f.isRequired)
+              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+
+            const defaults = Array.from(new Set([...PLACEMENT_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            setHeaderFields(defaults);
+            setHeaderFieldsOrder(headerFieldCatalog.map((f) => f.key));
           }}
           resetButtonText="Reset"
           listMaxHeight="50vh"
