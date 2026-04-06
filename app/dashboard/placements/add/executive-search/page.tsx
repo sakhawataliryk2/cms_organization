@@ -12,6 +12,7 @@ import LookupField from "@/components/LookupField";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import JobSummaryCard from "../JobSummaryCard";
 import Link from "next/link";
+import { FiInfo } from "react-icons/fi";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -437,14 +438,20 @@ export default function AddPlacement() {
   // Get organization ID value for LookupField
   const organizationIdValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
 
-  const canSubmit = useMemo(() => {
-    const validation = validateCustomFields();
-    if (!validation.isValid) return false;
-    if (!jobField || !candidateField) return true;
+  const validationStatus = useMemo(() => {
+    const v = validateCustomFields();
+    if (!v.isValid) return { isValid: false, message: v.message };
+    if (!jobField || !candidateField) return { isValid: true, message: "" };
     const j = customFieldValues[jobField.field_name];
     const c = customFieldValues[candidateField.field_name];
-    return j != null && String(j).trim() !== "" && c != null && String(c).trim() !== "";
+    const jValid = j != null && String(j).trim() !== "";
+    const cValid = c != null && String(c).trim() !== "";
+    if (!jValid) return { isValid: false, message: "Job is required" };
+    if (!cValid) return { isValid: false, message: "Candidate is required" };
+    return { isValid: true, message: "" };
   }, [jobField, candidateField, customFieldValues, validateCustomFields]);
+
+  const canSubmit = validationStatus.isValid;
 
   if (isLoading && (placementId || (jobIdFromUrl && !selectedJob && !jobTypeMismatch && !jobFetchError))) {
     return <LoadingScreen message={placementId ? "Loading placement data..." : "Loading job details..."} />;
@@ -676,7 +683,13 @@ export default function AddPlacement() {
           </div>
 
           <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end items-center space-x-4">
+            {process.env.NODE_ENV !== "production" && !canSubmit && (
+              <div className="text-red-500">
+                <FiInfo className="shrink-0" />
+                <span>{validationStatus.message || "Missing required fields"}</span>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleGoBack}
