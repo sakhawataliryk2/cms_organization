@@ -326,6 +326,40 @@ const PAYROLL_INFO_STATIC_VALUES: Record<string, string> = {
   mostRecentPayDate: "09/26/2021",
 };
 
+const PRIMARY_PHONE_FIELD_IDENTIFIER = "field_11";
+
+const normalizeFieldIdentifier = (identifier: unknown) => {
+  if (identifier === undefined || identifier === null) {
+    return "";
+  }
+  return String(identifier)
+    .trim()
+    .toLowerCase()
+    .replace(/^custom:/, "");
+};
+
+const isPrimaryPhoneField = (key: string, field?: any) => {
+  const identifiers = [
+    key,
+    field?.field_name,
+    field?.field_key,
+    field?.api_name,
+  ]
+    .map(normalizeFieldIdentifier)
+    .filter(Boolean);
+  return identifiers.includes(PRIMARY_PHONE_FIELD_IDENTIFIER);
+};
+
+const shouldShowPrimaryPhoneCallButton = (
+  key: string,
+  field: any,
+  value: string
+) =>
+  isPrimaryPhoneField(key, field) &&
+  value &&
+  value !== "-" &&
+  value !== "No phone provided";
+
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
 
 interface NoteFormState {
@@ -746,12 +780,25 @@ export default function JobSeekerView() {
     "title",
   ];
 
+  const JOB_SEEKER_HEADER_FIELD_LABELS: Record<string, string> = {
+    phone: "Phone",
+    email: "Email",
+    status: "Status",
+    currentOrganization: "Current Organization",
+    title: "Title",
+    owner: "Owner",
+    city: "City",
+    dateCreated: "Date Created",
+    createdBy: "Created By",
+  };
+
   const {
     headerFields,
     setHeaderFields,
     showHeaderFieldModal,
     setShowHeaderFieldModal,
     saveHeaderConfig,
+    isSaving: isSavingHeaderConfig,
   } = useHeaderConfig({
     entityType: "JOB_SEEKER",
     configType: "header",
@@ -772,9 +819,9 @@ export default function JobSeekerView() {
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
-  const buildHeaderFieldCatalog = () => {
+  const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();
-    const fromApi = (availableFields || [])
+    return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const k = f.field_name || f.field_key || f.field_label || f.id;
@@ -791,14 +838,57 @@ export default function JobSeekerView() {
         seen.add(x.key);
         return true;
       });
-    return fromApi;
+  }, [availableFields]);
+
+  const formatHeaderValue = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    return str === "" ? null : str;
   };
 
-  const headerFieldCatalog = buildHeaderFieldCatalog();
+  const getCustomFieldValue = (customKey: string) => {
+    if (!jobSeeker) return null;
+    const direct = formatHeaderValue(jobSeeker.customFields?.[customKey]);
+    if (direct) return direct;
 
-  const getHeaderFieldLabel = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key);
-    return found?.label || key;
+    const fieldDef = (availableFields || []).find((f: any) => {
+      const stableKey = f.field_name || f.field_key || f.api_name || f.id;
+      return String(stableKey) === customKey;
+    });
+
+    if (fieldDef) {
+      const labelValue = formatHeaderValue(jobSeeker.customFields?.[fieldDef.field_label]);
+      if (labelValue) return labelValue;
+      const nameValue = formatHeaderValue(jobSeeker.customFields?.[fieldDef.field_name]);
+      if (nameValue) return nameValue;
+    }
+
+    const labelFallback = headerFieldCatalog.find((f) => f.key === `custom:${customKey}`);
+    if (labelFallback) {
+      const fallbackValue = formatHeaderValue(jobSeeker.customFields?.[labelFallback.label]);
+      if (fallbackValue) return fallbackValue;
+    }
+
+    return null;
+  };
+
+  const getHeaderFieldValue = (key: string): string => {
+    if (!jobSeeker) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const record = jobSeeker as Record<string, unknown>;
+
+    if (key.startsWith("custom:")) {
+      const val = getCustomFieldValue(rawKey);
+      return val ?? "-";
+    }
+
+    const standardValue = formatHeaderValue(record[rawKey]);
+    if (standardValue) return standardValue;
+
+    const customFallback = getCustomFieldValue(rawKey);
+    if (customFallback) return customFallback;
+
+    return "-";
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -806,17 +896,10 @@ export default function JobSeekerView() {
     return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
   };
 
-  const getHeaderFieldValue = (key: string): string => {
-    if (!jobSeeker) return "-";
-    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-    const j = jobSeeker as any;
-    let v = j[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    v = jobSeeker.customFields?.[rawKey];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-    const field = headerFieldCatalog.find((f) => f.key === key);
-    if (field) v = jobSeeker.customFields?.[field.label];
-    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    if (found?.label) return found.label;
+    return JOB_SEEKER_HEADER_FIELD_LABELS[key] ?? key;
   };
 
   const handleHeaderFieldsDragEnd = (event: DragEndEvent) => {
@@ -4563,10 +4646,16 @@ Best regards`;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
+      const shouldShowCallButton = shouldShowPrimaryPhoneCallButton(
+        key,
+        field,
+        fieldValue
+      );
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">
+          <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
             <FieldValueRenderer
               value={fieldValue}
               fieldInfo={fieldInfo}
@@ -4577,6 +4666,18 @@ Best regards`;
               entityType="job-seekers"
               recordId={jobSeeker.id || ""}
             />
+            </div>
+            {shouldShowCallButton && (
+              <button
+                type="button"
+                onClick={() => handleStartZoomCall(fieldValue)}
+                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                title="Call via Zoom Phone"
+              >
+                <FiPhone className="mr-1 h-3 w-3" />
+                Call
+              </button>
+            )}
           </div>
           {/* </div> */}
         </div>
@@ -4592,6 +4693,81 @@ Best regards`;
         </div>
       </PanelWithHeader>
     );
+  };
+
+  const handleStartZoomCall = async (phoneNumber?: string) => {
+    if (!jobSeekerId || !jobSeeker) {
+      toast.error("Job seeker not loaded");
+      return;
+    }
+
+    const rawNumber =
+      phoneNumber &&
+      phoneNumber !== "-" &&
+      phoneNumber !== "No phone provided"
+        ? phoneNumber
+        : (jobSeeker as any).mobilePhone &&
+          (jobSeeker as any).mobilePhone !== "No phone provided"
+        ? (jobSeeker as any).mobilePhone
+        : (jobSeeker as any).phone;
+
+    if (!rawNumber || rawNumber === "No phone provided") {
+      toast.error("No phone number available for this job seeker");
+      return;
+    }
+
+    // Normalize the phone number for Zoom Phone (E.164‑like where possible)
+    const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+    let normalizedNumber = digitsOnly;
+
+    // If we have exactly 10 digits and no country code, assume US (+1)
+    if (digitsOnly.length === 10) {
+      normalizedNumber = `+1${digitsOnly}`;
+    } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
+      // If it already contains country code digits (no formatting), prefix '+'.
+      normalizedNumber = `+${digitsOnly}`;
+    }
+
+    if (!normalizedNumber) {
+      toast.error("Phone number format is invalid for Zoom Phone");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/calls/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          candidateId: jobSeekerId,
+          phoneNumber: normalizedNumber,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data?.message ||
+          (response.status === 401
+            ? "Session expired. Please sign in again."
+            : "Failed to start Zoom call");
+        toast.error(message);
+        return;
+      }
+
+      const dialUrl = data?.dialUrl;
+      if (dialUrl && typeof window !== "undefined") {
+        window.location.href = dialUrl;
+        toast.success("Opening Zoom Phone...");
+      } else {
+        toast.error("No dial URL received. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error starting Zoom Phone call:", error);
+      toast.error("Unable to start Zoom call. Please try again.");
+    }
   };
 
   const renderJobSeekerDetailsPanel = () => {
@@ -4612,81 +4788,6 @@ Best regards`;
       effectiveRows.push({ key, label: getDetailsLabel(key) });
     }
 
-    const handleStartZoomCall = async (phoneNumber?: string) => {
-      if (!jobSeekerId || !jobSeeker) {
-        toast.error("Job seeker not loaded");
-        return;
-      }
-
-      const rawNumber =
-        phoneNumber &&
-        phoneNumber !== "-" &&
-        phoneNumber !== "No phone provided"
-          ? phoneNumber
-          : (jobSeeker as any).mobilePhone &&
-            (jobSeeker as any).mobilePhone !== "No phone provided"
-          ? (jobSeeker as any).mobilePhone
-          : (jobSeeker as any).phone;
-
-      if (!rawNumber || rawNumber === "No phone provided") {
-        toast.error("No phone number available for this job seeker");
-        return;
-      }
-
-      // Normalize the phone number for Zoom Phone (E.164‑like where possible)
-      const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
-      let normalizedNumber = digitsOnly;
-
-      // If we have exactly 10 digits and no country code, assume US (+1)
-      if (digitsOnly.length === 10) {
-        normalizedNumber = `+1${digitsOnly}`;
-      } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
-        // If it already contains country code digits (no formatting), prefix '+'.
-        normalizedNumber = `+${digitsOnly}`;
-      }
-
-      if (!normalizedNumber) {
-        toast.error("Phone number format is invalid for Zoom Phone");
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/calls/start", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            candidateId: jobSeekerId,
-            phoneNumber: normalizedNumber,
-          }),
-        });
-
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          const message =
-            data?.message ||
-            (response.status === 401
-              ? "Session expired. Please sign in again."
-              : "Failed to start Zoom call");
-          toast.error(message);
-          return;
-        }
-
-        const dialUrl = data?.dialUrl;
-        if (dialUrl && typeof window !== "undefined") {
-          window.location.href = dialUrl;
-          toast.success("Opening Zoom Phone...");
-        } else {
-          toast.error("No dial URL received. Please try again.");
-        }
-      } catch (error) {
-        console.error("Error starting Zoom Phone call:", error);
-        toast.error("Unable to start Zoom call. Please try again.");
-      }
-    };
-
     const renderJobSeekerDetailsRow = (key: string) => {
       const field = customFieldDefs.find(
         (f: any) =>
@@ -4702,7 +4803,11 @@ Best regards`;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
-      const isPhoneField = key === "mobilePhone" || key === "phone" || /phone/i.test(label);
+      const shouldShowCallButton = shouldShowPrimaryPhoneCallButton(
+        key,
+        field,
+        fieldValue
+      );
 
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
@@ -4720,7 +4825,7 @@ Best regards`;
               entityType="job-seekers"
               recordId={jobSeeker.id || ""}
             />
-            {isPhoneField && fieldValue && fieldValue !== "-" && fieldValue !== "No phone provided" && (
+            {shouldShowCallButton && (
               <button
                 type="button"
                 onClick={() => handleStartZoomCall(fieldValue)}
@@ -7270,7 +7375,7 @@ Best regards`;
           description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job seeker records."
           order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
           visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
-          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
               setHeaderFields((prev) => prev.filter((x) => x !== key));
@@ -7286,20 +7391,18 @@ Best regards`;
             const success = await saveHeaderConfig();
             if (success) setShowHeaderFieldModal(false);
           }}
-          saveButtonText="Done"
-          isSaveDisabled={headerFields.length === 0}
+          saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
+          isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => {
-                const k = f.field_name || f.field_key || f.field_label || f.id;
-                return `custom:${String(k)}`;
-              });
+              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
             const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
           resetButtonText="Reset"
+          listMaxHeight="50vh"
         />
       )}
 

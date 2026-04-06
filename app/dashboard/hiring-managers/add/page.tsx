@@ -93,6 +93,78 @@ export default function AddHiringManager() {
     return new Set(addressFields.map((f: any) => f.id));
   }, [addressFields]);
   const addressAnchorId = addressFields?.[0]?.id; // usually the first address field (Address)
+  const [orgFieldLabels, setOrgFieldLabels] = useState<Record<string, string>>({});
+
+
+  useEffect(() => {
+    const missingFieldNames = ORGANIZATION_FIELD_NAMES.filter(
+      (name) => !orgFieldLabels[name]
+    );
+    if (missingFieldNames.length === 0) return;
+
+    console.log("[HM Add] resolving org labels", missingFieldNames);
+    let cancelled = false;
+
+    const token =
+      typeof document !== "undefined"
+        ? document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        )
+        : "";
+
+    (async () => {
+      const fetched: Record<string, string> = {};
+      await Promise.all(
+        missingFieldNames.map(async (fieldName) => {
+          try {
+            const response = await fetch(
+              `/api/custom-fields/field-label?entity_type=organizations&field_name=${encodeURIComponent(
+                fieldName
+              )}`,
+              {
+                headers: token
+                  ? {
+                    Authorization: `Bearer ${token}`,
+                  }
+                  : undefined,
+                cache: "no-store",
+              }
+            );
+            if (!response.ok) return;
+            const data = await response.json().catch(() => ({}));
+            if (cancelled) return;
+            const label =
+              data.field_label || data.fieldLabel || data.label || "";
+            console.log(
+              "[HM Add] fetched field label",
+              fieldName,
+              "->",
+              label,
+              "payload",
+              data
+            );
+            if (label) {
+              fetched[fieldName] = label;
+            }
+          } catch (error) {
+            console.error(
+              `Failed to fetch field label for organization ${fieldName}:`,
+              error
+            );
+          }
+        })
+      );
+      if (cancelled) return;
+      if (Object.keys(fetched).length > 0) {
+        setOrgFieldLabels((prev) => ({ ...prev, ...fetched }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orgFieldLabels]);
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -120,47 +192,91 @@ export default function AddHiringManager() {
     lastContactDate: "",
   });
 
+  const ORGANIZATION_SELECTION_FIELD_NAME = "Field_3";
+  const ORG_TO_HM_FIELD_MAPPING: Record<string, string> = {
+    Field_6: "Field_16",
+    Field_8: "Field_12",
+    Field_9: "Field_13",
+    Field_10: "Field_14",
+    Field_11: "Field_15",
+    Field_12: "Field_17",
+  };
+  const ORGANIZATION_FIELD_NAMES = Object.keys(ORG_TO_HM_FIELD_MAPPING);
+  const [loadedOrganization, setLoadedOrganization] = useState<any>(null);
+  const lastFetchedOrganizationIdRef = useRef<string | null>(null);
+  const lastMappedOrganizationIdRef = useRef<string | null>(null);
+  const memoizedFormData = useMemo(() => formData, [formData]);
+
   // Fetch organization data (name, phone, address) if organizationId is provided
   const fetchOrganizationData = useCallback(async (orgId: string) => {
     console.log("fetching")
+    lastMappedOrganizationIdRef.current = null;
     try {
       const response = await fetch(`/api/organizations/${orgId}`);
-      if (response.ok) {
+    console.log("[HM Add] fetching organization details", orgId);
+    if (response.ok) {
         const data = await response.json();
         const org = data.organization || {};
 
-        // Extract organization data with fallbacks
-        const orgName = org.name || "";
-        const orgPhone = org.contact_phone || org.custom_fields["Main Phone"] || "";
-        const orgAddress = org.address || "";
-        const orgAddress2 = org.custom_fields["Address 2"] || "";
-        const orgCity = org.custom_fields["City"] || "";
-        const orgState = org.custom_fields["State"] || "";
-        const orgZip = org.custom_fields["ZIP Code"] || "";
+      console.log("[HM Add] loaded organization", orgId, org);
 
-        // Validate required fields
+        // Extract organization data with fallbacks
+        const orgCustomFields = org.custom_fields || {};
+        const resolveOrgFieldValue = (fieldName: string, fallback?: string) => {
+          const label = orgFieldLabels[fieldName];
+          if (label && orgCustomFields[label] !== undefined && orgCustomFields[label] !== null) {
+            return orgCustomFields[label];
+          }
+          return fallback;
+        };
+
+        const orgName = org.name || "";
+        const companyPhoneValue = resolveOrgFieldValue(
+          "Field_6",
+          org.contact_phone || orgCustomFields["Main Phone"] || ""
+        );
+        const addressValue = resolveOrgFieldValue(
+          "Field_8",
+          org.address || ""
+        );
+        const address2Value = resolveOrgFieldValue(
+          "Field_8",
+          orgCustomFields["Address 2"] || ""
+        );
+        const cityValue = resolveOrgFieldValue(
+          "Field_9",
+          orgCustomFields["City"] || ""
+        );
+        const stateValue = resolveOrgFieldValue(
+          "Field_10",
+          orgCustomFields["State"] || ""
+        );
+        const zipValue = resolveOrgFieldValue(
+          "Field_11",
+          orgCustomFields["ZIP Code"] || ""
+        );
+
         if (!orgName) {
           console.warn(`Organization ${orgId} is missing a name`);
         }
 
-        // Set state for organization data
         setOrganizationName(orgName);
-        setOrganizationPhone(orgPhone);
-        setOrganizationAddress(orgAddress);
+        setOrganizationPhone(companyPhoneValue || "");
+        setOrganizationAddress(addressValue || org.address || "");
 
-        // Prefill organizationId and org-derived fields. When organization changes,
-        // always overwrite with the new org's data so company/address update correctly.
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           organizationId: orgId,
-          phone: orgPhone || prev.phone || "",
-          companyPhone: orgPhone || prev.companyPhone || "",
-          address: orgAddress || prev.address || "",
-          address2: orgAddress2 || prev.address2 || "",
-          city: orgCity || prev.city || "",
-          state: orgState || prev.state || "",
-          zipCode: orgZip || prev.zipCode || "",
+          phone: companyPhoneValue || prev.phone || "",
+          companyPhone: companyPhoneValue || prev.companyPhone || "",
+          address: addressValue || prev.address || "",
+          address2: address2Value || prev.address2 || "",
+          city: cityValue || prev.city || "",
+          state: stateValue || prev.state || "",
+          zipCode: zipValue || prev.zipCode || "",
         }));
+
+        setLoadedOrganization(org);
 
         // Auto-populate custom fields once they're loaded
         // This will be handled in a useEffect that watches customFields
@@ -169,6 +285,7 @@ export default function AddHiringManager() {
         console.error("Failed to fetch organization:", response.statusText, errorData);
         setError(`Failed to load organization data: ${errorData.message || response.statusText}`);
         // Still set the organizationId even if fetch fails
+        setLoadedOrganization(null);
         setFormData(prev => ({
           ...prev,
           organizationId: orgId
@@ -178,12 +295,13 @@ export default function AddHiringManager() {
       console.error("Error fetching organization:", error);
       setError(`Error loading organization: ${error instanceof Error ? error.message : "Unknown error"}`);
       // Still set the organizationId even if fetch fails
+      setLoadedOrganization(null);
       setFormData(prev => ({
         ...prev,
         organizationId: orgId
       }));
     }
-  }, []);
+  }, [orgFieldLabels]);
 
   // Initialize with current user and fetch data
   useEffect(() => {
@@ -437,50 +555,121 @@ export default function AddHiringManager() {
     }
   }, [customFields, currentUser, hiringManagerId, customFieldValues, handleCustomFieldChange]);
 
-  // Auto-populate organization fields when organization data is fetched and custom fields are loaded
+  const selectedOrganizationFieldValue = customFieldValues[ORGANIZATION_SELECTION_FIELD_NAME];
+
   useEffect(() => {
-    // In edit mode, don't fetch org and overwrite form – we already have HM data loaded
     if (hiringManagerId) return;
     if (customFields.length === 0) return;
 
-    // Find the organization field definition
-    const orgField = customFields.find((f) => {
-      const label = f.field_label.toLowerCase();
-      return (label === "organization" || label === "organization name" || label === "company") &&
-        !label.includes("phone") && !label.includes("address");
-    });
-
-    if (!orgField) return;
-
-    // Get the current value from custom fields
-    const orgValue = customFieldValues[orgField.field_name];
-
-    // Only fetch if:
-    // 1. orgValue exists
-    // 2. It looks like an ID (is numeric or a short string that could be an ID)
-    // 3. It's different from what we currently have loaded
-    // 4. It's not already the organization name (to prevent loops)
-
-    // Check if orgValue looks like an ID (numeric or very short string)
-    const looksLikeId = orgValue && (
-      !isNaN(Number(orgValue)) || // It's a number
-      (typeof orgValue === 'string' && orgValue.length < 10 && !orgValue.includes(' ')) // Short string without spaces
-    );
-
-    // Don't fetch if the value is already the organization name we have loaded
-    const isDifferentFromLoaded = orgValue !== organizationName && orgValue !== formData.organizationId;
-
-    if (orgValue && looksLikeId && isDifferentFromLoaded) {
-      // Debounce fetching
-      const timeoutId = setTimeout(() => {
-        // Attempt to fetch if it looks like an ID or if we just want to try resolving it
-        console.log("Organization selection changed:", orgValue);
-        fetchOrganizationData(orgValue);
-      }, 500);
-      return () => clearTimeout(timeoutId);
+    if (!selectedOrganizationFieldValue) {
+      lastFetchedOrganizationIdRef.current = null;
+      lastMappedOrganizationIdRef.current = null;
+      setLoadedOrganization(null);
+      return;
     }
 
-  }, [hiringManagerId, customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
+    const trimmedValue = String(selectedOrganizationFieldValue).trim();
+    if (!trimmedValue) return;
+
+    const looksLikeId =
+      !isNaN(Number(trimmedValue)) ||
+      (trimmedValue.length < 10 && !trimmedValue.includes(" "));
+
+    if (!looksLikeId) return;
+
+    if (lastFetchedOrganizationIdRef.current === trimmedValue) return;
+
+    const timeoutId = setTimeout(() => {
+      lastFetchedOrganizationIdRef.current = trimmedValue;
+      fetchOrganizationData(trimmedValue);
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    hiringManagerId,
+    customFields.length,
+    selectedOrganizationFieldValue,
+    fetchOrganizationData,
+  ]);
+
+  useEffect(() => {
+    if (hiringManagerId) return;
+    if (!loadedOrganization) return;
+
+    const labelsReady = ORGANIZATION_FIELD_NAMES.every(
+      (name) => Boolean(orgFieldLabels[name])
+    );
+    if (!labelsReady) return;
+
+    const orgId =
+      String(
+        loadedOrganization.id ??
+        loadedOrganization.organization_id ??
+        loadedOrganization.organizationId ??
+        ""
+      ).trim();
+    if (!orgId) return;
+    if (lastMappedOrganizationIdRef.current === orgId) return;
+
+    const customFieldUpdates: Record<string, any> = {};
+    const formFieldMapping: Record<string, keyof typeof formData> = {
+      Field_8: "address",
+      Field_9: "address2",
+      Field_10: "city",
+      Field_11: "state",
+      Field_12: "zipCode",
+      Field_6: "companyPhone",
+    };
+    const formFieldUpdates: Partial<typeof formData> = {};
+
+    ORGANIZATION_FIELD_NAMES.forEach((orgFieldName) => {
+      const hmFieldName = ORG_TO_HM_FIELD_MAPPING[orgFieldName];
+      const label = orgFieldLabels[orgFieldName];
+      const rawValue =
+        (label
+          ? loadedOrganization.custom_fields?.[label] ??
+          loadedOrganization[label]
+          : undefined) ??
+        loadedOrganization.custom_fields?.[orgFieldName] ??
+        loadedOrganization[orgFieldName];
+      console.log(
+        "[HM Add] mapping org field",
+        orgFieldName,
+        "label",
+        label,
+        "raw",
+        rawValue,
+        "-> HM field",
+        hmFieldName
+      );
+      if (rawValue === undefined) return;
+      customFieldUpdates[hmFieldName] = rawValue;
+      const formKey = formFieldMapping[orgFieldName];
+      if (formKey && formFieldUpdates[formKey] === undefined) {
+        formFieldUpdates[formKey] = rawValue;
+      }
+    });
+
+    if (Object.keys(formFieldUpdates).length > 0) {
+      setFormData((prev) => ({
+        ...prev,
+        ...formFieldUpdates,
+      }));
+    }
+
+    if (Object.keys(customFieldUpdates).length > 0) {
+      Object.entries(customFieldUpdates).forEach(([fieldName, value]) => {
+        handleCustomFieldChange(fieldName, value);
+      });
+    }
+
+    lastMappedOrganizationIdRef.current = orgId;
+  }, [
+    hiringManagerId,
+    loadedOrganization,
+    orgFieldLabels,
+    handleCustomFieldChange,
+  ]);
 
   // When organization data (phone, address) changes—e.g. after selecting a different org—
   // prefill the corresponding custom fields. Run only when org data changes, NOT when the user
@@ -616,7 +805,7 @@ export default function AddHiringManager() {
 
       Object.entries(fieldMappings).forEach(([formKey, labels]) => {
         if (labels.includes(fieldLabel)) {
-          const formValue = formData[formKey as keyof typeof formData];
+          const formValue = memoizedFormData[formKey as keyof typeof memoizedFormData];
           if (formValue !== undefined && formValue !== null && formValue !== "") {
             newValue = formValue;
           }
@@ -631,7 +820,7 @@ export default function AddHiringManager() {
         });
       }
     });
-  }, [formData, customFields, setCustomFieldValues]);
+  }, [memoizedFormData, customFields, setCustomFieldValues]);
 
   // const validateForm = () => {
 
