@@ -706,9 +706,11 @@ export default function AddPlacement() {
                 : placement.custom_fields;
           } catch (_) { }
         }
+        // Prefer exact values from placement.custom_fields (source of truth for admin fields),
+        // and only fall back to mapped top-level columns when custom_fields value is missing.
         sortedCustomFields.forEach((field: any) => {
           const label = field.field_label || field.field_name;
-          if (existingCustomFields[label] != null && !(field.field_name in mapped)) {
+          if (existingCustomFields[label] != null) {
             mapped[field.field_name] = existingCustomFields[label];
           }
         });
