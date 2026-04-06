@@ -1033,7 +1033,7 @@ export default function CandidateFlowDashboard() {
     const urls = {
       google: `https://www.google.com/search?q=${query}`,
       linkedin: `https://www.linkedin.com/search/results/all/?keywords=${query}`,
-      facebook: `https://www.facebook.com/search/top?q=${query}`,
+      facebook: `https://www.facebook.com/search/top/?q=${query}`,
     };
     window.open(urls[platform], '_blank', 'noopener,noreferrer');
   };
