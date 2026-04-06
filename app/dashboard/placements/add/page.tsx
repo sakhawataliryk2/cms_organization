@@ -6,6 +6,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { formatRecordId } from "@/lib/recordIdFormatter";
+import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 
 /** Map job_type from API to placement add segment (URL path). */
 function jobTypeToPlacementSegment(jobType: string): string {
@@ -35,7 +36,40 @@ type JobItem = {
   archivedAt?: string | null;
   record_number?: number | string | null;
   recordNumber?: number | string | null;
+  custom_fields?: Record<string, any> | string | null;
 };
+
+function parseCustomFieldsObject(raw: unknown): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, any>;
+  return {};
+}
+
+async function getOrganizationValueFromJobCustomFields(job: any): Promise<string | null> {
+  const customFields = parseCustomFieldsObject(job?.custom_fields);
+  const jobsField2Label = await getCustomFieldLabel("jobs", "Field_2");
+  if (jobsField2Label && customFields && typeof customFields === "object") {
+    const value = customFields[jobsField2Label];
+    if (value != null) {
+      const asString = String(value).trim();
+      if (asString) return asString;
+    }
+  }
+
+  // Fallback for jobs where Field_2 is empty: still pass organization id in URL.
+  const fallbackOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+  if (fallbackOrgId == null) return null;
+  const fallback = String(fallbackOrgId).trim();
+  return fallback || null;
+}
 
 interface JobSearchSelectOption {
   id: string;
@@ -280,8 +314,10 @@ export default function AddPlacementLanding() {
         }
         const segment = jobTypeToPlacementSegment(jobType);
         const jobSeekerId = searchParams.get("jobSeekerId");
+        const organizationId = await getOrganizationValueFromJobCustomFields(job);
         const qs = new URLSearchParams();
         qs.set("jobId", String(jobId));
+        if (organizationId) qs.set("organizationId", organizationId);
         if (jobSeekerId) qs.set("jobSeekerId", jobSeekerId);
         router.replace(`/dashboard/placements/add/${segment}?${qs.toString()}`);
       } catch {
@@ -331,8 +367,10 @@ export default function AddPlacementLanding() {
       }
       const segment = jobTypeToPlacementSegment(jobType);
       const jobSeekerId = searchParams.get("jobSeekerId");
+      const organizationId = await getOrganizationValueFromJobCustomFields(job);
       const qs = new URLSearchParams();
       qs.set("jobId", jobId);
+      if (organizationId) qs.set("organizationId", organizationId);
       if (jobSeekerId) qs.set("jobSeekerId", jobSeekerId);
       router.push(`/dashboard/placements/add/${segment}?${qs.toString()}`);
     } catch {

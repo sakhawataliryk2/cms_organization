@@ -12,6 +12,7 @@ import JobSummaryCard from "../JobSummaryCard";
 import Link from "next/link";
 import { FiX, FiInfo } from "react-icons/fi";
 import Tooltip from "@/components/Tooltip";
+import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -149,6 +150,7 @@ export default function AddPlacement() {
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const placementId = searchParams.get("id");
   const jobIdFromUrl = searchParams.get("jobId");
+  const organizationIdFromUrl = searchParams.get("organizationId");
   const jobSeekerIdFromUrl = searchParams.get("jobSeekerId");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -159,6 +161,8 @@ export default function AddPlacement() {
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [jobTypeMismatch, setJobTypeMismatch] = useState(false);
   const [jobFetchError, setJobFetchError] = useState<string | null>(null);
+  const [placementField21Label, setPlacementField21Label] = useState<string | null>(null);
+  const [placementField22Label, setPlacementField22Label] = useState<string | null>(null);
 
   const {
     customFields,
@@ -184,6 +188,7 @@ export default function AddPlacement() {
   const sortedCustomFields = useMemo(() => {
     return [...customFields]
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .filter((f: any) => f?.field_name !== "Field_21" && f?.field_name !== "Field_22")
       .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [customFields]);
 
@@ -200,6 +205,23 @@ export default function AddPlacement() {
   const candidateField = fieldByColumn.job_seeker_id;
   const organizationField = fieldByColumn.organization_id;
   const statusField = fieldByColumn.status;
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const [field21Label, field22Label] = await Promise.all([
+        getCustomFieldLabel("placements", "Field_21"),
+        getCustomFieldLabel("placements", "Field_22"),
+      ]);
+      if (cancelled) return;
+      setPlacementField21Label(field21Label);
+      setPlacementField22Label(field22Label);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Employment type field: admin-driven label (prefer "Employment Type" / "Employee Type", else "Job Type")
   const employmentTypeField = useMemo(() => {
@@ -818,6 +840,11 @@ export default function AddPlacement() {
         }
       }
 
+      if (apiData.job_id == null && jobIdFromUrl?.trim()) {
+        const n = Number(jobIdFromUrl.trim());
+        apiData.job_id = !Number.isNaN(n) && n > 0 ? n : null;
+      }
+
       // When admin has configured a Job Seeker lookup field, treat it as the source of truth
       // for job_seeker_id regardless of its label.
       if (jobSeekerLookupField) {
@@ -850,6 +877,18 @@ export default function AddPlacement() {
       if (apiData.organization_id !== undefined && apiData.organization_id !== null) {
         const orgIdNum = Number(apiData.organization_id);
         apiData.organization_id = !isNaN(orgIdNum) ? orgIdNum : null;
+      }
+
+      if ((apiData.organization_id === undefined || apiData.organization_id === null) && organizationIdFromUrl?.trim()) {
+        const orgIdNum = Number(organizationIdFromUrl.trim());
+        apiData.organization_id = !Number.isNaN(orgIdNum) ? orgIdNum : null;
+      }
+
+      if (placementField21Label && jobIdFromUrl?.trim()) {
+        customFieldsForDB[placementField21Label] = jobIdFromUrl.trim();
+      }
+      if (placementField22Label && organizationIdFromUrl?.trim()) {
+        customFieldsForDB[placementField22Label] = organizationIdFromUrl.trim();
       }
 
       apiData.custom_fields =
@@ -920,10 +959,12 @@ export default function AddPlacement() {
 
   const handleGoBack = () => router.back();
 
-  const canSubmit = useMemo(() => {
-    const validation = validateCustomFields();
-    return validation.isValid;
+  const validationStatus = useMemo(() => {
+    const v = validateCustomFields();
+    return { isValid: v.isValid, message: v.message };
   }, [validateCustomFields]);
+
+  const canSubmit = validationStatus.isValid;
 
   if (isLoading && (placementId || (jobIdFromUrl && !selectedJob && !jobTypeMismatch && !jobFetchError))) {
     return <LoadingScreen message={placementId ? "Loading placement data..." : "Loading job details..."} />;
@@ -1139,7 +1180,13 @@ export default function AddPlacement() {
           </div>
 
           <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end items-center space-x-4">
+            {!canSubmit && (
+              <div className="mr-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-sm animate-pulse">
+                <FiInfo className="shrink-0" />
+                <span>{validationStatus.message || "Missing required fields"}</span>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleGoBack}

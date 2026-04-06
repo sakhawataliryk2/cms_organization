@@ -99,6 +99,7 @@ export const organizationsBaseFields: FieldLockConfig[] = [
         is_read_only_locked: true,
     },
 ];
+
 export const jobsBaseFields: FieldLockConfig[] = [
     {
         name: "Field_1", // Title
