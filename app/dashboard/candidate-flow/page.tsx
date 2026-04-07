@@ -1491,6 +1491,8 @@ export default function CandidateFlowDashboard() {
                     const label = getJobSeekerFieldLabel(fieldName);
                     const value = getJobSeekerFieldValueByFieldName(fieldName);
                     const isStatus = fieldName === 'Field_4';
+                    const isOrganizationLookup = fieldName === 'Field_5';
+                    const isOwnerLookup = fieldName === 'Field_69';
                     return (
                       <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200 last:border-b-0">
                         <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{label}:</div>
@@ -1505,7 +1507,12 @@ export default function CandidateFlowDashboard() {
                           ) : (
                             <FieldValueRenderer
                               value={value || '-'}
-                              fieldInfo={{ name: fieldName, label }}
+                              fieldInfo={{
+                                name: fieldName,
+                                label,
+                                fieldType: isOrganizationLookup || isOwnerLookup ? 'lookup' : undefined,
+                                lookupType: isOrganizationLookup ? 'organization' : isOwnerLookup ? 'owner' : undefined,
+                              }}
                               entityType="job-seekers"
                               recordId={selectedJobSeekerId}
                             />
@@ -1539,6 +1546,9 @@ export default function CandidateFlowDashboard() {
       )}
       {selectedJobId != null && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          {(() => {
+            const testingJobId = 102;
+            return (
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-400">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-400 bg-slate-100">
               <div className="flex items-center gap-4 min-w-0">
@@ -1618,6 +1628,8 @@ export default function CandidateFlowDashboard() {
                     const label = getJobFieldLabel(fieldName);
                     const value = getJobFieldValueByFieldName(fieldName);
                     const isStatus = fieldName === 'Field_4';
+                    const isOwnerLookup = fieldName === 'Field_69';
+                    const isOrganizationLookup = fieldName === 'Field_2';
                     return (
                       <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200">
                         <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{label}:</div>
@@ -1625,16 +1637,21 @@ export default function CandidateFlowDashboard() {
                           {isStatus ? (
                             <FieldValueRenderer
                               value={value || ''}
-                              fieldInfo={{ name: 'Field_4', label, fieldType: 'status' }}
+                              fieldInfo={{ name: 'Field_4', label, fieldType: 'status', lookupType: 'jobs' }}
                               entityType="jobs"
-                              recordId={selectedJobId}
+                              recordId={testingJobId}
                             />
                           ) : (
                             <FieldValueRenderer
                               value={value || '-'}
-                              fieldInfo={{ name: fieldName, label }}
+                              fieldInfo={{
+                                name: fieldName,
+                                label,
+                                fieldType: isOwnerLookup || isOrganizationLookup ? 'lookup' : undefined,
+                                lookupType: isOwnerLookup ? 'owner' : isOrganizationLookup ? 'organization' : undefined,
+                              }}
                               entityType="jobs"
-                              recordId={selectedJobId}
+                              recordId={testingJobId}
                             />
                           )}
                         </div>
@@ -1650,7 +1667,7 @@ export default function CandidateFlowDashboard() {
                       value={getJobFieldValueByFieldName('Field_6') || '-'}
                       fieldInfo={{ name: 'Field_6', label: getJobFieldLabel('Field_6') }}
                       entityType="jobs"
-                      recordId={selectedJobId}
+                      recordId={testingJobId}
                     />
                   </div>
                 </div>
@@ -1660,20 +1677,22 @@ export default function CandidateFlowDashboard() {
             <div className="flex justify-between px-3 py-3 border-t border-slate-300 bg-white">
               <button
                 type="button"
-                onClick={() => openAddAppointmentForJob(selectedJobId)}
+                onClick={() => openAddAppointmentForJob(testingJobId)}
                 className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
               >
                 Add Appt
               </button>
               <button
                 type="button"
-                onClick={() => openAddTaskForJob(selectedJobId)}
+                onClick={() => openAddTaskForJob(testingJobId)}
                 className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
               >
                 Add Task
               </button>
             </div>
           </div>
+            );
+          })()}
         </div>
       )}
     </div>
