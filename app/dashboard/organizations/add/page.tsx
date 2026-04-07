@@ -10,8 +10,6 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
-import { applyParsedOrganizationToCustomFields } from "@/lib/organizationTextParsing";
-import type { ParsedOrganization } from "@/app/api/parse-organization/route";
 
 
 interface CustomFieldDefinition {
@@ -145,12 +143,7 @@ export default function AddOrganization() {
   } = useCustomFields("organizations", {
     applyAutoCurrentDefaults: !organizationId,
   });
-  const [isParsingOrganization, setIsParsingOrganization] = useState(false);
-  const [parseOrganizationError, setParseOrganizationError] = useState<string | null>(null);
-  const [parseOrganizationProgress, setParseOrganizationProgress] = useState<number>(0);
-  const parseOrgInputRef = useRef<HTMLInputElement | null>(null);
-  const parseOrgAbortRef = useRef<AbortController | null>(null);
-  const addressFields = useMemo(
+            const addressFields = useMemo(
     () => getAddressFields(customFields as any, "organizations"),
     [customFields]
   );
@@ -647,130 +640,8 @@ export default function AddOrganization() {
     excludeIdForDup,
   ]);
 
-  // Shared helper: run AI parse on an organization file and apply to custom fields.
-  const parseOrganizationWithFile = async (file: File) => {
-    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
-    if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
-      setParseOrganizationError("Use PDF, DOC, DOCX, or TXT.");
-      return;
-    }
-
-    const abort = new AbortController();
-    parseOrgAbortRef.current = abort;
-
-    setParseOrganizationError(null);
-    setIsParsingOrganization(true);
-    setParseOrganizationProgress(10);
-
-    try {
-      const formData = new FormData();
-      formData.set("file", file);
-      setParseOrganizationProgress(25);
-
-      const token = document.cookie.replace(
-        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-        "$1"
-      );
-      const res = await fetch("/api/parse-organization", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-        signal: abort.signal,
-      });
-
-      setParseOrganizationProgress(70);
-      const data = await res.json();
-
-      if (!res.ok) {
-        setParseOrganizationError(
-          data.message || "Organization parse failed."
-        );
-        return;
-      }
-      if (!data.success || !data.parsed) {
-        setParseOrganizationError(
-          "Invalid response. Enter organization manually."
-        );
-        return;
-      }
-
-      applyParsedOrganizationToCustomFields(
-        data.parsed as ParsedOrganization,
-        setCustomFieldValues,
-        customFields.map((f) => ({
-          field_name: f.field_name,
-          field_label: f.field_label,
-        }))
-      );
-      setParseOrganizationProgress(100);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setParseOrganizationError("Parsing cancelled.");
-      } else {
-        setParseOrganizationError(
-          err instanceof Error ? err.message : "Organization parse failed."
-        );
-      }
-    } finally {
-      setIsParsingOrganization(false);
-      setParseOrganizationProgress(0);
-      parseOrgAbortRef.current = null;
-      if (parseOrgInputRef.current) {
-        parseOrgInputRef.current.value = "";
-      }
-    }
-  };
-
-  // Handle file input change for organization parsing
-  const handleParseOrganization = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await parseOrganizationWithFile(file);
-  };
-
-  const handleCancelParseOrganization = () => {
-    if (parseOrgAbortRef.current) {
-      parseOrgAbortRef.current.abort();
-    }
-  };
-
-  // When opened from sidebar with a document (parseOrg=1 + orgAddParsePendingFile), auto-run parse once fields are ready
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (searchParams.get("parseOrg") !== "1") return;
-    if (customFieldsLoading || customFields.length === 0) return;
-    if (isParsingOrganization) return;
-
-    const raw = sessionStorage.getItem("orgAddParsePendingFile");
-    if (!raw) return;
-    sessionStorage.removeItem("orgAddParsePendingFile");
-
-    // Clean the URL so parseOrg is only used once
-    const url = new URL(window.location.href);
-    url.searchParams.delete("parseOrg");
-    window.history.replaceState(null, "", url.toString());
-
-    try {
-      const { name, base64, type } = JSON.parse(raw);
-      const binary = atob(base64);
-      const arr = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        arr[i] = binary.charCodeAt(i);
-      }
-      const blob = new Blob([arr], { type: type || "application/pdf" });
-      const file = new File([blob], name, { type: blob.type });
-      void parseOrganizationWithFile(file);
-    } catch (err) {
-      console.error("Sidebar organization parse:", err);
-      setParseOrganizationError(
-        "Failed to load dropped document. Try uploading again."
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.get("parseOrg"), customFieldsLoading, customFields.length, isParsingOrganization]);
-
+  
+  
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
 
