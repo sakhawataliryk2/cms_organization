@@ -1546,9 +1546,6 @@ export default function CandidateFlowDashboard() {
       )}
       {selectedJobId != null && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
-          {(() => {
-            const testingJobId = 102;
-            return (
           <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-400">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-400 bg-slate-100">
               <div className="flex items-center gap-4 min-w-0">
@@ -1595,7 +1592,7 @@ export default function CandidateFlowDashboard() {
                     'Field_69',
                     'Field_70',
                     'Field_2',
-                  ].map((fieldName) => {
+                  ].map((fieldName: any) => {
                     if (fieldName === '__EMPLOYMENT_TYPE__') {
                       const employmentType = String(
                         selectedJobProfile?.employment_type ??
@@ -1639,7 +1636,7 @@ export default function CandidateFlowDashboard() {
                               value={value || ''}
                               fieldInfo={{ name: 'Field_4', label, fieldType: 'status', lookupType: 'jobs' }}
                               entityType="jobs"
-                              recordId={testingJobId}
+                              recordId={selectedJobId}
                             />
                           ) : (
                             <FieldValueRenderer
@@ -1651,7 +1648,7 @@ export default function CandidateFlowDashboard() {
                                 lookupType: isOwnerLookup ? 'owner' : isOrganizationLookup ? 'organization' : undefined,
                               }}
                               entityType="jobs"
-                              recordId={testingJobId}
+                              recordId={selectedJobId}
                             />
                           )}
                         </div>
@@ -1667,7 +1664,7 @@ export default function CandidateFlowDashboard() {
                       value={getJobFieldValueByFieldName('Field_6') || '-'}
                       fieldInfo={{ name: 'Field_6', label: getJobFieldLabel('Field_6') }}
                       entityType="jobs"
-                      recordId={testingJobId}
+                      recordId={selectedJobId}
                     />
                   </div>
                 </div>
@@ -1677,22 +1674,20 @@ export default function CandidateFlowDashboard() {
             <div className="flex justify-between px-3 py-3 border-t border-slate-300 bg-white">
               <button
                 type="button"
-                onClick={() => openAddAppointmentForJob(testingJobId)}
+                onClick={() => openAddAppointmentForJob(selectedJobId)}
                 className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
               >
                 Add Appt
               </button>
               <button
                 type="button"
-                onClick={() => openAddTaskForJob(testingJobId)}
+                onClick={() => openAddTaskForJob(selectedJobId)}
                 className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
               >
                 Add Task
               </button>
             </div>
           </div>
-            );
-          })()}
         </div>
       )}
     </div>

@@ -1366,6 +1366,18 @@ export default function AddJobSeeker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams.get("parseResume"), customFieldsLoading]);
 
+  // Prevent scrolling when parsing is active
+  useEffect(() => {
+    if (isParsingResume) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+    return () => {
+      document.body.style.overflow = "auto";
+    };
+  }, [isParsingResume]);
+
   // Form validation state
   const getFormValidationState = useCallback(() => {
     const issues: string[] = [];
@@ -1806,6 +1818,13 @@ export default function AddJobSeeker() {
   return (
     <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
+        {/* Parsing Overlay (minimal inside card) */}
+        {isParsingResume && (
+          <div className="h-screen absolute inset-0 z-[999] flex items-center justify-center bg-white/50 rounded-lg transition-all duration-300 flex flex-col gap-4">
+            <div className="w-12 h-12 border-4 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+            <p>Parsing...()  </p>
+          </div>
+        )}
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div className="flex items-center">
@@ -1821,16 +1840,6 @@ export default function AddJobSeeker() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            {/* <button
-              onClick={() =>
-                router.push(
-                  "/dashboard/admin/field-mapping?section=job-seekers"
-                )
-              }
-              className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-            >
-              Manage Fields
-            </button> */}
             <button
               onClick={handleGoBack}
               className="text-gray-500 hover:text-gray-700"
@@ -1847,53 +1856,11 @@ export default function AddJobSeeker() {
           </div>
         )}
 
-        {/* Parse from PDF/DOC/DOCX/TXT (AI) – only in add mode; never auto-save, recruiter reviews */}
-        {!isEditMode && (
-          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">
-              Parse from resume (PDF / DOC / DOCX / TXT)
-            </h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Upload a file to extract text and fill the form via AI. You can review and edit before saving.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={parseResumeInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={handleParseResume}
-                disabled={isParsingResume}
-                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {isParsingResume && (
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(10, parseResumeProgress || 10)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCancelParseResume}
-                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-            {isParsingResume && (
-              <p className="mt-1 text-xs text-gray-500">Parsing resume…</p>
-            )}
-            {parseResumeError && (
-              <p className="mt-2 text-sm text-red-600">{parseResumeError}</p>
-            )}
+        {/* AI Parse Error */}
+        {parseResumeError && (
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 mb-6 rounded-lg flex items-center gap-3">
+             <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+             <span className="font-medium">{parseResumeError}</span>
           </div>
         )}
 
@@ -1908,8 +1875,6 @@ export default function AddJobSeeker() {
           >
             {(() => {
               const renderCustomFieldRow = (field: any) => {
-                // Don't render hidden fields at all (neither label nor input)
-                // Hide Full Address field (combined display only; address is shown via Address group above)
                 const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
                 const isFullAddressField =
                   labelNorm.includes("full") && labelNorm.includes("address");

@@ -11,11 +11,11 @@ import {
   normalizeOptions,
   normalizeStr,
 } from "@/lib/aiParsing";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "stepfun/step-3.5-flash:free";
+const MODEL = "gemini-2.5-flash";
 
 // Enable debug mode with RESUME_PARSER_DEBUG=true in .env
 const DEBUG = process.env.RESUME_PARSER_DEBUG === "true";
@@ -200,40 +200,39 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
   }
 }
 
-// ---------------- Call OpenRouter AI ----------------
-async function callOpenRouter(extractedText: string, systemPrompt: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
+// ---------------- Call Google Gemini AI ----------------
+async function callGemini(extractedText: string, systemPrompt: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": process.env.NEXTAUTH_URL || "http://localhost:3000",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Extract structured information from the following resume text:\n\n${extractedText}` },
-      ],
-      temperature: 0,
-    }),
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: MODEL,
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenRouter API error: ${res.status} ${errText}`);
+  const parts = [
+    { text: `SYSTEM INSTRUCTION:\n${systemPrompt}\n\nUSER REQUEST:\nExtract structured information from the following resume text. Output strictly valid JSON without any markdown formatting.\n\nRESUME TEXT:\n${extractedText}` }
+  ];
+
+  try {
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const content = result.response.text();
+    if (!content) throw new Error("Gemini returned no content");
+
+    debugLog("Raw AI Response", content);
+    return content;
+  } catch (e: any) {
+    throw e;
   }
-
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") throw new Error("OpenRouter returned no content");
-
-  debugLog("Raw AI Response", content);
-  return content;
 }
+
 
 // ---------------- Main POST Route ----------------
 export async function POST(request: NextRequest) {
@@ -248,20 +247,29 @@ export async function POST(request: NextRequest) {
     if (!isResumeFile(file.name, file.type))
       return NextResponse.json({ success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." }, { status: 400 });
 
-    const text = await extractTextFromFile(file);
-    if (!text || !text.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+    const rawExtractedText = await extractTextFromFile(file);
+    if (!rawExtractedText || !rawExtractedText.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+
+    const text = rawExtractedText
+      .replace(/\r/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/\t/g, " ")
+      .replace(/\s+/g, " ") // collapse spaces
+      .replace(/[^\x00-\x7F]/g, "") // remove weird unicode
+      .trim()
+      .slice(0, 8000);
 
     const customFields = await fetchEntityCustomFields("job-seekers", token);
     const { customFieldNames, selectFieldMeta } = buildCustomFieldMeta(customFields);
     const systemPrompt = buildSystemPrompt(customFields);
 
-    let rawContent = await callOpenRouter(text, systemPrompt);
+    let rawContent = await callGemini(text, systemPrompt);
     let parsed = parseAiJson(rawContent, customFieldNames, selectFieldMeta);
 
     // Retry once if parse failed
     if (!parsed) {
       debugLog("Retrying AI call due to invalid JSON");
-      rawContent = await callOpenRouter(text, systemPrompt);
+      rawContent = await callGemini(text, systemPrompt);
       parsed = parseAiJson(rawContent, customFieldNames, selectFieldMeta);
     }
 
