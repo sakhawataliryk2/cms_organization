@@ -1022,8 +1022,8 @@ export default function OrganizationList() {
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
                 className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
               >
                 <IoFilterSharp /> Filter
@@ -1375,96 +1375,96 @@ export default function OrganizationList() {
                           rowLink?.click();
                         }}
                       >
-                      {/* Fixed checkbox */}
-                      <td
-                        className="px-6 py-4 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                          checked={selectedOrganizations.includes(org.id)}
-                          onChange={() => { }}
-                          onClick={(e) => handleSelectOrganization(org.id, e)}
-                        />
-                      </td>
+                        {/* Fixed checkbox */}
+                        <td
+                          className="px-6 py-4 whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                            checked={selectedOrganizations.includes(org.id)}
+                            onChange={() => { }}
+                            onClick={(e) => handleSelectOrganization(org.id, e)}
+                          />
+                        </td>
 
-                      {/* Fixed Actions */}
-                      <td
-                        className="px-6 py-4 whitespace-nowrap text-sm"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ActionDropdown
-                          label="Actions"
-                          options={[
-                            { label: "View", action: () => handleViewOrganization(org.id) },
-                            ...(ownerField ? [{
-                              label: "Change Ownership",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowOwnershipModal(true);
+                        {/* Fixed Actions */}
+                        <td
+                          className="px-6 py-4 whitespace-nowrap text-sm"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ActionDropdown
+                            label="Actions"
+                            options={[
+                              { label: "View", action: () => handleViewOrganization(org.id) },
+                              ...(ownerField ? [{
+                                label: "Change Ownership",
+                                action: () => {
+                                  setSelectedOrgId(org.id);
+                                  setShowOwnershipModal(true);
+                                },
+                              }] : []),
+                              ...(statusField ? [{
+                                label: "Change Status",
+                                action: () => {
+                                  setSelectedOrgId(org.id);
+                                  setShowStatusModal(true);
+                                },
+                              }] : []),
+                              {
+                                label: "Add To TearSheet",
+                                action: () => {
+                                  setSelectedOrgId(org.id);
+                                  setShowTearsheetModal(true);
+                                },
                               },
-                            }] : []),
-                            ...(statusField ? [{
-                              label: "Change Status",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowStatusModal(true);
-                              },
-                            }] : []),
-                            {
-                              label: "Add To TearSheet",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowTearsheetModal(true);
-                              },
-                            },
-                          ]}
-                        />
-                      </td>
+                            ]}
+                          />
+                        </td>
 
-                      {/* Dynamic columns (including Record #) */}
-                      {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
-                        if (key === "record_number") {
+                        {/* Dynamic columns (including Record #) */}
+                        {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
+                          if (key === "record_number") {
+                            return (
+                              <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                                <Link
+                                  href={orgViewHref}
+                                  data-row-link="true"
+                                  className="text-black no-underline hover:no-underline focus:no-underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  O {getColumnValue(org, key)}
+                                </Link>
+                              </td>
+                            );
+                          }
+                          const colInfo = getColumnInfo(key);
+                          const fieldInfo = colInfo
+                            ? {
+                              key: colInfo.key,
+                              label: colInfo.label,
+                              fieldType: (colInfo as any).fieldType,
+                              lookupType: (colInfo as any).lookupType,
+                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                            }
+                            : { key, label: getColumnLabel(key) };
                           return (
-                            <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
-                              <Link
-                                href={orgViewHref}
-                                data-row-link="true"
-                                className="text-black no-underline hover:no-underline focus:no-underline"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                O {getColumnValue(org, key)}
-                              </Link>
+                            <td
+                              key={key}
+                              className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            >
+                              <FieldValueRenderer
+                                value={getColumnValue(org, key)}
+                                fieldInfo={fieldInfo}
+                                emptyPlaceholder="N/A"
+                                clickable
+                                stopPropagation
+                                className=""
+                              />
                             </td>
                           );
-                        }
-                        const colInfo = getColumnInfo(key);
-                        const fieldInfo = colInfo
-                          ? {
-                            key: colInfo.key,
-                            label: colInfo.label,
-                            fieldType: (colInfo as any).fieldType,
-                            lookupType: (colInfo as any).lookupType,
-                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                          }
-                          : { key, label: getColumnLabel(key) };
-                        return (
-                          <td
-                            key={key}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            <FieldValueRenderer
-                              value={getColumnValue(org, key)}
-                              fieldInfo={fieldInfo}
-                              emptyPlaceholder="N/A"
-                              clickable
-                              stopPropagation
-                              className=""
-                            />
-                          </td>
-                        );
-                      })}
+                        })}
                       </tr>
                     );
                   })

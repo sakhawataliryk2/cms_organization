@@ -94,9 +94,37 @@ function recordToBackendPayload(
     const out: Record<string, any> = {};
     const customFields: Record<string, any> = {};
 
+    // Create a reverse mapping of labels to backend keys for standard fields
+    // This handles cases where Field Management uses "Field_N" but the label matches a standard field
+    const labelToBackendKey: Record<string, string> = {};
+    for (const [fieldName, backendKey] of Object.entries(mapping)) {
+        // Map common snake_case names and their probable labels
+        labelToBackendKey[fieldName.toLowerCase().replace(/_/g, ' ')] = backendKey;
+        labelToBackendKey[fieldName.toLowerCase()] = backendKey;
+    }
+
     for (const [key, value] of Object.entries(record)) {
         if (value === undefined || value === '') continue;
-        const backendKey = mapping[key];
+        
+        const label = fieldNameToLabel?.[key] || key;
+        const normalizedLabel = label.toLowerCase().trim();
+        
+        // Try mapping by field_name first, then by normalized label
+        let backendKey = mapping[key] || labelToBackendKey[normalizedLabel];
+        
+        // Additional common label mappings if not found
+        if (!backendKey) {
+            if (normalizedLabel === 'first name') backendKey = mapping['first_name'];
+            else if (normalizedLabel === 'last name') backendKey = mapping['last_name'];
+            else if (normalizedLabel === 'email' || normalizedLabel === 'email address') backendKey = mapping['email'];
+            else if (normalizedLabel === 'phone' || normalizedLabel === 'phone number' || normalizedLabel === 'contact phone') backendKey = mapping['phone'] || mapping['contact_phone'];
+            else if (normalizedLabel === 'mobile' || normalizedLabel === 'mobile phone') backendKey = mapping['mobile_phone'];
+            else if (normalizedLabel === 'status') backendKey = mapping['status'];
+            else if (normalizedLabel === 'address' || normalizedLabel === 'street address') backendKey = mapping['address'];
+            else if (normalizedLabel === 'website' || normalizedLabel === 'organization website') backendKey = mapping['website'];
+            else if (normalizedLabel === 'company' || normalizedLabel === 'organization' || normalizedLabel === 'company name' || normalizedLabel === 'organization name') backendKey = mapping['name'] || mapping['organization_name'];
+        }
+
         if (backendKey !== undefined) {
             // Standard field: put at top level (use backend key, e.g. firstName)
             if (backendKey === 'custom_fields') {
@@ -258,25 +286,51 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                // Determine unique identifier field (backend key) for find-existing
-                let uniqueField = 'email';
+                // Determine unique identifier field(s) (backend key) for find-existing
+                let uniqueChecks: Array<{ field: string; value: any }> = [];
                 if (entityType === 'organizations') {
-                    uniqueField = 'name';
+                    // Unique fields for Organizations: Field_6 (Phone) and Field_5 (Website)
+                    const phone = record['Field_6'];
+                    const website = record['Field_5'];
+                    if (phone) uniqueChecks.push({ field: 'contact_phone', value: phone });
+                    if (website) uniqueChecks.push({ field: 'website', value: website });
+                    // Fallback to name if neither is present
+                    if (uniqueChecks.length === 0 && payload['name']) {
+                        uniqueChecks.push({ field: 'name', value: payload['name'] });
+                    }
+                } else if (entityType === 'job-seekers') {
+                    // Unique fields for Job Seeker: Field_11 (Phone) and Field_8 (Email)
+                    const phone = record['Field_11'];
+                    const email = record['Field_8'];
+                    if (phone) uniqueChecks.push({ field: 'phone', value: phone });
+                    if (email) uniqueChecks.push({ field: 'email', value: email });
                 } else if (entityType === 'jobs') {
-                    uniqueField = 'jobTitle';
+                    // Unique field for Jobs: Field_3 (Reference Number)
+                    const ref = record['Field_3'];
+                    if (ref) uniqueChecks.push({ field: 'reference_number', value: ref });
+                    else if (payload['jobTitle']) uniqueChecks.push({ field: 'jobTitle', value: payload['jobTitle'] });
+                } else if (entityType === 'hiring-managers') {
+                    // Unique field for Hiring Manager: Field_7 (Email)
+                    const email = record['Field_7'];
+                    if (email) uniqueChecks.push({ field: 'email', value: email });
                 } else if (entityType === 'placements') {
-                    uniqueField = 'jobSeekerId';
+                    uniqueChecks.push({ field: 'jobSeekerId', value: payload['jobSeekerId'] });
+                } else {
+                    // Default to email for others
+                    if (payload['email']) uniqueChecks.push({ field: 'email', value: payload['email'] });
                 }
-                const uniqueValue = payload[uniqueField] ?? record[uniqueField];
 
                 // Check for duplicates if needed
                 const opts = options || {};
+                let foundDuplicate = false;
+
                 if (opts.skipDuplicates || opts.importNewOnly || opts.updateExisting) {
-                    if (uniqueValue) {
-                        // Try to find existing record
+                    for (const check of uniqueChecks) {
+                        if (!check.value) continue;
+
                         try {
                             const searchResponse = await fetch(
-                                `${apiUrl}/api/${endpoint}?${uniqueField}=${encodeURIComponent(String(uniqueValue))}`,
+                                `${apiUrl}/api/${endpoint}?${check.field}=${encodeURIComponent(String(check.value))}`,
                                 {
                                     method: 'GET',
                                     headers: {
@@ -297,24 +351,25 @@ export async function POST(request: NextRequest) {
                                 };
                                 const listKey = responseListKeys[endpoint] || endpoint;
                                 let existingRecords: any[] = searchData[listKey] || searchData[endpoint] || searchData.data || [];
-                                // Backend may not filter by query; filter client-side by unique field
-                                const backendUniqueKey = entityType === 'job-seekers' || entityType === 'leads' || entityType === 'hiring-managers' ? (uniqueField === 'email' ? 'email' : uniqueField) : uniqueField;
+                                
+                                // Filter client-side by exact match on the unique field
                                 existingRecords = existingRecords.filter((r: any) => {
-                                    const val = r[backendUniqueKey] ?? r[uniqueField];
-                                    return val != null && String(val).toLowerCase() === String(uniqueValue).toLowerCase();
+                                    const val = r[check.field] ?? r['Field_' + check.field.split('_').pop()]; // Try both backend name and Field_X if needed
+                                    return val != null && String(val).toLowerCase().trim() === String(check.value).toLowerCase().trim();
                                 });
 
                                 if (existingRecords.length > 0) {
                                     const existingRecord = existingRecords[0];
+                                    foundDuplicate = true;
 
                                     if (opts.skipDuplicates || opts.importNewOnly) {
                                         // Skip this record
                                         summary.failed++;
                                         summary.errors.push({
                                             row: rowNumber,
-                                            errors: [`Record already exists (${uniqueField}: ${uniqueValue})`],
+                                            errors: [`Record already exists (${check.field}: ${check.value})`],
                                         });
-                                        continue;
+                                        break; // Found duplicate, move to next row
                                     }
 
                                     if (opts.updateExisting) {
@@ -337,16 +392,18 @@ export async function POST(request: NextRequest) {
                                         } else {
                                             summary.successful++;
                                         }
-                                        continue;
+                                        break; // Done with this row
                                     }
                                 }
                             }
                         } catch (searchErr) {
-                            // If search fails, proceed with create
-                            console.warn('Could not check for existing record:', searchErr);
+                            console.warn(`Could not check for existing record by ${check.field}:`, searchErr);
                         }
                     }
                 }
+
+                if (foundDuplicate) continue; // Skip creating if duplicate was found and handled
+
 
                 // Create new record
                 const response = await fetch(`${apiUrl}/api/${endpoint}`, {

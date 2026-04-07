@@ -838,11 +838,10 @@ export default function ArchivedTasksList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                     ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -850,13 +849,13 @@ export default function ArchivedTasksList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX /> Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX /> Clear All
+                  </button>
+                )}
             </div>
           </div>
         </div>
@@ -915,9 +914,8 @@ export default function ArchivedTasksList() {
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
-                          selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                        }`}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                          }`}
                         onClick={() => applyFavorite(fav)}
                       >
                         <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
@@ -989,9 +987,8 @@ export default function ArchivedTasksList() {
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
-                          selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                        }`}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                          }`}
                         onClick={() => applyFavorite(fav)}
                       >
                         <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
@@ -1056,11 +1053,10 @@ export default function ArchivedTasksList() {
               ref={advancedSearchButtonRef}
               type="button"
               onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
-                showAdvancedSearch || advancedSearchCriteria.length > 0
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                   ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                   : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+                }`}
             >
               Filters
             </button>
@@ -1068,13 +1064,13 @@ export default function ArchivedTasksList() {
               Object.keys(columnFilters).length > 0 ||
               Object.keys(columnSorts).length > 0 ||
               advancedSearchCriteria.length > 0) && (
-              <button
-                onClick={handleClearAllFilters}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-              >
-                <FiX /> Clear All
-              </button>
-            )}
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX /> Clear All
+                </button>
+              )}
           </div>
         </div>
       </div>
@@ -1163,7 +1159,7 @@ export default function ArchivedTasksList() {
                         type="checkbox"
                         className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                         checked={selectedTasks.includes(task.id)}
-                        onChange={() => {}}
+                        onChange={() => { }}
                         onClick={(e) => handleSelectTask(task.id, e)}
                       />
                     </td>
@@ -1226,19 +1222,19 @@ export default function ArchivedTasksList() {
                       }
                       const colInfo = getColumnInfo(key) as
                         | {
-                            key: string;
-                            label: string;
-                            fieldType?: string;
-                            lookupType?: string;
-                          }
+                          key: string;
+                          label: string;
+                          fieldType?: string;
+                          lookupType?: string;
+                        }
                         | undefined;
                       const fieldInfo = colInfo
                         ? {
-                            key: colInfo.key,
-                            label: colInfo.label,
-                            fieldType: colInfo.fieldType,
-                            lookupType: colInfo.lookupType,
-                          }
+                          key: colInfo.key,
+                          label: colInfo.label,
+                          fieldType: colInfo.fieldType,
+                          lookupType: colInfo.lookupType,
+                        }
                         : { key, label: getColumnLabel(key) };
                       const isArchiveReason =
                         getColumnLabel(key).toLowerCase() === "archive reason";
@@ -1256,7 +1252,7 @@ export default function ArchivedTasksList() {
                             forceRenderAsStatus={isArchiveReason}
                             statusVariant={
                               isArchiveReason &&
-                              String(getColumnValue(task, key) || "").toLowerCase() ===
+                                String(getColumnValue(task, key) || "").toLowerCase() ===
                                 "deletion"
                                 ? "deletion"
                                 : "blue"
@@ -1375,9 +1371,8 @@ export default function ArchivedTasksList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Archived Tasks"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (

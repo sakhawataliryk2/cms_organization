@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FiCheck, FiSearch, FiX } from "react-icons/fi";
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import { toast } from "sonner";
+import StyledReactSelect, {
+  type StyledSelectOption,
+} from "@/components/StyledReactSelect";
+import { getRecordNumberFromId } from "@/lib/getRecordNumberFromId";
 
 interface ClientSubmissionModalProps {
   open: boolean;
@@ -63,13 +67,31 @@ interface InternalUser {
 
 const DEFAULT_DISTRIBUTION = "general";
 
-function getCandidateName(candidate: any | null | undefined) {
+function getCandidateRecordNumber(candidate: any | null | undefined) {
   if (!candidate) return "";
+  return (
+    candidate.record_number ||
+    candidate.recordNumber ||
+    candidate.rawJobSeeker?.record_number ||
+    candidate.rawJobSeeker?.recordNumber ||
+    ""
+  );
+}
+
+function getCandidateName(
+  candidate: any | null | undefined,
+  recordNumbers?: Record<string, number | null>,
+) {
+  if (!candidate) return "";
+  const candidateId = candidate.id != null ? String(candidate.id) : "";
+  const resolvedRecordNumber =
+    (candidateId && recordNumbers ? recordNumbers[candidateId] : null) ??
+    getCandidateRecordNumber(candidate);
   return (
     candidate.name ||
     candidate.full_name ||
     `${(candidate.first_name || "").trim()} ${(candidate.last_name || "").trim()}`.trim() ||
-    `Job Seeker #${candidate.id}`
+    `Job Seeker #${resolvedRecordNumber || candidate.id}`
   );
 }
 
@@ -95,6 +117,9 @@ export default function ClientSubmissionModal({
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
   const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
   const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
+  const [candidateRecordNumbers, setCandidateRecordNumbers] = useState<
+    Record<string, number | null>
+  >({});
   const candidateInputRef = useRef<HTMLDivElement | null>(null);
   const hiringManagerInputRef = useRef<HTMLDivElement | null>(null);
   const internalUserInputRef = useRef<HTMLDivElement | null>(null);
@@ -158,14 +183,45 @@ export default function ClientSubmissionModal({
     const query = candidateSearchQuery.trim().toLowerCase();
     if (!query) return candidates;
     return candidates.filter((c) => {
-      const name = getCandidateName(c).toLowerCase();
+      const name = getCandidateName(c, candidateRecordNumbers).toLowerCase();
       const email = String(c.email || "").toLowerCase();
       const id = String(c.id || "").toLowerCase();
       return (
         name.includes(query) || email.includes(query) || id.includes(query)
       );
     });
-  }, [candidateSearchQuery, candidates]);
+  }, [candidateSearchQuery, candidates, candidateRecordNumbers]);
+
+  const resolveCandidateName = useCallback(
+    (candidate: any | null | undefined) =>
+      getCandidateName(candidate, candidateRecordNumbers),
+    [candidateRecordNumbers],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const missingIds = candidates
+      .map((c) => (c?.id != null ? String(c.id) : ""))
+      .filter((id) => id && !(id in candidateRecordNumbers));
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, number | null> = {};
+      await Promise.all(
+        missingIds.map(async (id) => {
+          const rn = await getRecordNumberFromId(Number(id), "jobSeeker");
+          next[id] = rn;
+        }),
+      );
+      if (cancelled) return;
+      setCandidateRecordNumbers((prev) => ({ ...prev, ...next }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, candidates, candidateRecordNumbers]);
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -174,7 +230,7 @@ export default function ClientSubmissionModal({
     const initialId = initialCandidate?.id ?? "";
     setSelectedCandidateId(initialId ? String(initialId) : "");
     setCandidateSearchQuery(
-      initialId ? getCandidateName(initialCandidate) : "",
+      initialId ? resolveCandidateName(initialCandidate) : "",
     );
     setShowCandidateDropdown(false);
 
@@ -293,6 +349,42 @@ export default function ClientSubmissionModal({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showHiringManagerDropdown, showInternalUserDropdown]);
+
+  const hiringManagerOptions = useMemo<StyledSelectOption[]>(() => {
+    return hiringManagers.map((hm: HiringManager) => {
+      const id = String(hm.id);
+      const name =
+        hm.name ||
+        hm.full_name ||
+        `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+        `Hiring Manager #${id}`;
+      return {
+        value: id,
+        label: hm.email ? `${name} • ${hm.email}` : name,
+      };
+    });
+  }, [hiringManagers]);
+
+  const selectedHiringManagerOptions = useMemo<StyledSelectOption[]>(() => {
+    const selectedIds = new Set(Array.from(selectedHiringManagerIds.values()));
+    return hiringManagerOptions.filter((opt) => selectedIds.has(opt.value));
+  }, [selectedHiringManagerIds, hiringManagerOptions]);
+
+  const internalUserOptions = useMemo<StyledSelectOption[]>(() => {
+    return internalUsers.map((user: InternalUser) => {
+      const id = String(user.id);
+      const name = user.name || `User #${id}`;
+      return {
+        value: id,
+        label: user.email ? `${name} • ${user.email}` : name,
+      };
+    });
+  }, [internalUsers]);
+
+  const selectedInternalUserOptions = useMemo<StyledSelectOption[]>(() => {
+    const selectedIds = new Set(Array.from(selectedInternalUserIds.values()));
+    return internalUserOptions.filter((opt) => selectedIds.has(opt.value));
+  }, [selectedInternalUserIds, internalUserOptions]);
 
   const fetchDocumentsForCandidate = async (candidateId: string) => {
     if (!candidateId) return;
@@ -469,11 +561,11 @@ export default function ClientSubmissionModal({
         csData.submissions || csData.client_submissions || csData.data || [];
       const alreadyAppliedViaClientSubmission = Array.isArray(submissions)
         ? submissions.some(
-            (sub: any) =>
-              sub &&
-              sub.job_id != null &&
-              String(sub.job_id) === String(jobIdValue),
-          )
+          (sub: any) =>
+            sub &&
+            sub.job_id != null &&
+            String(sub.job_id) === String(jobIdValue),
+        )
         : false;
 
       setHasExistingSubmissionForJob(alreadyAppliedViaClientSubmission);
@@ -619,7 +711,7 @@ export default function ClientSubmissionModal({
           .filter(Boolean) as string[];
 
         if (toEmails.length > 0) {
-          const candidateName = getCandidateName(selectedCandidate);
+          const candidateName = resolveCandidateName(selectedCandidate);
           const subjectText = `Candidate submission for ${displayJob} - ${candidateName}`;
 
           const selectedDocs = documents.filter(
@@ -637,15 +729,15 @@ export default function ClientSubmissionModal({
           const attachmentList =
             selectedDocNames.length > 0
               ? `\n\nDocuments to attach (included in this submission):\n${selectedDocNames
-                  .map((n) => `• ${n}`)
-                  .join("\n")}`
+                .map((n) => `• ${n}`)
+                .join("\n")}`
               : "";
 
           const attachmentUrlList =
             selectedDocUrls.length > 0
               ? `\n\nDocument links:\n${selectedDocUrls
-                  .map((u) => `• ${u}`)
-                  .join("\n")}`
+                .map((u) => `• ${u}`)
+                .join("\n")}`
               : "";
 
           const bodyText =
@@ -711,7 +803,7 @@ export default function ClientSubmissionModal({
             {initialCandidate ? (
               <div className="flex items-center gap-2 p-2 border border-gray-300 rounded bg-gray-50">
                 <span className="text-gray-900">
-                  {getCandidateName(selectedCandidate || initialCandidate)}
+                  {resolveCandidateName(selectedCandidate || initialCandidate)}
                 </span>
                 <FiCheck className="text-green-600 shrink-0" size={18} />
               </div>
@@ -723,7 +815,7 @@ export default function ClientSubmissionModal({
                       type="text"
                       value={
                         selectedCandidate && !showCandidateDropdown
-                          ? getCandidateName(selectedCandidate)
+                          ? resolveCandidateName(selectedCandidate)
                           : candidateSearchQuery
                       }
                       onChange={(e) => {
@@ -796,7 +888,7 @@ export default function ClientSubmissionModal({
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
                             >
                               <span className="font-medium text-gray-900">
-                                {getCandidateName(candidate)}
+                                {resolveCandidateName(candidate)}
                               </span>
                               {candidate.email && (
                                 <span className="block text-xs text-gray-500">
@@ -811,7 +903,7 @@ export default function ClientSubmissionModal({
                 </div>
                 {selectedCandidate && !candidateSearchQuery && (
                   <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                    {getCandidateName(selectedCandidate)}
+                    {resolveCandidateName(selectedCandidate)}
                     <button
                       type="button"
                       onClick={() => {
@@ -866,117 +958,28 @@ export default function ClientSubmissionModal({
             <p className="text-xs text-gray-500 mb-1">
               Tag one or more hiring managers from the client organization.
             </p>
-            <div className="relative" ref={hiringManagerInputRef}>
-              <div className="flex flex-wrap items-center gap-1 px-2 py-1 border border-gray-300 rounded bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-                {(
-                  Array.from(selectedHiringManagerIds.values()) as string[]
-                ).map((id: string) => {
-                  const hm = hiringManagers.find(
-                    (h: HiringManager) => String(h.id) === String(id),
-                  );
-                  if (!hm) return null;
-                  const name =
-                    hm.name ||
-                    hm.full_name ||
-                    `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
-                    `Hiring Manager #${id}`;
-                  return (
-                    <span
-                      key={String(id)}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800"
-                    >
-                      {name}
-                      <button
-                        type="button"
-                        onClick={() => toggleHiringManagerSelection(id)}
-                        className="ml-1 text-blue-600 hover:text-blue-800"
-                        aria-label={`Remove ${name}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })}
-                <input
-                  type="text"
-                  value={hiringManagerSearch}
-                  onChange={(e) => setHiringManagerSearch(e.target.value)}
-                  onFocus={() => setShowHiringManagerDropdown(true)}
-                  placeholder={
-                    selectedHiringManagerIds.size === 0
-                      ? "Search hiring managers..."
-                      : "Search..."
-                  }
-                  className="flex-1 min-w-[120px] px-1 py-1 text-sm focus:outline-none"
-                />
-              </div>
-              {showHiringManagerDropdown && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-56 overflow-y-auto">
-                  {isLoadingHiringManagers ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      Loading hiring managers...
-                    </div>
-                  ) : hiringManagers.length === 0 ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      No hiring managers found for this organization.
-                    </div>
-                  ) : (
-                    hiringManagers
-                      .filter((hm: HiringManager) => {
-                        const q = hiringManagerSearch.trim().toLowerCase();
-                        if (!q) return true;
-                        const name =
-                          hm.name ||
-                          hm.full_name ||
-                          `${hm.first_name || ""} ${hm.last_name || ""}`.trim();
-                        const email = hm.email || "";
-                        return (
-                          String(name || "")
-                            .toLowerCase()
-                            .includes(q) ||
-                          String(email || "")
-                            .toLowerCase()
-                            .includes(q)
-                        );
-                      })
-                      .map((hm: HiringManager) => {
-                        const id = String(hm.id);
-                        const name =
-                          hm.name ||
-                          hm.full_name ||
-                          `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
-                          `Hiring Manager #${id}`;
-                        const selected = selectedHiringManagerIds.has(id);
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => toggleHiringManagerSelection(id)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                readOnly
-                                checked={selected}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-sm text-gray-900">
-                                  {name}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {hm.organization_name || ""}{" "}
-                                  {hm.email ? `• ${hm.email}` : ""}
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })
-                  )}
-                </div>
-              )}
+            <div ref={hiringManagerInputRef}>
+              <StyledReactSelect
+                isMulti
+                isClearable={false}
+                isDisabled={isLoadingHiringManagers}
+                isLoading={isLoadingHiringManagers}
+                closeMenuOnSelect={false}
+                placeholder="Search hiring managers..."
+                options={hiringManagerOptions}
+                value={selectedHiringManagerOptions}
+                onChange={(next) => {
+                  const selected = Array.isArray(next)
+                    ? next.map((opt) => String(opt.value))
+                    : [];
+                  setSelectedHiringManagerIds(new Set(selected));
+                }}
+                noOptionsMessage={() =>
+                  isLoadingHiringManagers
+                    ? "Loading hiring managers..."
+                    : "No hiring managers found for this organization."
+                }
+              />
             </div>
           </div>
 
@@ -1031,7 +1034,7 @@ export default function ClientSubmissionModal({
               </label>
               <div className="border border-gray-200 rounded p-3 bg-gray-50 text-sm text-gray-800 space-y-1">
                 <div className="font-semibold">
-                  {getCandidateName(selectedCandidate)}
+                  {resolveCandidateName(selectedCandidate)}
                 </div>
                 {selectedCandidate.email && (
                   <div>Email: {selectedCandidate.email}</div>
@@ -1058,107 +1061,28 @@ export default function ClientSubmissionModal({
               Tag internal team members who should receive email notifications
               about this submission.
             </p>
-            <div className="relative" ref={internalUserInputRef}>
-              <div className="flex flex-wrap items-center gap-1 px-2 py-1 border border-gray-300 rounded bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-                {(Array.from(selectedInternalUserIds.values()) as string[]).map(
-                  (id: string) => {
-                    const user = internalUsers.find(
-                      (u: InternalUser) => String(u.id) === String(id),
-                    );
-
-                    if (!user) return null;
-                    const label = user.name || user.email || `User #${id}`;
-                    const email = user.email || "";
-                    return (
-                      <span
-                        key={String(id)}
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800"
-                      >
-                        {label}
-                        {email ? ` - ${email}` : ""}
-                        <button
-                          type="button"
-                          onClick={() => toggleInternalUserSelection(id)}
-                          className="ml-1 text-blue-600 hover:text-blue-800"
-                          aria-label={`Remove ${label}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    );
-                  },
-                )}
-                <input
-                  type="text"
-                  value={internalUserSearch}
-                  onChange={(e) => setInternalUserSearch(e.target.value)}
-                  onFocus={() => setShowInternalUserDropdown(true)}
-                  placeholder={
-                    selectedInternalUserIds.size === 0
-                      ? "Search internal users..."
-                      : "Search..."
-                  }
-                  className="flex-1 min-w-[120px] px-1 py-1 text-sm focus:outline-none"
-                />
-              </div>
-              {showInternalUserDropdown && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-56 overflow-y-auto">
-                  {isLoadingInternalUsers ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      Loading internal users...
-                    </div>
-                  ) : internalUsers.length === 0 ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      No internal users available.
-                    </div>
-                  ) : (
-                    internalUsers
-                      .filter((user: InternalUser) => {
-                        const q = internalUserSearch.trim().toLowerCase();
-                        if (!q) return true;
-                        const name = user.name || "";
-                        const email = user.email || "";
-                        return (
-                          name.toLowerCase().includes(q) ||
-                          email.toLowerCase().includes(q)
-                        );
-                      })
-                      .map((user: InternalUser) => {
-                        const id = String(user.id);
-                        const name = user.name || user.email || `User #${id}`;
-                        const email = user.email || "";
-                        const selected = selectedInternalUserIds.has(id);
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            onClick={() => toggleInternalUserSelection(id)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                readOnly
-                                checked={selected}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-sm text-gray-800">
-                                  {name}
-                                </span>
-                                {email && (
-                                  <span className="text-xs text-gray-500">
-                                    {email}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })
-                  )}
-                </div>
-              )}
+            <div ref={internalUserInputRef}>
+              <StyledReactSelect
+                isMulti
+                isClearable={false}
+                isDisabled={isLoadingInternalUsers}
+                isLoading={isLoadingInternalUsers}
+                closeMenuOnSelect={false}
+                placeholder="Search internal users..."
+                options={internalUserOptions}
+                value={selectedInternalUserOptions}
+                onChange={(next) => {
+                  const selected = Array.isArray(next)
+                    ? next.map((opt) => String(opt.value))
+                    : [];
+                  setSelectedInternalUserIds(new Set(selected));
+                }}
+                noOptionsMessage={() =>
+                  isLoadingInternalUsers
+                    ? "Loading internal users..."
+                    : "No internal users available."
+                }
+              />
             </div>
           </div>
 

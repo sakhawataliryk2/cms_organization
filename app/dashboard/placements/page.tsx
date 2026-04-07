@@ -298,7 +298,7 @@ export default function PlacementList() {
   const [error, setError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
-  
+
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -825,7 +825,7 @@ export default function PlacementList() {
   const handleEmailCandidates = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -845,24 +845,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobSeekerId = placement?.jobSeekerId || placement?.job_seeker_id;
-      
+
       if (jobSeekerId) {
         const jsResponse = await fetch(`/api/job-seekers/${jobSeekerId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jsData = await jsResponse.json();
         const jobSeeker = jsData?.jobSeeker || jsData;
-        
+
         if (jobSeeker?.email) extractEmailsFromValue(jobSeeker.email);
         if (jobSeeker?.email_address) extractEmailsFromValue(jobSeeker.email_address);
         if (jobSeeker?.contact_email) extractEmailsFromValue(jobSeeker.contact_email);
@@ -877,12 +877,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Candidate email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -892,7 +892,7 @@ export default function PlacementList() {
   const handleEmailBillingContacts = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -912,24 +912,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
-      
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
-        
+
         if (job?.billing_contact_email) extractEmailsFromValue(job.billing_contact_email);
         if (job?.billing_contacts) extractEmailsFromValue(job.billing_contacts);
         if (job?.billingContacts) extractEmailsFromValue(job.billingContacts);
@@ -945,12 +945,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Billing contact email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -960,7 +960,7 @@ export default function PlacementList() {
   const handleEmailApprovers = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -980,24 +980,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
-      
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
-        
+
         if (job?.approver_email) extractEmailsFromValue(job.approver_email);
         if (job?.approverEmail) extractEmailsFromValue(job.approverEmail);
         if (job?.approvers) extractEmailsFromValue(job.approvers);
@@ -1021,12 +1021,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Approver email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -1160,11 +1160,10 @@ export default function PlacementList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                     ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -1172,14 +1171,14 @@ export default function PlacementList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
           <button
