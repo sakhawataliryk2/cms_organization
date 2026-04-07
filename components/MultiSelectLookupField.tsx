@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import StyledReactSelect, { type StyledSelectOption } from './StyledReactSelect';
 
 interface LookupOption {
   id: string;
@@ -46,9 +47,6 @@ export default function MultiSelectLookupField({
   const [options, setOptions] = useState<LookupOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedIds = normalizeValue(value);
 
@@ -145,56 +143,6 @@ export default function MultiSelectLookupField({
     }
   };
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    if (showDropdown) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showDropdown]);
-
-  const q = searchQuery.trim().toLowerCase();
-  const filteredOptions = q
-    ? options.filter(
-      (o) =>
-        o.name?.toLowerCase().includes(q) ||
-        String(o.id).toLowerCase().includes(q) ||
-        String(o.record_number || "").toLowerCase().includes(q)
-    )
-    : options;
-  const selectedSet = new Set(selectedIds);
-  const selectableOptions = filteredOptions.filter((o) => !selectedSet.has(o.id));
-
-  const addSelection = (option: LookupOption) => {
-    const next = [...selectedIds, option.id];
-    onChange(next);
-    setSearchQuery("");
-    setShowDropdown(false);
-  };
-
-  const removeSelection = (id: string) => {
-    const next = selectedIds.filter((x) => x !== id);
-    onChange(next);
-  };
-
-  if (isLoading) {
-    return (
-      <div className={className + " bg-gray-50 text-gray-500"} style={{ minHeight: 42 }}>
-        Loading...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={className + " bg-red-50 text-red-600"} style={{ minHeight: 42 }}>
-        {error}
-      </div>
-    );
-  }
-
   const getOptionLabel = (opt: LookupOption) => {
     if (!opt) return "";
     const prefix = lookupType === "organizations" ? "O" :
@@ -205,8 +153,6 @@ export default function MultiSelectLookupField({
               lookupType === "leads" ? "L" :
                 lookupType === "placements" ? "P" : "";
 
-    console.log("opt", opt);
-
     const baseLabel =
       lookupType === 'owner'
         ? `${opt.name} (${opt.email || ""})` || opt.email
@@ -214,72 +160,34 @@ export default function MultiSelectLookupField({
     return opt.record_number ? `${prefix}${opt.record_number} - ${baseLabel}` : baseLabel;
   };
 
-  return (
-    <div ref={containerRef} className="relative">
-      <div
-        className={
-          className +
-          " min-h-[42px] flex flex-wrap items-center gap-2 " +
-          (disabled ? " bg-gray-100 cursor-not-allowed opacity-70" : "")
-        }
-      >
-        {selectedIds.map((id) => {
-          const opt = options.find((o) => o.id === id);
-          const displayName = opt ? getOptionLabel(opt) : id;
+  const selectOptions: StyledSelectOption[] = options.map((opt) => ({
+    value: String(opt.id),
+    label: getOptionLabel(opt),
+  }));
 
-          return (
-            <span
-              key={id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
-            >
-              {displayName}
-              {!disabled && (
-                <button
-                  type="button"
-                  onClick={() => removeSelection(id)}
-                  className="hover:text-blue-600 font-bold leading-none"
-                  aria-label="Remove"
-                >
-                  ×
-                </button>
-              )}
-            </span>
-          );
-        })}
-        {!disabled && (
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setShowDropdown(true);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            placeholder={selectedIds.length === 0 ? placeholder : "Add more..."}
-            className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
-          />
-        )}
-      </div>
-      {!disabled && showDropdown && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-          {selectableOptions.length > 0 ? (
-            selectableOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => addSelection(opt)}
-                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 text-sm"
-              >
-                {getOptionLabel(opt)}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-gray-500 text-sm">
-              {filteredOptions.length === 0 ? 'No options' : 'All selected or no match'}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+  const selectedOptions = selectOptions.filter((opt) =>
+    selectedIds.includes(String(opt.value)),
+  );
+
+  return (
+    <StyledReactSelect
+      inputId={undefined}
+      isMulti
+      isSearchable
+      isClearable={false}
+      isDisabled={disabled}
+      isLoading={isLoading}
+      className={className}
+      options={selectOptions}
+      value={selectedOptions}
+      placeholder={placeholder}
+      noOptionsMessage={() => (error ? error : "No options")}
+      onChange={(selected) => {
+        const values = Array.isArray(selected)
+          ? selected.map((opt) => String(opt.value))
+          : [];
+        onChange(values);
+      }}
+    />
   );
 }

@@ -3,6 +3,7 @@
 import React from "react";
 import LookupField from "./LookupField";
 import MultiSelectLookupField, { type MultiSelectLookupType } from "./MultiSelectLookupField";
+import StyledReactSelect, { type StyledSelectOption } from "./StyledReactSelect";
 import { FiCalendar, FiLock } from "react-icons/fi";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import {
@@ -126,99 +127,31 @@ function SearchableMultiSelect({
   className?: string;
   id?: string;
 }) {
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [showDropdown, setShowDropdown] = React.useState(false);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  const selectedSet = new Set(value);
-  const q = searchQuery.trim().toLowerCase();
-  const filteredOptions = q
-    ? options.filter((o) => o.toLowerCase().includes(q))
-    : options;
-  const selectableOptions = filteredOptions.filter((o) => !selectedSet.has(o));
-
-  React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    };
-    if (showDropdown) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showDropdown]);
-
-  const addSelection = (option: string) => {
-    onChange([...value, option]);
-    setSearchQuery("");
-    setShowDropdown(false);
-  };
-
-  const removeSelection = (option: string) => {
-    onChange(value.filter((x) => x !== option));
-  };
+  const selectOptions: StyledSelectOption[] = options.map((opt) => ({
+    label: opt,
+    value: opt,
+  }));
+  const selectedOptions = selectOptions.filter((opt) => value.includes(opt.value));
 
   return (
-    <div ref={containerRef} className="relative" id={id}>
-      <div
-        className={
-          className +
-          " min-h-[42px] flex flex-wrap items-center gap-2 " +
-          (disabled ? " bg-gray-100 cursor-not-allowed opacity-70" : "")
-        }
-      >
-        {value.map((opt) => (
-          <span
-            key={opt}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
-          >
-            {opt}
-            {!disabled && (
-              <button
-                type="button"
-                onClick={() => removeSelection(opt)}
-                className="hover:text-blue-600 font-bold leading-none"
-                aria-label="Remove"
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ))}
-        {!disabled && (
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setShowDropdown(true);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            placeholder={value.length === 0 ? placeholder : "Add more..."}
-            className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
-          />
-        )}
-      </div>
-      {!disabled && showDropdown && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-          {selectableOptions.length > 0 ? (
-            selectableOptions.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => addSelection(opt)}
-                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 text-sm"
-              >
-                {opt}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-gray-500 text-sm">
-              {filteredOptions.length === 0 ? "No options" : "All selected or no match"}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    <StyledReactSelect
+      inputId={id}
+      isMulti
+      isSearchable
+      isClearable={false}
+      isDisabled={disabled}
+      className={className}
+      options={selectOptions}
+      value={selectedOptions}
+      placeholder={placeholder}
+      noOptionsMessage={() => "No options"}
+      onChange={(selected) => {
+        const next = Array.isArray(selected)
+          ? selected.map((opt) => String(opt.value))
+          : [];
+        onChange(next);
+      }}
+    />
   );
 }
 
@@ -821,32 +754,48 @@ export default function CustomFieldRenderer({
       );
     case "radio":
       return withValidationWrapper(
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="w-full">
           {normalizedOptions.length === 0 ? (
             <div className="text-sm text-red-500">
               No options configured for this field.
             </div>
           ) : (
-            normalizedOptions.map((option) => {
-              const valStr = String(value ?? "").trim();
-              const isChecked = option.trim() === valStr;
-              return (
-                <label
-                  key={`${field.field_name}-${option}`}
-                  className="flex items-center gap-2 text-sm cursor-pointer"
-                >
-                  <input
-                    type="radio"
-                    name={field.field_name}
-                    value={option}
-                    checked={isChecked}
-                    onChange={() => onChange(field.field_name, option)}
-                    required={field.is_required}
-                  />
-                  <span>{option}</span>
-                </label>
-              );
-            })
+            <div
+              className={`inline-flex p-1 rounded-lg border border-gray-300 ${readOnly || isDisabledByDependency ? "opacity-60 cursor-not-allowed" : ""}`}
+              role="radiogroup"
+              aria-required={field.is_required}
+              aria-disabled={readOnly || isDisabledByDependency}
+            >
+              {normalizedOptions.map((option) => {
+                const valStr = String(value ?? "").trim();
+                const isChecked = option.trim() === valStr;
+                return (
+                  <label
+                    key={`${field.field_name}-${option}`}
+                    className={`relative px-5 py-2 rounded-md text-sm font-medium transition-colors select-none ${
+                      isChecked
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-gray-700 hover:bg-white"
+                    } ${readOnly || isDisabledByDependency ? "" : "cursor-pointer"}`}
+                  >
+                    <input
+                      type="radio"
+                      name={field.field_name}
+                      value={option}
+                      checked={isChecked}
+                      onChange={() => {
+                        if (readOnly || isDisabledByDependency) return;
+                        onChange(field.field_name, option);
+                      }}
+                      required={field.is_required}
+                      disabled={readOnly || isDisabledByDependency}
+                      className="sr-only"
+                    />
+                    <span>{option}</span>
+                  </label>
+                );
+              })}
+            </div>
           )}
         </div>,
         validationIndicator

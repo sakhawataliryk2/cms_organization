@@ -11,7 +11,7 @@ import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import EmploymentTypeHeader from "../EmploymentTypeHeader";
 
 // Define field type for typesafety
 interface FormField {
@@ -372,7 +372,7 @@ export default function AddDirectHireJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-          
+
   const [additionalSkillSuggestions, setAdditionalSkillSuggestions] = useState<string[]>([]);
   const additionalSkillSearchTimeoutRef = useRef<any>(null);
 
@@ -1022,8 +1022,8 @@ export default function AddDirectHireJob() {
     }
   };
 
-  
-  
+
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1242,108 +1242,13 @@ export default function AddDirectHireJob() {
           </div>
         )}
 
-        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews – COMMENTED OUT */}
-        {/* {!isEditMode && (
-          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">
-              Parse Job Order (PDF / DOC / DOCX / TXT)
-            </h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Upload a job order or job description to extract key details and prefill
-              fields via AI. You can review and edit everything before saving.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={parseJobInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={handleParseJobOrder}
-                disabled={isParsingJob}
-                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {isParsingJob && (
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(10, parseJobProgress || 10)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCancelParseJob}
-                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-            {isParsingJob && (
-              <p className="mt-1 text-xs text-gray-500">Parsing job order…</p>
-            )}
-            {parseJobError && (
-              <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
-            )}
-          </div>
-        )} */}
 
-        {/* Form: from org HM may be prefilled; from job overview HM is inline search select (no modal) */}
-        {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <EmploymentTypeHeader />
+            </div>
             <div className="grid grid-cols-1 gap-4">
-              {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="w-48 font-medium flex items-center">
-                    Hiring Manager:
-                  </label>
-                  <div className="flex-1">
-                    <HiringManagerSearchSelect
-                      value={hiringManagerValue}
-                      options={hiringManagerOptions}
-                      onChange={(id, opt) => {
-                        setCustomFieldValues((prev) => ({
-                          ...prev,
-                          [hiringManagerCustomField.field_name]: id,
-                        }));
-                        setFormFields((prev) =>
-                          prev.map((f) =>
-                            f.name === "hiringManager" ? { ...f, value: opt.name } : f
-                          )
-                        );
-                      }}
-                      placeholder="Search or select Hiring Manager"
-                      loading={isHiringManagerOptionsLoading}
-                    />
-                  </div>
-                </div>
-              )} */}
-              {/* {isEditMode && (
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="w-48 font-medium flex items-center">
-                    Hiring Manager:
-                  </label>
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
-                      {hiringManagerDisplayValue}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsHiringManagerModalOpen(true)}
-                      className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                    >
-                      Change
-                    </button>
-                  </div>
-                </div>
-              )} */}
-              {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Direct Hire */}
               {customFields.length > 0 && (
                 <>
                   {customFields.map((field) => {
@@ -1497,8 +1402,8 @@ export default function AddDirectHireJob() {
                 type="submit"
                 disabled={isSubmitting || !isFormValid}
                 className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                    : "bg-blue-500 text-white hover:bg-blue-600"
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
                   }`}
               >
                 {isEditMode ? "Update" : "Save"}

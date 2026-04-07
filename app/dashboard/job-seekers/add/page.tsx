@@ -1822,7 +1822,7 @@ export default function AddJobSeeker() {
         {isParsingResume && (
           <div className="h-screen absolute inset-0 z-[999] flex items-center justify-center bg-white/50 rounded-lg transition-all duration-300 flex flex-col gap-4">
             <div className="w-12 h-12 border-4 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-            <p>Parsing...()  </p>
+            <p>Parsing... </p>
           </div>
         )}
         {/* Header with X button */}

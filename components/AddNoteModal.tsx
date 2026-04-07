@@ -3,9 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import Image from 'next/image';
-import { FiUserCheck, FiSearch } from 'react-icons/fi';
-import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
+import StyledReactSelect, { type StyledSelectOption } from '@/components/StyledReactSelect';
 
 interface AddNoteModalProps {
     open: boolean;
@@ -108,14 +107,10 @@ export default function AddNoteModal({
     // Reference search state for About field
     const [aboutSearchQuery, setAboutSearchQuery] = useState("");
     const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
-    const [showAboutDropdown, setShowAboutDropdown] = useState(false);
     const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
-    const aboutInputRef = useRef<HTMLInputElement>(null);
 
     // Email notification search state
     const [emailSearchQuery, setEmailSearchQuery] = useState("");
-    const [showEmailDropdown, setShowEmailDropdown] = useState(false);
-    const emailInputRef = useRef<HTMLInputElement>(null);
     const [users, setUsers] = useState<any[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
@@ -165,30 +160,22 @@ export default function AddNoteModal({
             setAboutSearchQuery("");
             setAdditionalRefSearchQuery("");
             setEmailSearchQuery("");
-            setShowAboutDropdown(false);
             setShowAdditionalRefDropdown(false);
-            setShowEmailDropdown(false);
         }
     }, [open, entityType, entityId, entityDisplay]);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (aboutInputRef.current && !aboutInputRef.current.contains(event.target as Node)) {
-                setShowAboutDropdown(false);
-            }
-            if (emailInputRef.current && !emailInputRef.current.contains(event.target as Node)) {
-                setShowEmailDropdown(false);
-            }
             if (additionalRefInputRef.current && !additionalRefInputRef.current.contains(event.target as Node)) {
                 setShowAdditionalRefDropdown(false);
             }
         };
-        if (showAboutDropdown || showEmailDropdown || showAdditionalRefDropdown) {
+        if (showAdditionalRefDropdown) {
             document.addEventListener("mousedown", handleClickOutside);
             return () => document.removeEventListener("mousedown", handleClickOutside);
         }
-    }, [showAboutDropdown, showEmailDropdown, showAdditionalRefDropdown]);
+    }, [showAdditionalRefDropdown]);
 
     const fetchActionFields = async () => {
         setIsLoadingActionFields(true);
@@ -320,7 +307,6 @@ export default function AddNoteModal({
     // Search for references for About field - Global Search
     const searchAboutReferences = async (query: string) => {
         setIsLoadingAboutSearch(true);
-        setShowAboutDropdown(true);
 
         try {
             const searchTerm = query ? query.trim() : "";
@@ -489,68 +475,32 @@ export default function AddNoteModal({
         }
     };
 
-    // Handle About reference selection
-    const handleAboutReferenceSelect = (reference: any) => {
-        setNoteForm((prev) => {
-            const newReferences = [...prev.aboutReferences, reference];
-            return {
-                ...prev,
-                aboutReferences: newReferences,
-                about: newReferences.map((ref) => ref.display).join(", "),
-            };
-        });
-        setAboutSearchQuery("");
-        setShowAboutDropdown(false);
-        setAboutSuggestions([]);
-        if (aboutInputRef.current) {
-            aboutInputRef.current.focus();
-        }
-    };
+    const aboutReferenceOptions: StyledSelectOption[] = useMemo(
+        () =>
+            aboutSuggestions.map((suggestion: any) => ({
+                label: suggestion.display,
+                value: `${suggestion.type}:${String(suggestion.id)}`,
+                meta: suggestion,
+            })),
+        [aboutSuggestions],
+    );
 
-    // Remove About reference
-    const removeAboutReference = (index: number) => {
-        setNoteForm((prev) => {
-            const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
-            return {
-                ...prev,
-                aboutReferences: newReferences,
-                about: newReferences.length > 0
-                    ? newReferences.map((ref) => ref.display).join(", ")
-                    : "",
-            };
-        });
-    };
-
-    const emailNotificationSuggestions = useMemo(() => {
-        const selected = new Set(noteForm.emailNotification);
-        const q = (emailSearchQuery || "").trim().toLowerCase();
-        if (!q) return users.filter((u) => !selected.has(u.email || u.name));
-        return users.filter((u) => {
-            if (selected.has(u.email || u.name)) return false;
-            const name = (u.name || "").toLowerCase();
-            const email = (u.email || "").toLowerCase();
-            return name.includes(q) || email.includes(q);
-        });
-    }, [users, noteForm.emailNotification, emailSearchQuery]);
-
-    const handleEmailNotificationSelect = (user: any) => {
-        const value = user.email || user.name;
-        if (!value) return;
-        setNoteForm((prev) => {
-            if (prev.emailNotification.includes(value)) return prev;
-            return { ...prev, emailNotification: [...prev.emailNotification, value] };
-        });
-        setEmailSearchQuery("");
-        setShowEmailDropdown(false);
-        if (emailInputRef.current) emailInputRef.current.focus();
-    };
-
-    const removeEmailNotification = (value: string) => {
-        setNoteForm((prev) => ({
-            ...prev,
-            emailNotification: prev.emailNotification.filter((v) => v !== value),
-        }));
-    };
+    const emailNotificationOptions: StyledSelectOption[] = useMemo(
+        () =>
+            users
+                .map((user) => {
+                    const value = user.email || user.name;
+                    if (!value) return null;
+                    return {
+                        label: user.email
+                            ? `${user.name || user.email} (${user.email})`
+                            : user.name,
+                        value,
+                    } as StyledSelectOption;
+                })
+                .filter(Boolean) as StyledSelectOption[],
+        [users],
+    );
 
     // Search for references for Additional References field - Global Search
     const searchAdditionalReferences = async (query: string) => {
@@ -954,80 +904,52 @@ export default function AddNoteModal({
                                     <span className="text-red-500">*</span>
                                 )}
                             </label>
-                            <div className="relative" ref={aboutInputRef}>
-                                <div
-                                    className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
-                                        noteFormErrors.about
-                                            ? "border-red-500 focus-within:ring-red-500"
-                                            : "border-gray-300 focus-within:ring-blue-500"
-                                    }`}
-                                >
-                                    {/* Selected References Tags */}
-                                    {noteForm.aboutReferences.map((ref, index) => (
-                                        <span
-                                            key={`${ref.type}-${ref.id}-${index}`}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
-                                        >
-                                            <FiUserCheck className="w-4 h-4" />
-                                            {ref.display}
-                                            <button
-                                                type="button"
-                                                onClick={() => removeAboutReference(index)}
-                                                className="hover:text-blue-600 font-bold leading-none"
-                                                title="Remove"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    ))}
-                                    {/* Input field */}
-                                    <input
-                                        type="text"
-                                        value={aboutSearchQuery}
-                                        onChange={(e) => {
-                                            const value = e.target.value;
-                                            setAboutSearchQuery(value);
-                                            searchAboutReferences(value);
-                                        }}
-                                        onFocus={() => {
-                                            setShowAboutDropdown(true);
-                                            if (!aboutSearchQuery.trim()) {
-                                                searchAboutReferences("");
-                                            }
-                                        }}
-                                        placeholder="Search for records to reference..."
-                                        className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
-                                    />
-                                    {/* Search icon */}
-                                    <FiSearch className="w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
-
-                                {/* Dropdown Suggestions */}
-                                {showAboutDropdown && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto" data-about-dropdown>
-                                        {isLoadingAboutSearch ? (
-                                            <div className="p-3 text-gray-500 text-sm">Searching...</div>
-                                        ) : aboutSuggestions.length > 0 ? (
-                                            aboutSuggestions.map((suggestion) => (
-                                                <div
-                                                    key={`${suggestion.type}-${suggestion.id}`}
-                                                    onClick={() => handleAboutReferenceSelect(suggestion)}
-                                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
-                                                >
-                                                    <HiOutlineUser className="w-4 h-4 text-gray-400" />
-                                                    <span className="text-sm">{suggestion.display}</span>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <div className="p-3 text-gray-500 text-sm">
-                                                {aboutSearchQuery.trim().length > 0
-                                                    ? "No results found"
-                                                    : "Type to search or select from list"}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            <StyledReactSelect
+                                isMulti
+                                options={aboutReferenceOptions}
+                                value={noteForm.aboutReferences.map((ref) => ({
+                                    label: ref.display,
+                                    value: `${ref.type}:${String(ref.id)}`,
+                                    meta: ref,
+                                }))}
+                                hasError={Boolean(noteFormErrors.about)}
+                                isSearchable
+                                isClearable={false}
+                                isLoading={isLoadingAboutSearch}
+                                placeholder="Search for records to reference..."
+                                noOptionsMessage={() =>
+                                    aboutSearchQuery.trim().length > 0
+                                        ? "No results found"
+                                        : "Type to search or select from list"
+                                }
+                                onFocus={() => {
+                                    if (!aboutSearchQuery.trim()) {
+                                        void searchAboutReferences("");
+                                    }
+                                }}
+                                onInputChange={(value, meta) => {
+                                    if (meta.action !== "input-change") return value;
+                                    setAboutSearchQuery(value);
+                                    void searchAboutReferences(value);
+                                    return value;
+                                }}
+                                onChange={(options) => {
+                                    const next = Array.isArray(options) ? options : [];
+                                    const aboutReferences = next
+                                        .map((opt) => opt.meta)
+                                        .filter(Boolean) as Array<{
+                                            id: string;
+                                            type: string;
+                                            display: string;
+                                            value: string;
+                                        }>;
+                                    setNoteForm((prev) => ({
+                                        ...prev,
+                                        aboutReferences,
+                                        about: aboutReferences.map((ref) => ref.display).join(", "),
+                                    }));
+                                }}
+                            />
                             {noteFormErrors.about && (
                                 <p className="mt-1 text-sm text-red-500">{noteFormErrors.about}</p>
                             )}
@@ -1038,63 +960,36 @@ export default function AddNoteModal({
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Email Notification
                             </label>
-                            <div className="relative" ref={emailInputRef}>
-                                <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:outline-none pr-8 border-gray-300">
-                                    {/* Selected Email Tags */}
-                                    {noteForm.emailNotification.map((email, index) => (
-                                        <span
-                                            key={email}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 text-green-800 text-sm"
-                                        >
-                                            {email}
-                                            <button
-                                                type="button"
-                                                onClick={() => removeEmailNotification(email)}
-                                                className="hover:text-green-600 font-bold leading-none"
-                                                title="Remove"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    ))}
-                                    {/* Input field */}
-                                    <input
-                                        type="text"
-                                        value={emailSearchQuery}
-                                        onChange={(e) => setEmailSearchQuery(e.target.value)}
-                                        onFocus={() => setShowEmailDropdown(true)}
-                                        placeholder="Search users to notify..."
-                                        className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
-                                    />
-                                    {/* Search icon */}
-                                    <FiSearch className="w-4 h-4 text-gray-400 pointer-events-none" />
-                                </div>
-
-                                {/* Email Dropdown Suggestions */}
-                                {showEmailDropdown && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto" data-email-dropdown>
-                                        {isLoadingUsers ? (
-                                            <div className="p-3 text-gray-500 text-sm">Loading users...</div>
-                                        ) : emailNotificationSuggestions.length > 0 ? (
-                                            emailNotificationSuggestions.map((user) => (
-                                                <div
-                                                    key={user.id}
-                                                    onClick={() => handleEmailNotificationSelect(user)}
-                                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
-                                                >
-                                                    <HiOutlineUser className="w-4 h-4 text-gray-400" />
-                                                    <div>
-                                                        <div className="text-sm font-medium">{user.name}</div>
-                                                        <div className="text-xs text-gray-500">{user.email}</div>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <div className="p-3 text-gray-500 text-sm">No users found</div>
-                                        )}
-                                    </div>
+                            <StyledReactSelect
+                                isMulti
+                                isSearchable
+                                isClearable={false}
+                                isLoading={isLoadingUsers}
+                                options={emailNotificationOptions}
+                                value={emailNotificationOptions.filter((opt) =>
+                                    noteForm.emailNotification.includes(opt.value),
                                 )}
-                            </div>
+                                placeholder="Search users to notify..."
+                                noOptionsMessage={() =>
+                                    isLoadingUsers
+                                        ? "Loading users..."
+                                        : emailSearchQuery.trim().length > 0
+                                            ? "No users found"
+                                            : "Type to search users"
+                                }
+                                onInputChange={(value, meta) => {
+                                    if (meta.action === "input-change") {
+                                        setEmailSearchQuery(value);
+                                    }
+                                    return value;
+                                }}
+                                onChange={(options) => {
+                                    const next = Array.isArray(options)
+                                        ? options.map((opt) => String(opt.value))
+                                        : [];
+                                    setNoteForm((prev) => ({ ...prev, emailNotification: next }));
+                                }}
+                            />
                         </div>
                     </div>
 
