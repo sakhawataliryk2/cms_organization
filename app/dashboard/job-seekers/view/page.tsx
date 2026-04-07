@@ -14,8 +14,7 @@ import {
   getCalendarTimeZone,
   toLocalDateTimeString,
 } from "@/lib/googleCalendar";
-import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } from "react-icons/fi";
-import { HiOutlineUser } from "react-icons/hi";
+import { FiUsers, FiX, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';

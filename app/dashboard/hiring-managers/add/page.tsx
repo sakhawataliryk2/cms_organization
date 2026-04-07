@@ -53,6 +53,53 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Last Contact Date": "lastContactDate", "Last Contact": "lastContactDate",
 };
 
+/** Stable internal names — labels are resolved via /api/custom-fields/field-label (submission keys = field_label). */
+const HM_DUP_PRIMARY_EMAIL_FIELD_NAME = "Field_7";
+
+function valueFromSubmissionByLabel(
+  submission: Record<string, unknown>,
+  label: string | null | undefined
+): string {
+  if (!label) return "";
+  const v = submission[label];
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
+
+function labelForFieldNameFromDefinitions(
+  fields: Array<{ field_name?: string; field_label?: string | null }>,
+  fieldName: string
+): string | null {
+  const f = fields.find(
+    (x) =>
+      x.field_name === fieldName ||
+      (x.field_name != null &&
+        x.field_name.toLowerCase() === fieldName.toLowerCase())
+  );
+  const l = f?.field_label != null ? String(f.field_label).trim() : "";
+  return l || null;
+}
+
+function fieldDefByStableName(
+  fields: CustomFieldDefinition[],
+  stableName: string
+): CustomFieldDefinition | undefined {
+  const lower = stableName.toLowerCase();
+  return fields.find(
+    (x) => x.field_name === stableName || x.field_name?.toLowerCase() === lower
+  );
+}
+
+type HMDupMatch = { id: string | number; name: string };
+
+function emailDupCacheKey(
+  excludeId: string,
+  emailLabel: string | null | undefined,
+  email: string
+): string {
+  return `email|ex:${excludeId}|el:${emailLabel ?? ""}|e:${email}`;
+}
+
 export default function AddHiringManager() {
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -63,6 +110,10 @@ export default function AddHiringManager() {
   const [isLoading, setIsLoading] = useState(!!hiringManagerId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!hiringManagerId);
+  const [emailDupMatches, setEmailDupMatches] = useState<HMDupMatch[]>([]);
+  const [hasConfirmedEmailDupSave, setHasConfirmedEmailDupSave] = useState(false);
+  const [isCheckingEmailDup, setIsCheckingEmailDup] = useState(false);
+  const emailDupResponseCache = useRef<Map<string, HMDupMatch[]>>(new Map());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const [organizationName, setOrganizationName] = useState<string>("");
@@ -92,8 +143,16 @@ export default function AddHiringManager() {
   const addressFieldIdSet = useMemo(() => {
     return new Set(addressFields.map((f: any) => f.id));
   }, [addressFields]);
+  const sortedCustomFields = useMemo(() => {
+    return [...customFields].sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    );
+  }, [customFields]);
   const addressAnchorId = addressFields?.[0]?.id; // usually the first address field (Address)
   const [orgFieldLabels, setOrgFieldLabels] = useState<Record<string, string>>({});
+  const [hmDupLabelsFromApi, setHmDupLabelsFromApi] = useState<{
+    email: string | null;
+  }>({ email: null });
 
 
   useEffect(() => {
@@ -206,6 +265,144 @@ export default function AddHiringManager() {
   const lastFetchedOrganizationIdRef = useRef<string | null>(null);
   const lastMappedOrganizationIdRef = useRef<string | null>(null);
   const memoizedFormData = useMemo(() => formData, [formData]);
+  const emailLabelForDup = useMemo(() => {
+    return (
+      hmDupLabelsFromApi.email ??
+      labelForFieldNameFromDefinitions(customFields, HM_DUP_PRIMARY_EMAIL_FIELD_NAME)
+    );
+  }, [hmDupLabelsFromApi.email, customFields]);
+
+  const hmEmailFieldDef = useMemo(
+    () =>
+      fieldDefByStableName(
+        customFields as CustomFieldDefinition[],
+        HM_DUP_PRIMARY_EMAIL_FIELD_NAME
+      ),
+    [customFields]
+  );
+
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0) return;
+    let cancelled = false;
+
+    const fetchLabel = async (fieldName: string) => {
+      const res = await fetch(
+        `/api/custom-fields/field-label?entity_type=hiring-managers&field_name=${encodeURIComponent(
+          fieldName
+        )}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!data.success || typeof data.field_label !== "string") return null;
+      return data.field_label as string;
+    };
+
+    (async () => {
+      const email = await fetchLabel(HM_DUP_PRIMARY_EMAIL_FIELD_NAME);
+      if (cancelled) return;
+      setHmDupLabelsFromApi({ email });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customFieldsLoading, customFields.length]);
+
+  const dupCheckValues = useMemo(() => {
+    const submission = getCustomFieldsForSubmission() as Record<string, unknown>;
+    return {
+      email: valueFromSubmissionByLabel(submission, emailLabelForDup),
+    };
+  }, [
+    customFieldValues,
+    customFields,
+    getCustomFieldsForSubmission,
+    emailLabelForDup,
+  ]);
+
+  useEffect(() => {
+    setHasConfirmedEmailDupSave(false);
+  }, [dupCheckValues.email]);
+
+  const hmEmailFieldValue = hmEmailFieldDef
+    ? customFieldValues[hmEmailFieldDef.field_name]
+    : undefined;
+  const emailValidForDupCheck = Boolean(
+    hmEmailFieldDef &&
+      isCustomFieldValueValid(hmEmailFieldDef, hmEmailFieldValue)
+  );
+
+  const excludeIdForDup =
+    isEditMode && hiringManagerId ? String(hiringManagerId).trim() : "";
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let isCancelled = false;
+
+    if (!emailValidForDupCheck) {
+      setEmailDupMatches([]);
+      setIsCheckingEmailDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const emailForCheck = dupCheckValues.email.trim();
+    if (!emailForCheck) {
+      setEmailDupMatches([]);
+      setIsCheckingEmailDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const cacheKey = emailDupCacheKey(
+      excludeIdForDup,
+      emailLabelForDup,
+      emailForCheck
+    );
+    const cached = emailDupResponseCache.current.get(cacheKey);
+    if (cached) {
+      setEmailDupMatches(cached);
+      setIsCheckingEmailDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const runCheck = async () => {
+      try {
+        setIsCheckingEmailDup(true);
+        const params = new URLSearchParams();
+        params.set("email", emailForCheck);
+        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
+        if (emailLabelForDup) params.set("email_label", emailLabelForDup);
+
+        const dupRes = await fetch(
+          `/api/hiring-managers/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (isCancelled) return;
+        const matches =
+          dupData.success && dupData.duplicates
+            ? (dupData.duplicates.email ?? [])
+            : [];
+        emailDupResponseCache.current.set(cacheKey, matches);
+        setEmailDupMatches(matches);
+      } catch {
+        if (!isCancelled) setEmailDupMatches([]);
+      } finally {
+        if (!isCancelled) setIsCheckingEmailDup(false);
+      }
+    };
+
+    timeoutId = window.setTimeout(runCheck, 600);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [dupCheckValues.email, emailValidForDupCheck, emailLabelForDup, excludeIdForDup]);
 
   // Fetch organization data (name, phone, address) if organizationId is provided
   const fetchOrganizationData = useCallback(async (orgId: string) => {
@@ -531,30 +728,6 @@ export default function AddHiringManager() {
     }));
   };
 
-  // Auto-populate Owner field (Field_9) with current user when creating
-  useEffect(() => {
-    if (customFields.length === 0) return;
-    if (hiringManagerId) return; // Don't auto-populate in edit mode
-    if (!currentUser?.name) return; // Wait for current user to be loaded
-
-    // Find Field_9 (Owner field)
-    const ownerField = customFields.find(
-      (field) =>
-        field.field_name === "Field_9" ||
-        field.field_name === "field_9" ||
-        (field.field_label?.toLowerCase() === "owner" && field.field_name?.toLowerCase().includes("9"))
-    );
-
-    if (!ownerField) return;
-
-    const currentValue = customFieldValues[ownerField.field_name];
-
-    // Auto-populate with current user's name if field is empty
-    if (!currentValue || currentValue.trim() === "") {
-      handleCustomFieldChange(ownerField.field_name, currentUser.name);
-    }
-  }, [customFields, currentUser, hiringManagerId, customFieldValues, handleCustomFieldChange]);
-
   const selectedOrganizationFieldValue = customFieldValues[ORGANIZATION_SELECTION_FIELD_NAME];
 
   useEffect(() => {
@@ -875,6 +1048,7 @@ export default function AddHiringManager() {
 
     setIsSubmitting(true);
     setError(null);
+    setEmailDupMatches([]);
 
     try {
       // Get custom fields for submission
@@ -924,6 +1098,48 @@ export default function AddHiringManager() {
         // Always store every field in custom_fields so all fields are persisted there
         customFieldsForDB[label] = value;
       });
+
+      const emailForCheck = valueFromSubmissionByLabel(
+        customFieldsToSend as Record<string, unknown>,
+        emailLabelForDup
+      );
+      const rawEmailVal = hmEmailFieldDef
+        ? customFieldValues[hmEmailFieldDef.field_name]
+        : undefined;
+
+      let dupEmail: HMDupMatch[] = [];
+      const runEmailDup = Boolean(
+        hmEmailFieldDef &&
+          isCustomFieldValueValid(hmEmailFieldDef, rawEmailVal) &&
+          emailForCheck
+      );
+
+      if (runEmailDup) {
+        const params = new URLSearchParams();
+        params.set("email", emailForCheck);
+        if (isEditMode && hiringManagerId) params.set("excludeId", hiringManagerId);
+        if (emailLabelForDup) params.set("email_label", emailLabelForDup);
+        const dupRes = await fetch(
+          `/api/hiring-managers/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+        if (dupData.success && dupData.duplicates) {
+          dupEmail = dupData.duplicates.email ?? [];
+        }
+      }
+
+      setEmailDupMatches(dupEmail);
+      if (dupEmail.length > 0 && !hasConfirmedEmailDupSave) {
+        const names = dupEmail.map((hm) => hm.name).join(", ");
+        setError(
+          "Possible duplicate hiring manager(s) detected.\n\n" +
+            `Email is already used by: ${names}` +
+            "\n\n" +
+            "Confirm the checkbox under Primary Email, then save again."
+        );
+        setIsSubmitting(false);
+        return;
+      }
 
       // When adding from organization page, preserve organizationIdFromUrl - custom fields may have overwritten it with org name
       if (organizationIdFromUrl && !isEditMode) {
@@ -1070,10 +1286,10 @@ export default function AddHiringManager() {
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error message (includes duplicate email warning) */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
-            <p>{error}</p>
+            <p className="whitespace-pre-line">{error}</p>
           </div>
         )}
 
@@ -1083,7 +1299,7 @@ export default function AddHiringManager() {
           {/* Custom Fields Section */}
           {customFields.length > 0 && (
             <div className="mt-8">
-              {customFields.map((field) => {
+              {sortedCustomFields.map((field) => {
                 // Check if this is the anchor address field (first address field)
                 if (
                   addressFields.length > 0 &&
@@ -1140,6 +1356,10 @@ export default function AddHiringManager() {
                   !hiringManagerId; // Read-only when auto-populated from URL in create mode
 
                 const fieldValue = customFieldValues[field.field_name] || "";
+                const fn = field.field_name ?? "";
+                const isEmailDuplicateField =
+                  fn === HM_DUP_PRIMARY_EMAIL_FIELD_NAME ||
+                  fn.toLowerCase() === HM_DUP_PRIMARY_EMAIL_FIELD_NAME.toLowerCase();
 
                 return (
                   <div key={field.id} className="flex items-center gap-4 mt-4">
@@ -1157,21 +1377,69 @@ export default function AddHiringManager() {
                           title="Organization name is auto-populated from the selected organization"
                         />
                       ) : (
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          allFields={customFields}
-                          values={customFieldValues}
-                          onChange={handleCustomFieldChange}
-                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                          validationIndicator={
-                            field.is_required
-                              ? isCustomFieldValueValid(field, fieldValue)
-                                ? "valid"
-                                : "required"
-                              : undefined
-                          }
-                        />
+                        <>
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            allFields={customFields}
+                            values={customFieldValues}
+                            onChange={handleCustomFieldChange}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                            validationIndicator={
+                              field.is_required
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
+                          />
+                          {isCheckingEmailDup &&
+                            isEmailDuplicateField &&
+                            isCustomFieldValueValid(field, fieldValue) && (
+                              <p className="mt-2 text-xs text-gray-500">
+                                Checking for duplicates…
+                              </p>
+                            )}
+                          {isEmailDuplicateField &&
+                            emailDupMatches.length > 0 && (
+                              <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                <div className="font-semibold mb-1">
+                                  Possible duplicate hiring manager(s) detected
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="font-medium">Same email:</div>
+                                  <ul className="list-disc list-inside">
+                                    {emailDupMatches.map((hm) => (
+                                      <li key={hm.id}>
+                                        <a
+                                          href={`/dashboard/hiring-managers/view?id=${hm.id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:underline"
+                                        >
+                                          {hm.name}
+                                        </a>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <input
+                                    id="confirm-duplicate-email"
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={hasConfirmedEmailDupSave}
+                                    onChange={(e) =>
+                                      setHasConfirmedEmailDupSave(e.target.checked)
+                                    }
+                                  />
+                                  <label htmlFor="confirm-duplicate-email">
+                                    I have reviewed these email duplicate(s) and still want to save.
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -1191,8 +1459,14 @@ export default function AddHiringManager() {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+              disabled={
+                isSubmitting ||
+                !isFormValid ||
+                (emailDupMatches.length > 0 && !hasConfirmedEmailDupSave)
+              }
+              className={`px-4 py-2 rounded ${isSubmitting ||
+                !isFormValid ||
+                (emailDupMatches.length > 0 && !hasConfirmedEmailDupSave)
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-500 text-white hover:bg-blue-600"
                 }`}
