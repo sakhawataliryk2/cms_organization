@@ -12,6 +12,7 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import EmploymentTypeHeader from "../EmploymentTypeHeader";
 
 // Define field type for typesafety
 interface FormField {
@@ -19,15 +20,15 @@ interface FormField {
   name: string;
   label: string;
   type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number"
-    | "url";
+  | "text"
+  | "email"
+  | "tel"
+  | "date"
+  | "select"
+  | "textarea"
+  | "file"
+  | "number"
+  | "url";
   required: boolean;
   visible: boolean;
   options?: string[]; // For select fields
@@ -372,7 +373,7 @@ export default function AddExecutiveSearchJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-          
+
   // Use the custom fields hook with jobs-executive-search entity type
   const {
     customFields,
@@ -635,7 +636,7 @@ export default function AddExecutiveSearchJob() {
     const foundOrg = organizations.find(
       (org) => org.id.toString() === organizationIdFromUrl
     );
-    
+
     if (foundOrg && foundOrg.name) {
       const orgField = customFields.find((f) => f.field_name === "Field_3");
       if (orgField) {
@@ -681,7 +682,7 @@ export default function AddExecutiveSearchJob() {
     hasPrefilledOrgRef.current = true;
     // Set currentOrganizationId immediately so hiring manager fetch works
     setCurrentOrganizationId(organizationIdFromUrl);
-    
+
     // Fetch organization name and set both formFields and custom field Field_3
     const fetchAndSetOrganization = async () => {
       try {
@@ -690,7 +691,7 @@ export default function AddExecutiveSearchJob() {
           const data = await response.json();
           const orgName = data.organization?.name || "";
           setOrganizationName(orgName);
-          
+
           // Set Field_3 (Organization custom field) if it exists
           if (customFields.length > 0 && orgName) {
             const orgField = customFields.find((f) => f.field_name === "Field_3");
@@ -705,7 +706,7 @@ export default function AddExecutiveSearchJob() {
               });
             }
           }
-          
+
           // Also set the old formFields for backward compatibility
           setFormFields((prev) =>
             prev.map((f) =>
@@ -748,7 +749,7 @@ export default function AddExecutiveSearchJob() {
         );
       }
     };
-    
+
     fetchAndSetOrganization();
   }, [organizationIdFromUrl, jobId, formFields.length, customFieldsLoading, customFields, organizations, setCustomFieldValues]);
 
@@ -958,7 +959,7 @@ export default function AddExecutiveSearchJob() {
 
       // Map custom fields from field_label (database key) to field_name (form key)
       const mappedCustomFieldValues: Record<string, any> = {};
-      
+
       // First, map any existing custom field values from the database
       if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
         customFields.forEach((field) => {
@@ -1046,8 +1047,8 @@ export default function AddExecutiveSearchJob() {
     }
   };
 
-  
-   
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1062,27 +1063,27 @@ export default function AddExecutiveSearchJob() {
         return;
       }
     }
-  
+
     // Validate required custom fields
     const customFieldValidation = validateCustomFields();
     if (!customFieldValidation.isValid) {
       setError(customFieldValidation.message);
       return;
     }
-  
+
     setIsSubmitting(true);
     setError(null);
-  
+
     try {
       // 1) Standard fields (visible ones)
       const payload = formFields.reduce((acc, field) => {
         if (field.visible) acc[field.name] = field.value;
         return acc;
       }, {} as Record<string, any>);
-  
+
       // 2) Custom fields from hook (keys are field_label)
       const customFieldsToSend = getCustomFieldsForSubmission();
-  
+
       // 3) Build DB customFields object: every form/custom field goes into custom_fields (create and edit)
       const customFieldsForDB: Record<string, any> = {};
       Object.keys(customFieldsToSend).forEach((k) => {
@@ -1139,12 +1140,12 @@ export default function AddExecutiveSearchJob() {
         // Use snake_case custom_fields (all form fields included)
         custom_fields: customFieldsForDB,
       };
-  
+
       console.log(`${isEditMode ? "Updating" : "Creating"} Executive Search job payload:`, finalPayload);
-  
+
       const url = isEditMode ? `/api/jobs/${jobId}` : "/api/jobs";
       const method = isEditMode ? "PUT" : "POST";
-  
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -1156,12 +1157,12 @@ export default function AddExecutiveSearchJob() {
         },
         body: JSON.stringify(finalPayload),
       });
-  
+
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} Executive Search job`);
       }
-  
+
       const resultId = isEditMode ? jobId : data.job?.id;
       // After add/edit: go to the job view page (so "Add Job" from org summary lands on the new job)
       if (resultId) {
@@ -1178,7 +1179,7 @@ export default function AddExecutiveSearchJob() {
       setIsSubmitting(false);
     }
   };
-  
+
 
   const handleGoBack = () => {
     router.back();
@@ -1258,174 +1259,77 @@ export default function AddExecutiveSearchJob() {
           </div>
         )}
 
-        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews – COMMENTED OUT */}
-        {/* {!isEditMode && (
-          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">
-              Parse Job Order (PDF / DOC / DOCX / TXT)
-            </h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Upload a job order or job description to extract key details and prefill
-              fields via AI. You can review and edit everything before saving.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={parseJobInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={handleParseJobOrder}
-                disabled={isParsingJob}
-                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {isParsingJob && (
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(10, parseJobProgress || 10)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCancelParseJob}
-                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-            {isParsingJob && (
-              <p className="mt-1 text-xs text-gray-500">Parsing job order…</p>
-            )}
-            {parseJobError && (
-              <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
-            )}
-          </div>
-        )} */}
-
-        {/* Form: from org HM may be prefilled; from job overview HM is inline search select (no modal) */}
-        {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
-              <div className="flex items-center gap-4 mb-3">
-                <label className="w-48 font-medium flex items-center">
-                  Hiring Manager:
-                </label>
-                <div className="flex-1">
-                  <HiringManagerSearchSelect
-                    value={hiringManagerValue}
-                    options={hiringManagerOptions}
-                    onChange={(id, opt) => {
-                      setCustomFieldValues((prev) => ({
-                        ...prev,
-                        [hiringManagerCustomField.field_name]: id,
-                      }));
-                      setFormFields((prev) =>
-                        prev.map((f) =>
-                          f.name === "hiringManager" ? { ...f, value: opt.name } : f
-                        )
-                      );
-                    }}
-                    placeholder="Search or select Hiring Manager"
-                    loading={isHiringManagerOptionsLoading}
-                  />
-                </div>
-              </div>
-            )} */}
-            {/* {isEditMode && (
-              <div className="flex items-center gap-4 mb-3">
-                <label className="w-48 font-medium flex items-center">
-                  Hiring Manager:
-                </label>
-                <div className="flex-1 flex items-center gap-3">
-                  <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
-                    {hiringManagerDisplayValue}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsHiringManagerModalOpen(true)}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-            )} */}
-            {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Executive Search */}
-            {customFields.length > 0 && (
-              <>
-                {customFields.map((field) => {
-                  // Don't render hidden fields at all
-                  if (field.is_hidden) return null;
+            <div>
+              <EmploymentTypeHeader />
+            </div>
+            <div className="grid grid-cols-1 gap-4">
+              {customFields.length > 0 && (
+                <>
+                  {customFields.map((field) => {
+                    // Don't render hidden fields at all
+                    if (field.is_hidden) return null;
 
-                  const isHiringManagerField =
-                    field.field_label === "Hiring Manager" ||
-                    (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
-                  if (isHiringManagerField && !isEditMode && requireHiringManagerFromUrl) {
-                    return null;
-                  }
+                    const isHiringManagerField =
+                      field.field_label === "Hiring Manager" ||
+                      (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
+                    if (isHiringManagerField && !isEditMode && requireHiringManagerFromUrl) {
+                      return null;
+                    }
 
-                  const fieldValue = customFieldValues[field.field_name] || "";
+                    const fieldValue = customFieldValues[field.field_name] || "";
 
-                  return (
-                    <div key={field.id} className="flex items-center gap-4 mb-3">
-                      <label className="w-48 font-medium flex items-center">
-                        {field.field_label}:
-                      </label>
+                    return (
+                      <div key={field.id} className="flex items-center gap-4 mb-3">
+                        <label className="w-48 font-medium flex items-center">
+                          {field.field_label}:
+                        </label>
 
-                      <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          onChange={handleCustomFieldChange}
-                          allFields={customFields}
-                          values={customFieldValues}
-                          context={{ organizationId: currentOrganizationId || organizationIdFromUrl || "" }}
-                          validationIndicator={
-                            field.is_required
-                              ? isCustomFieldValueValid(field, fieldValue)
-                                ? "valid"
-                                : "required"
-                              : undefined
-                          }
-                        />
+                        <div className="flex-1 relative">
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={handleCustomFieldChange}
+                            allFields={customFields}
+                            values={customFieldValues}
+                            context={{ organizationId: currentOrganizationId || organizationIdFromUrl || "" }}
+                            validationIndicator={
+                              field.is_required
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
+                          />
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
 
-          <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
-            >
-              {isEditMode ? "Update" : "Save"}
-            </button>
-          </div>
+            <div className="h-20" aria-hidden="true" />
+            <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isFormValid}
+                className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-500 text-white hover:bg-blue-600"
+                  }`}
+              >
+                {isEditMode ? "Update" : "Save"}
+              </button>
+            </div>
           </form>
         )}
       </div>

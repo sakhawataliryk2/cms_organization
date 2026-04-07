@@ -18,6 +18,7 @@ import AddressGroupRenderer, {
 import Tooltip from "@/components/Tooltip";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import { FiInfo } from "react-icons/fi";
+import EmploymentTypeHeader from "../EmploymentTypeHeader";
 
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -92,6 +93,65 @@ interface FormField {
   options?: string[]; // For select fields
   placeholder?: string;
   value: string;
+}
+
+interface CustomFieldDefinition {
+  id: string;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  is_required: boolean;
+  is_hidden: boolean;
+  options?: string[];
+  placeholder?: string;
+  default_value?: string;
+  sort_order: number;
+}
+
+const JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME = "Field_3";
+
+function valueFromSubmissionByLabel(
+  submission: Record<string, unknown>,
+  label: string | null | undefined
+): string {
+  if (!label) return "";
+  const v = submission[label];
+  if (v === undefined || v === null) return "";
+  return String(v).trim();
+}
+
+function labelForFieldNameFromDefinitions(
+  fields: Array<{ field_name?: string; field_label?: string | null }>,
+  fieldName: string
+): string | null {
+  const f = fields.find(
+    (x) =>
+      x.field_name === fieldName ||
+      (x.field_name != null &&
+        x.field_name.toLowerCase() === fieldName.toLowerCase())
+  );
+  const l = f?.field_label != null ? String(f.field_label).trim() : "";
+  return l || null;
+}
+
+function fieldDefByStableName(
+  fields: CustomFieldDefinition[],
+  stableName: string
+): CustomFieldDefinition | undefined {
+  const lower = stableName.toLowerCase();
+  return fields.find(
+    (x) => x.field_name === stableName || x.field_name?.toLowerCase() === lower
+  );
+}
+
+type JobDupMatch = { id: string | number; name: string };
+
+function referenceDupCacheKey(
+  excludeId: string,
+  referenceLabel: string | null | undefined,
+  referenceNumber: string
+): string {
+  return `reference|ex:${excludeId}|rl:${referenceLabel ?? ""}|r:${referenceNumber}`;
 }
 
 interface MultiValueSearchTagInputProps {
@@ -478,6 +538,13 @@ export default function AddJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [referenceDupMatches, setReferenceDupMatches] = useState<JobDupMatch[]>([]);
+  const [hasConfirmedReferenceDupSave, setHasConfirmedReferenceDupSave] = useState(false);
+  const [isCheckingReferenceDup, setIsCheckingReferenceDup] = useState(false);
+  const referenceDupResponseCache = useRef<Map<string, JobDupMatch[]>>(new Map());
+  const [jobDupLabelsFromApi, setJobDupLabelsFromApi] = useState<{
+    reference: string | null;
+  }>({ reference: null });
           
   // When URL has organizationId or hiringManagerId, user must select HM in first step; we then hide the HM custom field on the form.
   const requireHiringManagerFromUrl = Boolean(organizationIdFromUrl || hiringManagerIdFromUrl);
@@ -507,10 +574,55 @@ export default function AddJob() {
     [customFields]
   );
 
+  const jobReferenceFieldDef = useMemo(
+    () =>
+      fieldDefByStableName(
+        customFields as CustomFieldDefinition[],
+        JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME
+      ),
+    [customFields]
+  );
+
+  const referenceLabelForDup = useMemo(() => {
+    return (
+      jobDupLabelsFromApi.reference ??
+      labelForFieldNameFromDefinitions(
+        customFields,
+        JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME
+      )
+    );
+  }, [jobDupLabelsFromApi.reference, customFields]);
+
   const hiringManagerValue =
     (hiringManagerCustomField
       ? (customFieldValues[hiringManagerCustomField.field_name] as string)
       : "") || "";
+
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0) return;
+    let cancelled = false;
+
+    const fetchLabel = async (fieldName: string) => {
+      const res = await fetch(
+        `/api/custom-fields/field-label?entity_type=jobs&field_name=${encodeURIComponent(
+          fieldName
+        )}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!data.success || typeof data.field_label !== "string") return null;
+      return data.field_label as string;
+    };
+
+    (async () => {
+      const ref = await fetchLabel(JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME);
+      if (cancelled) return;
+      setJobDupLabelsFromApi({ reference: ref });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customFieldsLoading, customFields.length]);
 
   // Pre-populate hiring manager from URL when redirected from jobs/add (org flow)
   useEffect(() => {
@@ -1579,6 +1691,106 @@ export default function AddJob() {
   
   
 
+  const dupCheckValues = useMemo(() => {
+    const customFieldsToSend = getCustomFieldsForSubmission();
+    const referenceNumber = valueFromSubmissionByLabel(
+      customFieldsToSend as Record<string, unknown>,
+      referenceLabelForDup
+    );
+    return { referenceNumber };
+  }, [getCustomFieldsForSubmission, referenceLabelForDup, customFieldValues]);
+
+  const referenceValidForDupCheck = useMemo(() => {
+    if (!jobReferenceFieldDef) return false;
+    const raw = customFieldValues[jobReferenceFieldDef.field_name];
+    return Boolean(
+      isCustomFieldValueValid(jobReferenceFieldDef as any, raw) &&
+        String(raw ?? "").trim()
+    );
+  }, [jobReferenceFieldDef, customFieldValues]);
+
+  const excludeIdForDup = isEditMode && jobId ? String(jobId).trim() : "";
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let isCancelled = false;
+
+    if (!referenceValidForDupCheck) {
+      setReferenceDupMatches([]);
+      setIsCheckingReferenceDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const referenceForCheck = dupCheckValues.referenceNumber.trim();
+    if (!referenceForCheck) {
+      setReferenceDupMatches([]);
+      setIsCheckingReferenceDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const cacheKey = referenceDupCacheKey(
+      excludeIdForDup,
+      referenceLabelForDup,
+      referenceForCheck
+    );
+    const cached = referenceDupResponseCache.current.get(cacheKey);
+    if (cached) {
+      setReferenceDupMatches(cached);
+      setIsCheckingReferenceDup(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const runCheck = async () => {
+      try {
+        setIsCheckingReferenceDup(true);
+        const params = new URLSearchParams();
+        params.set("reference_number", referenceForCheck);
+        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
+        if (referenceLabelForDup) params.set("reference_label", referenceLabelForDup);
+
+        const dupRes = await fetch(`/api/jobs/check-duplicates?${params.toString()}`);
+        const dupData = await dupRes.json();
+
+        if (isCancelled) return;
+
+        const matches =
+          dupData.success && dupData.duplicates
+            ? (dupData.duplicates.reference_number ?? [])
+            : [];
+        referenceDupResponseCache.current.set(cacheKey, matches);
+        setReferenceDupMatches(matches);
+      } catch {
+        if (!isCancelled) setReferenceDupMatches([]);
+      } finally {
+        if (!isCancelled) setIsCheckingReferenceDup(false);
+      }
+    };
+
+    timeoutId = window.setTimeout(runCheck, 600);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [
+    dupCheckValues.referenceNumber,
+    referenceValidForDupCheck,
+    referenceLabelForDup,
+    excludeIdForDup,
+  ]);
+
+  useEffect(() => {
+    if (referenceDupMatches.length === 0) {
+      setHasConfirmedReferenceDupSave(false);
+    }
+  }, [referenceDupMatches.length]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1602,6 +1814,7 @@ export default function AddJob() {
 
     setIsSubmitting(true);
     setError(null);
+    setReferenceDupMatches([]);
 
     try {
       const payload = formFields.reduce((acc, field) => {
@@ -1641,6 +1854,47 @@ export default function AddJob() {
       }
       payload.jobType = jobType;
       payload.custom_fields = customFieldsForDB;
+
+      const referenceForCheck = valueFromSubmissionByLabel(
+        customFieldsToSend as Record<string, unknown>,
+        referenceLabelForDup
+      );
+      const rawReferenceVal = jobReferenceFieldDef
+        ? customFieldValues[jobReferenceFieldDef.field_name]
+        : undefined;
+
+      let dupReference: JobDupMatch[] = [];
+      const runReferenceDup = Boolean(
+        jobReferenceFieldDef &&
+          isCustomFieldValueValid(jobReferenceFieldDef, rawReferenceVal) &&
+          referenceForCheck
+      );
+
+      if (runReferenceDup) {
+        const params = new URLSearchParams();
+        params.set("reference_number", referenceForCheck);
+        if (isEditMode && jobId) params.set("excludeId", jobId);
+        if (referenceLabelForDup) params.set("reference_label", referenceLabelForDup);
+
+        const dupRes = await fetch(`/api/jobs/check-duplicates?${params.toString()}`);
+        const dupData = await dupRes.json();
+        if (dupData.success && dupData.duplicates) {
+          dupReference = dupData.duplicates.reference_number ?? [];
+        }
+      }
+
+      setReferenceDupMatches(dupReference);
+
+      if (dupReference.length > 0 && !hasConfirmedReferenceDupSave) {
+        const names = dupReference.map((j) => j.name).join(", ");
+        setError(
+          "Possible duplicate job(s) detected.\n\n" +
+            `Reference Number is already used by: ${names}\n\n` +
+            "Confirm the checkbox under Reference Number, then save again."
+        );
+        setIsSubmitting(false);
+        return;
+      }
 
       const finalPayload: Record<string, any> = payload;
 
@@ -1939,12 +2193,6 @@ export default function AddJob() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            {/* <button
-                            onClick={() => router.push('/dashboard/admin/field-mapping?section=jobs')}
-                            className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                        >
-                            Manage Fields
-                        </button> */}
             <button
               onClick={handleGoBack}
               className="text-gray-500 hover:text-gray-700"
@@ -1957,126 +2205,25 @@ export default function AddJob() {
         {/* Error message */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
-            <p>{error}</p>
+            <p className="whitespace-pre-line">{error}</p>
           </div>
         )}
 
-        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews – COMMENTED OUT */}
-        {/* {!isEditMode && (
-          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-700 mb-2">
-              Parse Job Order (PDF / DOC / DOCX / TXT)
-            </h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Upload a job order or job description to extract key details and prefill
-              fields via AI. You can review and edit everything before saving.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={parseJobInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={handleParseJobOrder}
-                disabled={isParsingJob}
-                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {isParsingJob && (
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(10, parseJobProgress || 10)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCancelParseJob}
-                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-            {isParsingJob && (
-              <p className="mt-1 text-xs text-gray-500">Parsing job order…</p>
-            )}
-            {parseJobError && (
-              <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
-            )}
-          </div>
-        )} */}
-
-        {/* Form: from org we already have HM; from job overview HM is inline (no modal) */}
-        {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <EmploymentTypeHeader />
+            </div>
             <div className="grid grid-cols-1 gap-4">
-              {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="w-48 font-medium flex items-center">
-                    Hiring Manager:
-                  </label>
-                  <div className="flex-1">
-                    <HiringManagerSearchSelect
-                      value={hiringManagerValue}
-                      options={hiringManagerOptions}
-                      onChange={(id, opt) => {
-                        setCustomFieldValues((prev) => ({
-                          ...prev,
-                          [hiringManagerCustomField.field_name]: id,
-                        }));
-                        setFormFields((prev) =>
-                          prev.map((f) =>
-                            f.name === "hiringManager" ? { ...f, value: opt.name } : f
-                          )
-                        );
-                      }}
-                      placeholder="Search or select Hiring Manager"
-                      loading={isHiringManagerOptionsLoading}
-                    />
-                  </div>
-                </div>
-              )} */}
-              {/* {isEditMode && (
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="w-48 font-medium flex items-center">
-                    Hiring Manager:
-                  </label>
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
-                      {hiringManagerDisplayValue}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsHiringManagerModalOpen(true)}
-                      className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                    >
-                      Change
-                    </button>
-                  </div>
-                </div>
-              )} */}
-
               {/* Custom Fields Section */}
               {customFields.length > 0 && (
                 <>
-                  {/* <div className="mt-8 mb-4">
-                                    <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
-                                        Additional Information
-                                    </h3>
-                                </div> */}
 
                   {sortedCustomFields.map((field) => {
-                    // Don't render hidden fields at all (neither label nor input)
-                    if (field.is_hidden) return null;
 
-                    // When user came from org Add Job and already selected HM in first step, hide the HM field (label or lookup type hiring-managers) so it's not shown again.
+
+                    if (field.is_hidden) return null;
+                    
                     const isHiringManagerField =
                       field.field_label === "Hiring Manager" ||
                       (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
@@ -2120,6 +2267,11 @@ export default function AddJob() {
                     }
 
                     const fieldValue = customFieldValues[field.field_name] || "";
+                    const fn = field.field_name ?? "";
+                    const fnLower = fn.toLowerCase();
+                    const isReferenceDuplicateField =
+                      fn === JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME ||
+                      fnLower === JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME.toLowerCase();
 
                     // Client Bill Rate: only read-only if set in admin; when editable show info tooltip and clear Pay Rate / Mark-up % on change
                     const isClientBillRateField =
@@ -2172,6 +2324,52 @@ export default function AddJob() {
                                 : undefined
                             }
                           />
+                          {isCheckingReferenceDup &&
+                            isReferenceDuplicateField &&
+                            isCustomFieldValueValid(field, fieldValue) && (
+                              <p className="mt-2 text-xs text-gray-500">
+                                Checking for duplicates...
+                              </p>
+                            )}
+                          {isReferenceDuplicateField &&
+                            referenceDupMatches.length > 0 && (
+                              <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                <div className="font-semibold mb-1">
+                                  Possible duplicate job(s) detected
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="font-medium">Same reference number:</div>
+                                  <ul className="list-disc list-inside">
+                                    {referenceDupMatches.map((job) => (
+                                      <li key={job.id}>
+                                        <a
+                                          href={`/dashboard/jobs/view?id=${job.id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:underline"
+                                        >
+                                          {job.name}
+                                        </a>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <input
+                                    id="confirm-duplicate-reference-number"
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={hasConfirmedReferenceDupSave}
+                                    onChange={(e) =>
+                                      setHasConfirmedReferenceDupSave(e.target.checked)
+                                    }
+                                  />
+                                  <label htmlFor="confirm-duplicate-reference-number">
+                                    I have reviewed these reference number duplicate(s) and still want to save.
+                                  </label>
+                                </div>
+                              </div>
+                            )}
                         </div>
                       </div>
                     );
@@ -2191,8 +2389,14 @@ export default function AddJob() {
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !isFormValid}
-                className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+                disabled={
+                  isSubmitting ||
+                  !isFormValid ||
+                  (referenceDupMatches.length > 0 && !hasConfirmedReferenceDupSave)
+                }
+                className={`px-4 py-2 rounded ${isSubmitting ||
+                  !isFormValid ||
+                  (referenceDupMatches.length > 0 && !hasConfirmedReferenceDupSave)
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-500 text-white hover:bg-blue-600"
                   }`}

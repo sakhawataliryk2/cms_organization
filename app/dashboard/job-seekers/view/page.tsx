@@ -38,6 +38,7 @@ import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import SubmissionFormModal from "@/components/SubmissionFormModal";
+import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 // Drag and drop imports
 import {
   DndContext,
@@ -3376,25 +3377,26 @@ Best regards`;
         );
       }
     } else if (action === "email") {
-      // Open default email application with mailto link
-      if (!jobSeeker?.email || jobSeeker.email === "No email provided") {
+      // Get the email from Field_8 custom field
+      const label = await getCustomFieldLabel("job-seekers", "Field_8");
+      if (!label) {
+        toast.error("Email field not configured");
+        return;
+      }
+      const email = jobSeeker?.customFields?.[label];
+      if (!email || email === "No email provided") {
         toast.error("Job seeker email not available");
         return;
       }
-
       // Use mailto link to open default email application (e.g., Outlook Desktop)
-      window.location.href = `mailto:${jobSeeker.email}`;
+      window.location.href = `mailto:${email}`;
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "add-appointment") {
-      setApplicationForInterview(null);
-      setAppointmentJobOwnerEmail(null);
-      setShowAppointmentModal(true);
-      // Default: send to Job Seeker Owner; "Also send to Job Seeker" checkbox controls candidate
-      const ownerEmail = (jobSeeker as any)?.owner_email?.trim?.();
-      const initialAttendees = ownerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail) ? [ownerEmail] : [];
-      setAppointmentForm((prev) => ({ ...prev, attendees: initialAttendees }));
-      setIncludeJobSeekerInCalendarInvite(true);
+      // Navigate to planner with job seeker pre-filled
+      if (jobSeekerId) {
+        router.push(`/dashboard/planner?addAppointment=1&participantType=job_seeker&participantId=${jobSeekerId}`);
+      }
     } else if (action === "add-submission") {
       if (jobSeekerId) {
         fetchNotes(jobSeekerId);
@@ -3403,7 +3405,7 @@ Best regards`;
       setShowSubmissionModal(true);
     } else if (action === "password-reset") {
       setShowPasswordResetModal(true);
-    } 
+    }
   };
 
   // Check for pending delete request
@@ -3651,12 +3653,12 @@ Best regards`;
     transferSearchQuery.trim() === ""
       ? availableJobSeekersForTransfer
       : availableJobSeekersForTransfer.filter((js: any) => {
-          const q = transferSearchQuery.trim().toLowerCase();
-          const fullName = String(js?.full_name || `${js?.last_name || ""}, ${js?.first_name || ""}`).toLowerCase();
-          const idStr = js?.id != null ? String(js.id) : "";
-          const recordId = (js?.record_number ?? js?.id) != null ? String(formatRecordId(js.record_number ?? js.id, "jobSeeker")).toLowerCase() : "";
-          return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
-        });
+        const q = transferSearchQuery.trim().toLowerCase();
+        const fullName = String(js?.full_name || `${js?.last_name || ""}, ${js?.first_name || ""}`).toLowerCase();
+        const idStr = js?.id != null ? String(js.id) : "";
+        const recordId = (js?.record_number ?? js?.id) != null ? String(formatRecordId(js.record_number ?? js.id, "jobSeeker")).toLowerCase() : "";
+        return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
+      });
 
   const handleTransferSubmit = async () => {
     if (!transferForm.targetJobSeekerId) {
@@ -4026,21 +4028,16 @@ Best regards`;
   const actionOptions = isArchived
     ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
     : [
-        { label: "Add Note", action: () => setShowAddNote(true) },
-        { label: "Send Email", action: () => handleActionSelected("email") },
-        { label: "Add Submission", action: () => handleActionSelected("add-submission") },
-        { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
-        { label: "Add Task", action: () => handleActionSelected("add-task") },
-        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-        { label: "Password Reset", action: () => handleActionSelected("password-reset") },
-        { label: "Transfer", action: () => handleActionSelected("transfer") },
-        { label: "Delete", action: () => handleActionSelected("delete") },
-      ];
-
-  const printableOptions = [
-    { label: "Summary", action: () => handlePrint() },
-    { label: "Full Profile", action: () => handlePrint() },
-  ];
+      { label: "Add Note", action: () => setShowAddNote(true) },
+      { label: "Send Email", action: () => handleActionSelected("email") },
+      { label: "Add Submission", action: () => handleActionSelected("add-submission") },
+      { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
+      { label: "Add Task", action: () => handleActionSelected("add-task") },
+      { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+      { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+      { label: "Transfer", action: () => handleActionSelected("transfer") },
+      { label: "Delete", action: () => handleActionSelected("delete") },
+    ];
 
   // Tabs from the image
   const tabs = [
@@ -4655,16 +4652,16 @@ Best regards`;
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
           <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
             <div className="flex-1 min-w-0">
-            <FieldValueRenderer
-              value={fieldValue}
-              fieldInfo={fieldInfo}
-              allFields={customFieldDefs as any}
-              valuesRecord={customObj as any}
-              emptyPlaceholder="-"
-              clickable
-              entityType="job-seekers"
-              recordId={jobSeeker.id || ""}
-            />
+              <FieldValueRenderer
+                value={fieldValue}
+                fieldInfo={fieldInfo}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
+                emptyPlaceholder="-"
+                clickable
+                entityType="job-seekers"
+                recordId={jobSeeker.id || ""}
+              />
             </div>
             {shouldShowCallButton && (
               <button
@@ -4702,13 +4699,13 @@ Best regards`;
 
     const rawNumber =
       phoneNumber &&
-      phoneNumber !== "-" &&
-      phoneNumber !== "No phone provided"
+        phoneNumber !== "-" &&
+        phoneNumber !== "No phone provided"
         ? phoneNumber
         : (jobSeeker as any).mobilePhone &&
           (jobSeeker as any).mobilePhone !== "No phone provided"
-        ? (jobSeeker as any).mobilePhone
-        : (jobSeeker as any).phone;
+          ? (jobSeeker as any).mobilePhone
+          : (jobSeeker as any).phone;
 
     if (!rawNumber || rawNumber === "No phone provided") {
       toast.error("No phone number available for this job seeker");
@@ -4925,13 +4922,12 @@ Best regards`;
                   <h4 className="font-medium text-blue-600 hover:underline">{task.title}</h4>
                   {task.priority && (
                     <span
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        task.priority === "High"
-                          ? "bg-red-100 text-red-800"
-                          : task.priority === "Medium"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-gray-100 text-gray-800"
-                      }`}
+                      className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
+                        ? "bg-red-100 text-red-800"
+                        : task.priority === "Medium"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-gray-100 text-gray-800"
+                        }`}
                     >
                       {task.priority}
                     </span>
@@ -5166,17 +5162,15 @@ Best regards`;
             const isPrescreenStage =
               hasPrescreen && submissionsQuickTabCount === 0;
 
-            const buttonClasses = `inline-flex items-center gap-2 px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base font-medium border ${
-              isPrescreenStage
-                ? "border-green-500 bg-green-50 text-green-800"
-                : "border-gray-300 bg-white text-gray-700"
-            }`;
+            const buttonClasses = `inline-flex items-center gap-2 px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base font-medium border ${isPrescreenStage
+              ? "border-green-500 bg-green-50 text-green-800"
+              : "border-gray-300 bg-white text-gray-700"
+              }`;
 
-            const dotClasses = `w-2.5 h-2.5 rounded-full border ${
-              isPrescreenStage
-                ? "bg-green-500 border-green-600"
-                : "bg-gray-200 border-gray-400"
-            }`;
+            const dotClasses = `w-2.5 h-2.5 rounded-full border ${isPrescreenStage
+              ? "bg-green-500 border-green-600"
+              : "bg-gray-200 border-gray-400"
+              }`;
 
             return (
               <button
@@ -5268,12 +5262,12 @@ Best regards`;
                       <div className="text-xs text-gray-600">
                         {note.created_at
                           ? new Date(note.created_at).toLocaleString("en-US", {
-                              month: "2-digit",
-                              day: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
+                            month: "2-digit",
+                            day: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
                           : null}
                       </div>
                       {note.text && (
@@ -6125,19 +6119,19 @@ Best regards`;
                                 const actionOptions = [
                                   ...(canScheduleInterview
                                     ? [{
-                                        label: "Schedule Interview",
-                                        action: () => {
-                                          setApplicationForInterview(app);
-                                          setAppointmentForm((prev) => ({
-                                            ...prev,
-                                            type: "Interview",
-                                            description: prev.description || `Interview for ${app.job_title || "position"}`,
-                                            sendInvites: true,
-                                          }));
-                                          setIncludeJobSeekerInCalendarInvite(!!(jobSeeker?.email && jobSeeker.email !== "No email provided"));
-                                          setShowAppointmentModal(true);
-                                        },
-                                      }]
+                                      label: "Schedule Interview",
+                                      action: () => {
+                                        setApplicationForInterview(app);
+                                        setAppointmentForm((prev) => ({
+                                          ...prev,
+                                          type: "Interview",
+                                          description: prev.description || `Interview for ${app.job_title || "position"}`,
+                                          sendInvites: true,
+                                        }));
+                                        setIncludeJobSeekerInCalendarInvite(!!(jobSeeker?.email && jobSeeker.email !== "No email provided"));
+                                        setShowAppointmentModal(true);
+                                      },
+                                    }]
                                     : []),
                                   ...(app.job_id != null && app.job_id !== ""
                                     ? [{ label: "View Job", action: () => router.push(`/dashboard/jobs/view?id=${app.job_id}`) }]
@@ -6153,7 +6147,7 @@ Best regards`;
                                         type="checkbox"
                                         className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                                         checked={selectedApplications.includes(appIdStr)}
-                                        onChange={() => {}}
+                                        onChange={() => { }}
                                         onClick={(e) => handleApplicationsSelectOne(appIdStr, e)}
                                       />
                                     </td>
@@ -7185,7 +7179,7 @@ Best regards`;
                   </ul>
                 </ul>
               </div>
-              
+
               <div className="space-y-2">
                 <p className="text-sm text-gray-600">
                   <strong>Job Seeker:</strong> {jobSeeker?.first_name} {jobSeeker?.last_name}

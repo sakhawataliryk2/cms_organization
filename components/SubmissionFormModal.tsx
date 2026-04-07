@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { FiCheck, FiX, FiSearch } from "react-icons/fi";
+import { FiCheck, FiX } from "react-icons/fi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
 import { toast } from "sonner";
+import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
 
 export const SUBMISSION_STATUS_DEFAULT = "Submitted";
 export const SUBMISSION_SOURCE_DEFAULT = "Recruiter";
@@ -51,7 +52,8 @@ interface SubmissionFormModalProps {
   jobSeekerId: string;
   jobSeekerName: string;
   jobSeekerRecordId?: string;
-  documents: Document[];
+  /** Optionally seed documents; the modal will always re-fetch from the API on open. */
+  documents?: Document[];
   currentUserName: string;
   currentUserEmail?: string;
   hasPrescreenNote?: boolean;
@@ -64,12 +66,17 @@ export default function SubmissionFormModal({
   jobSeekerId,
   jobSeekerName,
   jobSeekerRecordId,
-  documents,
+  documents: documentsProp = [],
   currentUserName,
   currentUserEmail,
   hasPrescreenNote = true,
   onSuccess,
 }: SubmissionFormModalProps) {
+  const [fetchedDocuments, setFetchedDocuments] = useState<Document[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+
+  // Use API-fetched docs when available, otherwise fall back to the prop
+  const documents = fetchedDocuments.length > 0 ? fetchedDocuments : documentsProp;
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [status, setStatus] = useState(SUBMISSION_STATUS_DEFAULT);
@@ -80,18 +87,15 @@ export default function SubmissionFormModal({
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<
     Set<string>
   >(new Set());
-  const [jobSearchQuery, setJobSearchQuery] = useState("");
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [submittedJobIds, setSubmittedJobIds] = useState<Set<string>>(
     new Set(),
   );
   const [isLoadingSubmittedJobs, setIsLoadingSubmittedJobs] = useState(false);
-  const [showJobDropdown, setShowJobDropdown] = useState(false);
   const [showTemplatesDropdown, setShowTemplatesDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const jobDropdownRef = useRef<HTMLDivElement>(null);
   const templatesDropdownRef = useRef<HTMLDivElement>(null);
 
   const getToken = () =>
@@ -100,6 +104,35 @@ export default function SubmissionFormModal({
       "$1",
     );
 
+  const fetchDocumentsForCandidate = async (candidateId: string) => {
+    if (!candidateId) return;
+    setIsLoadingDocuments(true);
+    try {
+      const res = await fetch(`/api/job-seekers/${candidateId}/documents`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Failed to load documents");
+      const docs: Document[] = Array.isArray(data.documents)
+        ? data.documents
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      setFetchedDocuments(docs);
+      // Auto-select all fetched documents
+      setSelectedAttachmentIds(new Set(docs.map((d) => d.id)));
+    } catch (e) {
+      console.error("Error loading job seeker documents", e);
+      // Fall back to the prop-supplied documents
+      setFetchedDocuments([]);
+      setSelectedAttachmentIds(new Set(documentsProp.map((d) => d.id)));
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     setSelectedJobId("");
@@ -107,12 +140,13 @@ export default function SubmissionFormModal({
     setStatus(SUBMISSION_STATUS_DEFAULT);
     setSubmissionSource(SUBMISSION_SOURCE_DEFAULT);
     setComments("");
-    setSelectedAttachmentIds(new Set(documents.map((d) => d.id)));
-    setJobSearchQuery("");
+    setFetchedDocuments([]);
+    setSelectedAttachmentIds(new Set(documentsProp.map((d) => d.id)));
     setValidationError(null);
     setSubmittedJobIds(new Set());
     void fetchJobs();
     void fetchSubmittedJobsForJobSeeker();
+    void fetchDocumentsForCandidate(jobSeekerId);
   }, [open, jobSeekerId]);
 
   const fetchSubmittedJobsForJobSeeker = async () => {
@@ -172,25 +206,8 @@ export default function SubmissionFormModal({
     }
   };
 
-  const filteredJobs = jobSearchQuery.trim()
-    ? jobsList.filter((j) => {
-        const q = jobSearchQuery.toLowerCase();
-        const title = (j.job_title || "").toLowerCase();
-        const rec = String(
-          formatRecordId(j.record_number ?? j.id, "job"),
-        ).toLowerCase();
-        const id = String(j.id).toLowerCase();
-        return title.includes(q) || rec.includes(q) || id.includes(q);
-      })
-    : jobsList;
-
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        jobDropdownRef.current &&
-        !jobDropdownRef.current.contains(e.target as Node)
-      )
-        setShowJobDropdown(false);
       if (
         templatesDropdownRef.current &&
         !templatesDropdownRef.current.contains(e.target as Node)
@@ -222,6 +239,19 @@ export default function SubmissionFormModal({
     setComments((c) => (c ? c + "\n\n" + text : text));
     setShowTemplatesDropdown(false);
   };
+
+  const jobOptions: StyledSelectOption[] = jobsList.map((job) => {
+    const isDisabled = submittedJobIds.has(String(job.id));
+    const recordLabel = formatRecordId(job.record_number ?? job.id, "job");
+    const jobTitle = job.job_title || "Untitled";
+    return {
+      label: isDisabled
+        ? `${recordLabel} ${jobTitle} (Already submitted)`
+        : `${recordLabel} ${jobTitle}`,
+      value: String(job.id),
+      isDisabled,
+    };
+  });
 
   const handleSubmit = async () => {
     setValidationError(null);
@@ -279,10 +309,6 @@ export default function SubmissionFormModal({
 
   if (!open) return null;
 
-  const displayJob = selectedJob
-    ? `${formatRecordId(selectedJob.record_number ?? selectedJob.id, "job")} ${selectedJob.job_title || ""}`.trim()
-    : "";
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto p-4">
       <div className="flex flex-col max-h-[80vh] bg-white rounded-lg shadow-xl w-full max-w-2xl my-8">
@@ -321,7 +347,7 @@ export default function SubmissionFormModal({
           </div>
 
           {/* Jobs (required) */}
-          <div ref={jobDropdownRef}>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Jobs{" "}
               {selectedJob ? (
@@ -331,113 +357,54 @@ export default function SubmissionFormModal({
               )}
             </label>
             <div className="relative">
-              <div className="flex border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-                <input
-                  type="text"
-                  value={selectedJob ? displayJob : jobSearchQuery}
-                  onChange={(e) => {
-                    setJobSearchQuery(e.target.value);
-                    if (selectedJob) {
-                      setSelectedJob(null);
-                      setSelectedJobId("");
-                    }
-                    setShowJobDropdown(true);
-                  }}
-                  onFocus={() => setShowJobDropdown(true)}
-                  placeholder="Search or select job..."
-                  className="flex-1 px-3 py-2 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowJobDropdown(!showJobDropdown)}
-                  className="px-2 text-gray-500 hover:bg-gray-100 rounded-r"
-                  aria-label="Search jobs"
-                >
-                  <FiSearch size={18} />
-                </button>
-                {selectedJob && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedJob(null);
-                      setSelectedJobId("");
-                      setJobSearchQuery("");
-                      setShowJobDropdown(true);
-                    }}
-                    className="px-2 text-gray-500 hover:bg-gray-100"
-                    aria-label="Clear job"
-                  >
-                    <FiX size={18} />
-                  </button>
-                )}
-              </div>
-              {showJobDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-56 overflow-y-auto">
-                  {isLoadingJobs ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      Loading jobs...
-                    </div>
-                  ) : isLoadingSubmittedJobs ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      Checking previously submitted jobs...
-                    </div>
-                  ) : filteredJobs.length === 0 ? (
-                    <div className="p-3 text-sm text-gray-500">
-                      No jobs found
-                    </div>
-                  ) : (
-                    filteredJobs.slice(0, 50).map((job) => (
-                      (() => {
-                        const isDisabled = submittedJobIds.has(String(job.id));
-                        return (
-                      <button
-                        key={job.id}
-                        type="button"
-                        disabled={isDisabled}
-                        onClick={() => {
-                          if (isDisabled) {
-                            toast.error(
-                              "This job seeker has already been submitted to this job. Duplicate submissions are not allowed.",
-                            );
-                            return;
-                          }
-                          setSelectedJob(job);
-                          setSelectedJobId(String(job.id));
-                          setJobSearchQuery("");
-                          setShowJobDropdown(false);
-                        }}
-                        className={[
-                          "w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0",
-                          isDisabled
-                            ? "bg-gray-50 text-gray-400 cursor-not-allowed"
-                            : "hover:bg-blue-50",
-                        ].join(" ")}
-                      >
-                        <span
-                          className={[
-                            "font-medium",
-                            isDisabled ? "text-gray-500" : "text-gray-900",
-                          ].join(" ")}
-                        >
-                          {formatRecordId(job.record_number ?? job.id, "job")}{" "}
-                          {job.job_title || "Untitled"}
-                        </span>
-                        {job.organization_name && (
-                          <span className="block text-xs text-gray-500">
-                            {job.organization_name}
-                          </span>
-                        )}
-                        {isDisabled && (
-                          <span className="block text-xs text-red-600 mt-0.5">
-                            Already submitted
-                          </span>
-                        )}
-                      </button>
-                        );
-                      })()
-                    ))
-                  )}
+              {isLoadingJobs ? (
+                <div className="p-3 text-sm text-gray-500 border border-gray-300 rounded">
+                  Loading jobs...
                 </div>
+              ) : isLoadingSubmittedJobs ? (
+                <div className="p-3 text-sm text-gray-500 border border-gray-300 rounded">
+                  Checking previously submitted jobs...
+                </div>
+              ) : jobOptions.length === 0 ? (
+                <div className="p-3 text-sm text-gray-500 border border-gray-300 rounded">
+                  No jobs found
+                </div>
+              ) : (
+                <StyledReactSelect
+                  options={jobOptions}
+                  value={
+                    jobOptions.find((option) => option.value === selectedJobId) ??
+                    null
+                  }
+                  isSearchable
+                  isClearable
+                  isOptionDisabled={(option) => option.isDisabled ?? false}
+                  placeholder="Search or select job..."
+                  noOptionsMessage={() => "No jobs found"}
+                  onChange={(option) => {
+                    if (!option) {
+                      setSelectedJob(null);
+                      setSelectedJobId("");
+                      return;
+                    }
+                    const selected = jobsList.find(
+                      (j) => String(j.id) === String(option.value),
+                    );
+                    if (!selected) {
+                      setSelectedJob(null);
+                      setSelectedJobId("");
+                      return;
+                    }
+                    if (submittedJobIds.has(String(selected.id))) {
+                      toast.error(
+                        "This job seeker has already been submitted to this job. Duplicate submissions are not allowed.",
+                      );
+                      return;
+                    }
+                    setSelectedJob(selected);
+                    setSelectedJobId(String(selected.id));
+                  }}
+                />
               )}
             </div>
           </div>
@@ -568,7 +535,11 @@ export default function SubmissionFormModal({
               </div>
             </div>
             <p className="text-xs text-gray-500 mb-2">{jobSeekerName}</p>
-            {documents.length === 0 ? (
+            {isLoadingDocuments ? (
+              <p className="text-sm text-gray-500 italic p-3 border border-gray-200 rounded">
+                Loading documents...
+              </p>
+            ) : documents.length === 0 ? (
               <p className="text-sm text-gray-500 italic p-3 border border-gray-200 rounded">
                 No documents available
               </p>

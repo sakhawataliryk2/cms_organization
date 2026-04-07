@@ -9,7 +9,6 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 interface CustomFieldDefinition {
   id: string;
