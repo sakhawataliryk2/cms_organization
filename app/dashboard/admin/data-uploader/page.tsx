@@ -89,6 +89,59 @@ export default function DataUploader() {
         }
     }, [recordType, currentStep]);
 
+    // Handle pending file from sidebar
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const pendingFileStr = sessionStorage.getItem('adminParseDataPendingFile');
+        if (pendingFileStr) {
+            try {
+                const pendingData = JSON.parse(pendingFileStr);
+                if (pendingData && pendingData.base64 && pendingData.name) {
+                    // Convert base64 to File
+                    const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
+                        const arr = base64.split(',');
+                        const mimeMatch = arr[0].match(/:(.*?);/);
+                        const mime = mimeMatch ? mimeMatch[1] : mimeType;
+                        const bstr = atob(arr[1]);
+                        let n = bstr.length;
+                        const u8arr = new Uint8Array(n);
+                        while (n--) {
+                            u8arr[n] = bstr.charCodeAt(n);
+                        }
+                        return new File([u8arr], filename, { type: mime });
+                    };
+
+                    const file = base64ToFile(pendingData.base64, pendingData.name, pendingData.type || 'text/csv');
+                    setSelectedFile(file);
+                    setRecordType('Job Seeker'); // Default for admin sidebar upload
+                    handleFileSelectForData(file);
+                    
+                    // Cleanup
+                    sessionStorage.removeItem('adminParseDataPendingFile');
+                    toast.success(`File "${file.name}" loaded for upload.`);
+                }
+            } catch (err) {
+                console.error('Error loading pending file:', err);
+            }
+        }
+    }, []);
+
+    const handleFileSelectForData = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            if (text) {
+                const { headers, rows } = parseCSV(text);
+                if (headers.length > 0) {
+                    setCsvHeaders(headers);
+                    setCsvRows(rows);
+                    setCurrentStep(2);
+                }
+            }
+        };
+        reader.readAsText(file);
+    };
+
     const normalizeFieldText = (value: string): string =>
         (value || '').toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
 
@@ -312,6 +365,23 @@ export default function DataUploader() {
         fileInputRef.current?.click();
     };
 
+    const skipDefectiveRows = () => {
+        if (validationErrors.length === 0) return;
+        
+        const defectiveRows = new Set(validationErrors.map(e => e.row));
+        const beforeCount = csvRows.length;
+        const newRows = csvRows.filter((_, idx) => !defectiveRows.has(idx + 2));
+        
+        setCsvRows(newRows);
+        setValidationErrors([]);
+        toast.success(`Removed ${beforeCount - newRows.length} rows with validation errors.`);
+        
+        // Brief delay before re-validating to ensure state has settled
+        setTimeout(() => {
+            validateData();
+        }, 100);
+    };
+
     const handleNext = () => {
         if (currentStep === 1) {
             // Step 1: Record type selection - no file required yet
@@ -343,6 +413,12 @@ export default function DataUploader() {
             // Move to next step after validation
             setCurrentStep(4);
             return;
+        }
+        if (currentStep === 4) {
+            // Proceed even with errors, but warn if there are any
+            if (validationErrors.length > 0) {
+                toast.info(`Proceeding with ${validationErrors.length} validation errors remaining.`);
+            }
         }
         if (currentStep < totalSteps) {
             setCurrentStep(currentStep + 1);
@@ -452,6 +528,14 @@ export default function DataUploader() {
                 "$1"
             );
 
+            // Build fieldNameToLabel mapping for custom fields
+            const fieldNameToLabel: Record<string, string> = {};
+            availableFields.forEach(f => {
+                if (f.field_name && f.field_label) {
+                    fieldNameToLabel[f.field_name] = f.field_label;
+                }
+            });
+
             // Prepare import data
             const importData = csvRows.map((row) => {
                 const record: Record<string, any> = {};
@@ -472,6 +556,7 @@ export default function DataUploader() {
                     entityType,
                     records: importData,
                     options: importOptions,
+                    fieldNameToLabel, // Pass the mapping to the backend
                 }),
             });
 
@@ -795,12 +880,22 @@ export default function DataUploader() {
                             <div>
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-xl font-semibold">Step 4: Validation & Preview</h2>
-                                    <button
-                                        onClick={validateData}
-                                        className="px-4 py-2 bg-gray-100 border border-gray-300 rounded text-sm hover:bg-gray-200"
-                                    >
-                                        Re-validate
-                                    </button>
+                                    <div className="flex gap-2">
+                                        {validationErrors.length > 0 && (
+                                            <button
+                                                onClick={skipDefectiveRows}
+                                                className="px-4 py-2 bg-red-100 border border-red-300 rounded text-sm text-red-700 hover:bg-red-200 transition-colors flex items-center gap-2"
+                                            >
+                                                <span>Skip {validationErrors.length} Defective Rows</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={validateData}
+                                            className="px-4 py-2 bg-gray-100 border border-gray-300 rounded text-sm hover:bg-gray-200"
+                                        >
+                                            Re-validate
+                                        </button>
+                                    </div>
                                 </div>
                                 {validationErrors.length > 0 ? (
                                     <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded">
@@ -826,11 +921,11 @@ export default function DataUploader() {
 
                                 <div className="mt-6">
                                     <h3 className="text-lg font-semibold mb-3">Preview (First 10 Rows)</h3>
-                                    <div className="overflow-x-auto border rounded">
+                                    <div className="overflow-x-auto border rounded max-h-[600px]">
                                         <table className="min-w-full divide-y divide-gray-200">
-                                            <thead className="bg-gray-50">
+                                            <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                                                 <tr>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                    <th className="w-16 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b whitespace-nowrap">
                                                         Row
                                                     </th>
                                                     {availableFields
@@ -838,13 +933,13 @@ export default function DataUploader() {
                                                         .map((field) => (
                                                             <th
                                                                 key={field.id}
-                                                                className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+                                                                className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b whitespace-nowrap"
                                                             >
                                                                 {field.field_label}
                                                             </th>
                                                         ))}
                                                     {validationErrors.length > 0 && (
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-red-500 uppercase">
+                                                        <th className="px-4 py-3 text-left text-xs font-semibold text-red-500 uppercase tracking-wider bg-gray-50 border-b whitespace-nowrap">
                                                             Errors
                                                         </th>
                                                     )}
@@ -856,9 +951,9 @@ export default function DataUploader() {
                                                     return (
                                                         <tr
                                                             key={rowIndex}
-                                                            className={rowErrors.length > 0 ? 'bg-red-50' : ''}
+                                                            className={`${rowErrors.length > 0 ? 'bg-red-50' : 'hover:bg-gray-50'} transition-colors`}
                                                         >
-                                                            <td className="px-4 py-2 text-sm text-gray-500">
+                                                            <td className="px-4 py-3 text-sm text-gray-500 font-medium border-r">
                                                                 {rowIndex + 2}
                                                             </td>
                                                             {availableFields
@@ -868,22 +963,24 @@ export default function DataUploader() {
                                                                     return (
                                                                         <td
                                                                             key={field.id}
-                                                                            className="px-4 py-2 text-sm text-gray-900"
+                                                                            className="px-4 py-3 text-sm text-gray-900 break-words"
                                                                         >
                                                                             {row[csvColumn] || '-'}
                                                                         </td>
                                                                     );
                                                                 })}
                                                             {validationErrors.length > 0 && (
-                                                                <td className="px-4 py-2 text-sm text-red-600">
+                                                                <td className="px-4 py-3 text-sm text-red-600 border-l">
                                                                     {rowErrors.length > 0 ? (
-                                                                        <ul className="list-disc list-inside">
+                                                                        <ul className="list-disc list-inside space-y-0.5">
                                                                             {rowErrors.map((err, idx) => (
-                                                                                <li key={idx}>{err.message}</li>
+                                                                                <li key={idx} className="leading-relaxed">{err.message}</li>
                                                                             ))}
                                                                         </ul>
                                                                     ) : (
-                                                                        <span className="text-green-600">✓</span>
+                                                                        <div className="flex items-center text-green-600 font-medium">
+                                                                            <span className="mr-1.5">✓</span> Valid
+                                                                        </div>
                                                                     )}
                                                                 </td>
                                                             )}
@@ -903,6 +1000,17 @@ export default function DataUploader() {
                         <div className="space-y-6">
                             <div>
                                 <h2 className="text-xl font-semibold mb-4">Step 5: Import Options</h2>
+                                {validationErrors.length > 0 && (
+                                    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                                        <div className="flex items-center text-yellow-800 font-semibold mb-2">
+                                            <span className="mr-2">⚠</span>
+                                            Important Warning
+                                        </div>
+                                        <p className="text-sm text-yellow-700">
+                                            There are {validationErrors.length} validation errors found in Step 4. Starting the import with these errors might lead to incomplete or incorrect data in the system. Please ensure you're okay with this before proceeding.
+                                        </p>
+                                    </div>
+                                )}
                                 <p className="text-gray-600 mb-4">
                                     Configure how the import should handle existing records.
                                 </p>
@@ -1061,11 +1169,15 @@ export default function DataUploader() {
                                 {currentStep === 5 ? (
                                     <button
                                         onClick={handleImport}
-                                        disabled={isImporting || validationErrors.length > 0}
-                                        className={`px-6 py-2 rounded text-white ${
-                                            isImporting || validationErrors.length > 0
-                                                ? 'bg-gray-400 cursor-not-allowed'
-                                                : 'bg-blue-500 hover:bg-blue-600'
+                                        disabled={
+                                            isImporting || 
+                                            !(importOptions.skipDuplicates || importOptions.updateExisting || importOptions.importNewOnly)
+                                        }
+                                        className={`px-6 py-2 rounded text-white font-medium transition-colors ${
+                                            isImporting || 
+                                            !(importOptions.skipDuplicates || importOptions.updateExisting || importOptions.importNewOnly)
+                                                ? 'bg-gray-400 cursor-not-allowed opacity-70'
+                                                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
                                         }`}
                                     >
                                         {isImporting ? 'Importing...' : 'Start Import'}

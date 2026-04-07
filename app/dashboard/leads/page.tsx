@@ -7,7 +7,7 @@ import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import { IoFilterSharp } from "react-icons/io5";  
+import { IoFilterSharp } from "react-icons/io5";
 import {
   SortableContext,
   useSortable,
@@ -173,7 +173,7 @@ function SortableColumnHeader({
             <FiArrowDown size={14} />
           )}
         </button>
-        
+
         {/* Filter Toggle */}
         <button
           ref={filterToggleRef}
@@ -317,7 +317,7 @@ export default function LeadList() {
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -905,11 +905,10 @@ export default function LeadList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                     ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -917,14 +916,14 @@ export default function LeadList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
           <button onClick={handleAddLead} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
@@ -983,9 +982,8 @@ export default function LeadList() {
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
-                          selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                        }`}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                          }`}
                         onClick={() => {
                           setSelectedFavoriteId(fav.id);
                           applyFavorite(fav);
@@ -1232,203 +1230,203 @@ export default function LeadList() {
                         />
                       );
                     })}
-                </SortableContext>
-              </tr>
-            </thead>
+                  </SortableContext>
+                </tr>
+              </thead>
 
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredAndSortedLeads.length > 0 ? (
-              filteredAndSortedLeads.map((lead) => (
-              <tr
-                key={lead.id}
-                className="hover:bg-gray-50 cursor-pointer"
-                onClick={() => handleViewLead(lead.id)}
-              >
-                {/* Fixed checkbox */}
-                <td
-                  className="px-6 py-4 whitespace-nowrap"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectedLeads.includes(lead.id)}
-                    onChange={() => {}}
-                    onClick={(e) => handleSelectLead(lead.id, e)}
-                  />
-                </td>
-
-                {/* Fixed Actions */}
-                <td
-                  className="px-6 py-4 whitespace-nowrap text-sm"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ActionDropdown
-                    label="Actions"
-                    options={[
-                      { label: "View", action: () => handleViewLead(lead.id) },
-                      ...(ownerField ? [{
-                        label: "Change Ownership",
-                        action: () => {
-                          setSelectedLeadId(lead.id);
-                          setShowOwnershipModal(true);
-                        },
-                      }] : []),
-                      ...(statusField ? [{
-                        label: "Change Status",
-                        action: () => {
-                          setSelectedLeadId(lead.id);
-                          setShowStatusModal(true);
-                        },
-                      }] : []),
-                      {
-                        label: "Add Note",
-                        action: () => {
-                          setSelectedLeadId(lead.id);
-                          setShowNoteModal(true);
-                        },
-                      },
-                      {
-                        label: "Add To TearSheet",
-                        action: () => {
-                          setSelectedLeadId(lead.id);
-                          setShowTearsheetModal(true);
-                        },
-                      },
-                      {
-                        label: "Create Task",
-                        action: () => {
-                          router.push(`/dashboard/tasks/add?relatedEntity=lead&relatedEntityId=${lead.id}`);
-                        },
-                      },
-                      {
-                        label: "Convert to Opportunity",
-                        action: () => {
-                          router.push(`/dashboard/jobs/add/contract?leadId=${lead.id}`);
-                        },
-                      },
-                    ]}
-                  />
-                </td>
-
-                {/* Dynamic columns (including Record #) */}
-                {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
-                    if (key === "record_number") {
-                      return (
-                        <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
-                          L {getColumnValue(lead, key)}
-                        </td>
-                      );
-                    }
-                    const colInfo = getColumnInfo(key);
-                    const fieldInfo = colInfo
-                      ? {
-                          key: colInfo.key,
-                          label: colInfo.label,
-                          fieldType: (colInfo as any).fieldType,
-                          lookupType: (colInfo as any).lookupType,
-                          multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                        }
-                      : { key, label: getColumnLabel(key) };
-                    return (
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedLeads.length > 0 ? (
+                  filteredAndSortedLeads.map((lead) => (
+                    <tr
+                      key={lead.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleViewLead(lead.id)}
+                    >
+                      {/* Fixed checkbox */}
                       <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        className="px-6 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <FieldValueRenderer
-                          value={getColumnValue(lead, key)}
-                          fieldInfo={fieldInfo}
-                          emptyPlaceholder="N/A"
-                          clickable
-                          stopPropagation
-                          className=""
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          checked={selectedLeads.includes(lead.id)}
+                          onChange={() => { }}
+                          onClick={(e) => handleSelectLead(lead.id, e)}
                         />
                       </td>
-                    );
-                  })}
-              </tr>
-            ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={3 + columnFields.length}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                >
-                  {searchTerm
-                    ? "No leads found matching your search."
-                    : 'No leads found. Click "Add Lead" to create one.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        </DndContext>
+
+                      {/* Fixed Actions */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ActionDropdown
+                          label="Actions"
+                          options={[
+                            { label: "View", action: () => handleViewLead(lead.id) },
+                            ...(ownerField ? [{
+                              label: "Change Ownership",
+                              action: () => {
+                                setSelectedLeadId(lead.id);
+                                setShowOwnershipModal(true);
+                              },
+                            }] : []),
+                            ...(statusField ? [{
+                              label: "Change Status",
+                              action: () => {
+                                setSelectedLeadId(lead.id);
+                                setShowStatusModal(true);
+                              },
+                            }] : []),
+                            {
+                              label: "Add Note",
+                              action: () => {
+                                setSelectedLeadId(lead.id);
+                                setShowNoteModal(true);
+                              },
+                            },
+                            {
+                              label: "Add To TearSheet",
+                              action: () => {
+                                setSelectedLeadId(lead.id);
+                                setShowTearsheetModal(true);
+                              },
+                            },
+                            {
+                              label: "Create Task",
+                              action: () => {
+                                router.push(`/dashboard/tasks/add?relatedEntity=lead&relatedEntityId=${lead.id}`);
+                              },
+                            },
+                            {
+                              label: "Convert to Opportunity",
+                              action: () => {
+                                router.push(`/dashboard/jobs/add/contract?leadId=${lead.id}`);
+                              },
+                            },
+                          ]}
+                        />
+                      </td>
+
+                      {/* Dynamic columns (including Record #) */}
+                      {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
+                        if (key === "record_number") {
+                          return (
+                            <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                              L {getColumnValue(lead, key)}
+                            </td>
+                          );
+                        }
+                        const colInfo = getColumnInfo(key);
+                        const fieldInfo = colInfo
+                          ? {
+                            key: colInfo.key,
+                            label: colInfo.label,
+                            fieldType: (colInfo as any).fieldType,
+                            lookupType: (colInfo as any).lookupType,
+                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                          }
+                          : { key, label: getColumnLabel(key) };
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          >
+                            <FieldValueRenderer
+                              value={getColumnValue(lead, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="N/A"
+                              clickable
+                              stopPropagation
+                              className=""
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={3 + columnFields.length}
+                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                    >
+                      {searchTerm
+                        ? "No leads found matching your search."
+                        : 'No leads found. Click "Add Lead" to create one.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </DndContext>
         </div>
 
         {/* Pagination */}
         <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedLeads.length}</span> of{" "}
-              <span className="font-medium">{filteredAndSortedLeads.length}</span> results
-            </p>
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Previous
+            </button>
+            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Next
+            </button>
           </div>
-          {filteredAndSortedLeads.length > 0 && (
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">{filteredAndSortedLeads.length}</span> of{" "}
+                <span className="font-medium">{filteredAndSortedLeads.length}</span> results
+              </p>
             </div>
-          )}
+            {filteredAndSortedLeads.length > 0 && (
+              <div>
+                <nav
+                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                  aria-label="Pagination"
+                >
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Previous</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    1
+                  </button>
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Next</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {/* Column Modal - uses universal SortableFieldsEditModal */}
@@ -1500,7 +1498,7 @@ export default function LeadList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1514,16 +1512,15 @@ export default function LeadList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Leads"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1541,7 +1538,7 @@ export default function LeadList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

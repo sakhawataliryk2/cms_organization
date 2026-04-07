@@ -23,6 +23,19 @@ export interface GetRecordNumberOptions {
   baseUrl?: string;
 }
 
+type CacheEntry = {
+  value: number | null;
+  expires: number;
+};
+
+const CACHE_TTL_MS = 60 * 60 * 1000;
+const recordNumberCache = new Map<string, CacheEntry>();
+const inflightRequests = new Map<string, Promise<number | null>>();
+
+function makeCacheKey(id: number, moduleParam: string) {
+  return `${moduleParam}:${id}`;
+}
+
 export async function getRecordNumberFromId(
   id: number,
   module: RecordNumberModule | string,
@@ -38,6 +51,17 @@ export async function getRecordNumberFromId(
     typeof module === "string"
       ? module.replace(/([A-Z])/g, "-$1").toLowerCase().replace(/^-/, "")
       : "job";
+  const cacheKey = makeCacheKey(numericId, moduleParam);
+  const now = Date.now();
+  const cached = recordNumberCache.get(cacheKey);
+  if (cached && cached.expires > now) {
+    return cached.value;
+  }
+
+  const existingRequest = inflightRequests.get(cacheKey);
+  if (existingRequest) {
+    return existingRequest;
+  }
 
   const baseUrl = options?.baseUrl;
   const url =
@@ -56,15 +80,40 @@ export async function getRecordNumberFromId(
     headers["Authorization"] = `Bearer ${options.token}`;
   }
 
-  try {
-    const res = await fetch(urlString, { headers, credentials: "include" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return null;
-    const recordNumber = data.recordNumber ?? data.record_number;
-    if (recordNumber != null && typeof recordNumber === "number") return recordNumber;
-    if (recordNumber != null && typeof recordNumber === "string") return parseInt(recordNumber, 10) || null;
-    return null;
-  } catch {
-    return null;
-  }
+  const request = (async (): Promise<number | null> => {
+    try {
+      const res = await fetch(urlString, { headers, credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        recordNumberCache.set(cacheKey, {
+          value: null,
+          expires: Date.now() + CACHE_TTL_MS,
+        });
+        return null;
+      }
+      const recordNumber = data.recordNumber ?? data.record_number;
+      const parsedValue =
+        recordNumber != null && typeof recordNumber === "number"
+          ? recordNumber
+          : recordNumber != null && typeof recordNumber === "string"
+            ? parseInt(recordNumber, 10) || null
+            : null;
+      recordNumberCache.set(cacheKey, {
+        value: parsedValue,
+        expires: Date.now() + CACHE_TTL_MS,
+      });
+      return parsedValue;
+    } catch {
+      recordNumberCache.set(cacheKey, {
+        value: null,
+        expires: Date.now() + CACHE_TTL_MS,
+      });
+      return null;
+    } finally {
+      inflightRequests.delete(cacheKey);
+    }
+  })();
+
+  inflightRequests.set(cacheKey, request);
+  return request;
 }

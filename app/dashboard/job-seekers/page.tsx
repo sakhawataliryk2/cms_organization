@@ -409,7 +409,7 @@ export default function JobSeekerList() {
   const [jobSeekers, setJobSeekers] = useState<JobSeeker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -926,11 +926,10 @@ export default function JobSeekerList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                     ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -938,14 +937,14 @@ export default function JobSeekerList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
           <button onClick={handleAddJobSeeker} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
@@ -1212,12 +1211,12 @@ export default function JobSeekerList() {
                       const colInfo = getColumnInfo(key);
                       const fieldInfo = colInfo
                         ? {
-                            key: colInfo.key,
-                            label: colInfo.label,
-                            fieldType: (colInfo as any).fieldType,
-                            lookupType: (colInfo as any).lookupType,
-                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                          }
+                          key: colInfo.key,
+                          label: colInfo.label,
+                          fieldType: (colInfo as any).fieldType,
+                          lookupType: (colInfo as any).lookupType,
+                          multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                        }
                         : { key, label: getColumnLabel(key) };
                       return (
                         <td

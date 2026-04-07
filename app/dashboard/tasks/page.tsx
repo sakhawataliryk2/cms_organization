@@ -315,7 +315,7 @@ export default function TaskList() {
   const [error, setError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
-  
+
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -1043,11 +1043,10 @@ export default function TaskList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
                     ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -1055,14 +1054,14 @@ export default function TaskList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
           <button
@@ -1400,11 +1399,11 @@ export default function TaskList() {
                           );
                         }
                         return (
-                        <td
-                          key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {/* {getColumnLabel(key).toLowerCase() === "status" ? (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          >
+                            {/* {getColumnLabel(key).toLowerCase() === "status" ? (
                             <span
                               className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
                             >
@@ -1439,12 +1438,12 @@ export default function TaskList() {
                           ) : (
                             getColumnValue(task, key)
                           )} */}
-                          <FieldValueRenderer
-                            value={getColumnValue(task, key)}
-                            fieldInfo={(() => {
-                              const info = getColumnInfo(key);
-                              return info
-                                ? {
+                            <FieldValueRenderer
+                              value={getColumnValue(task, key)}
+                              fieldInfo={(() => {
+                                const info = getColumnInfo(key);
+                                return info
+                                  ? {
                                     key: info.key,
                                     label: info.label,
                                     name: (info as any).name,
@@ -1452,17 +1451,17 @@ export default function TaskList() {
                                     lookupType: (info as any).lookupType,
                                     multiSelectLookupType: (info as any).multiSelectLookupType,
                                   }
-                                : { key, label: getColumnLabel(key), name: key };
-                            })() as any}
-                            emptyPlaceholder="N/A"
-                            clickable
-                            stopPropagation
-                            className="text-sm text-gray-500"
-                            entityType="tasks"
-                            recordId={task.id}
-                          />
-                        </td>
-                      );
+                                  : { key, label: getColumnLabel(key), name: key };
+                              })() as any}
+                              emptyPlaceholder="N/A"
+                              clickable
+                              stopPropagation
+                              className="text-sm text-gray-500"
+                              entityType="tasks"
+                              recordId={task.id}
+                            />
+                          </td>
+                        );
                       })}
                     </tr>
                   ))

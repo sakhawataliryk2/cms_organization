@@ -260,9 +260,11 @@ export default function RecordNameResolver({
   /* ---------- SINGLE ID ---------- */
   const singleId = ids[0];
   const isValidId = singleId ? isValidRecordId(singleId) : false;
+  const isRawString = typeof id === "string";
+  const isDirectStringValue = isRawString && !isValidId;
 
   const { name, isLoading, error } = useRecordName(
-    isValidId ? singleId : null,
+    isDirectStringValue ? null : isValidId ? singleId : null,
     type
   );
 
@@ -270,13 +272,22 @@ export default function RecordNameResolver({
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
 
   // ✅ Final display logic
-  const displayName = !isValidId
+  const displayName = isDirectStringValue
     ? singleId || fallback
-    : name ?? (isLoading ? loadingText : fallback);
+    : !isValidId
+      ? singleId || fallback
+      : name ?? (isLoading ? loadingText : (error ? "N/A" : "N/A"));
 
   const isOwnerType = normalizedType === "owner";
+  const hasResolvedName = Boolean(name && String(name).trim());
   const shouldBeClickable =
-    clickable && isValidId && !isOwnerType && viewPath && singleId;
+    clickable &&
+    isValidId &&
+    !isOwnerType &&
+    viewPath &&
+    singleId &&
+    hasResolvedName &&
+    !error;
 
   if (shouldBeClickable) {
     const href = `${viewPath}?id=${singleId}`;

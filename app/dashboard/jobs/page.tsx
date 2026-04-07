@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -313,7 +313,7 @@ export default function JobList() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -616,34 +616,10 @@ export default function JobList() {
       });
 
     console.log("availableFields", availableFields);
-    // console.log("fromApi", fromApi);
-
-    const customKeySet = new Set<string>();
-    (jobs || []).forEach((job: any) => {
-      const cf = job?.customFields || job?.custom_fields || {};
-      Object.keys(cf).forEach((k) => customKeySet.add(k));
-    });
-    const alreadyHaveCustom = new Set(
-      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => (c as any).customFieldLabel ?? c.key.replace(/^custom:/, "").replace(/:[^:]+$/, ""))
-    );
-    const fromData = Array.from(customKeySet)
-      .filter((k) => !alreadyHaveCustom.has(k))
-      .map((k) => ({
-        key: `custom:${k}`,
-        name: k,
-        label: humanize(k),
-        sortable: false,
-        filterType: "text" as const,
-        fieldType: "",
-        lookupType: "",
-        multiSelectLookupType: "",
-        customFieldLabel: k,
-      }));
 
     const merged = [
       { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "", multiSelectLookupType: "", customFieldLabel: undefined as string | undefined },
       ...fromApi,
-      ...fromData,
     ];
     const seen = new Set<string>();
     return merged.filter((x) => {
@@ -651,37 +627,74 @@ export default function JobList() {
       seen.add(x.key);
       return true;
     });
-  }, [jobs, availableFields]);
+  }, [availableFields]);
+
+  const columnCatalogKeys = useMemo(() => columnsCatalog.map((c) => c.key), [columnsCatalog]);
+
+  const getRequiredAdminColumnKeys = useCallback(() => {
+    const requiredNames = new Set(
+      (availableFields || [])
+        .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden && (f.is_required || f.required || f.isRequired))
+        .map((f: any) => String((f.field_name ?? f.fieldName ?? "").trim()).toLowerCase())
+        .filter(Boolean)
+    );
+
+    const required = columnsCatalog.filter((c) => {
+      if (c.key === "record_number") return true;
+      if (!("name" in c) || !c.name) return false;
+      return requiredNames.has(String(c.name).trim().toLowerCase());
+    });
+
+    return Array.from(new Set(required.map((c) => c.key)));
+  }, [availableFields, columnsCatalog]);
+
+  const sanitizeColumnKeys = useCallback(
+    (keys: unknown[]) => {
+      const cleaned: string[] = [];
+      const catalogSet = new Set(columnCatalogKeys);
+      for (const key of keys) {
+        if (typeof key !== "string") continue;
+        if (!catalogSet.has(key)) continue;
+        if (cleaned.includes(key)) continue;
+        cleaned.push(key);
+      }
+      return cleaned;
+    },
+    [columnCatalogKeys]
+  );
 
   // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
-    const catalogKeys = columnsCatalog.map((c) => c.key);
+    const catalogKeys = columnCatalogKeys;
     if (catalogKeys.length === 0) return;
-    const catalogSet = new Set(catalogKeys);
+
     const savedOrder = localStorage.getItem("jobsColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+          let validOrder = sanitizeColumnKeys(parsed);
+          if (catalogKeys.includes("record_number") && !validOrder.includes("record_number")) {
             validOrder = ["record_number", ...validOrder];
           }
-          // Don't apply when we would collapse a multi-column preference to only record_number
-          // (catalog may still be loading — e.g. availableFields not yet loaded)
           const wouldCollapseToRecordNumberOnly =
             parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
           if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+            if (JSON.stringify(validOrder) !== JSON.stringify(parsed)) {
+              localStorage.setItem("jobsColumnOrder", JSON.stringify(validOrder));
+            }
             setColumnFields(validOrder);
             return;
           }
         }
       } catch {
-        // ignore
+        // ignore invalid storage contents
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
+
+    const defaultColumns = getRequiredAdminColumnKeys();
+    setColumnFields((prev) => (prev.length === 0 ? defaultColumns : prev));
+  }, [columnCatalogKeys, getRequiredAdminColumnKeys, sanitizeColumnKeys]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -1158,7 +1171,7 @@ export default function JobList() {
   }
 
   // System field options: backend columns + admin custom fields (non-hidden only)
- 
+
   // Default XML tag → admin custom field mapping (used when opening mapping modal)
   // Note: right-side options are custom fields only, so we map to `custom:<field_label>`
   const normalizeForXmlAutoMap = (s: string) =>
@@ -1439,11 +1452,10 @@ export default function JobList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
-                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -1451,14 +1463,14 @@ export default function JobList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
           <button
@@ -1745,13 +1757,13 @@ export default function JobList() {
                         const colInfo = getColumnInfo(key);
                         const fieldInfo = colInfo
                           ? {
-                              key: colInfo.key,
-                              label: colInfo.label,
-                              name: (colInfo as any).name,
-                              fieldType: (colInfo as any).fieldType,
-                              lookupType: (colInfo as any).lookupType,
-                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                            }
+                            key: colInfo.key,
+                            label: colInfo.label,
+                            name: (colInfo as any).name,
+                            fieldType: (colInfo as any).fieldType,
+                            lookupType: (colInfo as any).lookupType,
+                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                          }
                           : { key, label: getColumnLabel(key), name: key };
                         return (
                           <td
@@ -1865,10 +1877,12 @@ export default function JobList() {
           onClose={() => setShowColumnModal(false)}
           title="Customize Columns"
           description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the job list."
-          order={[
-            ...columnFields,
-            ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
-          ]}
+          order={Array.from(
+            new Set([
+              ...columnFields,
+              ...columnsCatalog.map((c) => c.key),
+            ])
+          )}
           visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
@@ -1897,7 +1911,10 @@ export default function JobList() {
           }}
           saveButtonText="Done"
           isSaveDisabled={isSavingColumns}
-          onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+          onReset={() => {
+            const defaultColumns = getRequiredAdminColumnKeys();
+            setColumnFields(defaultColumns.length > 0 ? defaultColumns : columnCatalogKeys);
+          }}
           resetButtonText="Reset"
         />
       )}

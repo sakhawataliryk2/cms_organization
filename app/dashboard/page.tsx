@@ -1287,12 +1287,6 @@ export default function Dashboard() {
                                             `}
                                         >
                                             {day}
-                                            {hasTasksDate && !isSelectedDate && inRange && (
-                                                <span className="absolute bottom-1 left-1/3 transform -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full"></span>
-                                            )}
-                                            {hasAppointmentsDate && !isSelectedDate && inRange && (
-                                                <span className="absolute bottom-1 right-1/3 transform translate-x-1/2 w-1 h-1 bg-purple-500 rounded-full"></span>
-                                            )}
                                         </button>
                                     );
                                 })}

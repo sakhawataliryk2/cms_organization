@@ -1272,12 +1272,12 @@ export default function ArchivedLeadsList() {
                               : undefined;
                         const fieldInfo = colInfo
                           ? {
-                              key: colInfo.key,
-                              label: colInfo.label,
-                              fieldType: (colInfo as any).fieldType,
-                              lookupType: (colInfo as any).lookupType,
-                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                            }
+                            key: colInfo.key,
+                            label: colInfo.label,
+                            fieldType: (colInfo as any).fieldType,
+                            lookupType: (colInfo as any).lookupType,
+                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                          }
                           : { key, label: getColumnLabel(key) };
                         return (
                           <td

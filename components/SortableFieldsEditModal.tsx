@@ -142,17 +142,35 @@ export default function SortableFieldsEditModal({
     if (open) setSearchQuery("");
   }, [open]);
 
+  const knownKeys = useMemo(() => new Set(fieldCatalog.map((f) => f.key)), [fieldCatalog]);
+  const sanitizedOrder = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const key of order) {
+      if (!knownKeys.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      result.push(key);
+    }
+    for (const field of fieldCatalog) {
+      if (!seen.has(field.key)) {
+        seen.add(field.key);
+        result.push(field.key);
+      }
+    }
+    return result;
+  }, [order, fieldCatalog, knownKeys]);
+
   const getLabel = (key: string) => fieldCatalog.find((f) => f.key === key)?.label ?? key;
   const searchLower = searchQuery.trim().toLowerCase();
   const filteredOrder = useMemo(
     () =>
       searchLower
-        ? order.filter(
+        ? sanitizedOrder.filter(
           (key) =>
             getLabel(key).toLowerCase().includes(searchLower) || key.toLowerCase().includes(searchLower)
         )
-        : order,
-    [order, searchLower, fieldCatalog]
+        : sanitizedOrder,
+    [sanitizedOrder, searchLower, fieldCatalog]
   );
 
   const sensors = useSensors(
@@ -220,7 +238,7 @@ export default function SortableFieldsEditModal({
               <SortableContext items={filteredOrder} strategy={verticalListSortingStrategy}>
                 <div
                   className="space-y-2 overflow-y-auto border border-gray-200 rounded p-3"
-                  style={{ maxHeight: "50vh" }}
+                  style={{ maxHeight: listMaxHeight }}
                 >
                   {isLoading && fieldCatalog.length === 0 ? (
                     <div className="text-center py-4 text-gray-500">Loading fields...</div>

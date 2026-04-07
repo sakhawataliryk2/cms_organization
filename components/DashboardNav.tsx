@@ -36,7 +36,6 @@ import {
   FiFile,
   FiSettings,
   FiBriefcase,
-  FiMessageSquare,
   FiGrid,
   FiX,
   FiLogOut,
@@ -793,7 +792,7 @@ export default function DashboardNav() {
           type: file.type,
           isResume: false,
         }));
-        router.push('/dashboard/admin?upload=true');
+        router.push('/dashboard/admin/data-uploader');
         setIsSidebarOpen(false);
       };
       reader.readAsDataURL(file);
@@ -1390,11 +1389,6 @@ export default function DashboardNav() {
           {user && (
             <div className="pr-2 sm:pr-6 relative shrink-0" ref={userMenuRef}>
               <div className="flex items-center gap-1 sm:space-x-2">
-                <div className="hidden sm:flex items-center text-gray-300 hover:bg-slate-700 hover:text-white py-2 px-4 rounded">
-                  <FiMessageSquare className="mr-2" />
-                  Messages
-                </div>
-
                 <button
                   className="flex items-center space-x-2 text-gray-300 hover:text-white min-w-0"
                   onClick={toggleUserMenu}
@@ -1528,7 +1522,7 @@ export default function DashboardNav() {
               className="text-white bg-slate-700 p-1 rounded hover:bg-slate-600"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push('/dashboard/admin?upload=true');
+                router.push('/dashboard/admin/data-uploader');
                 setIsSidebarOpen(false);
               }}
               aria-label="Parse Resume"
