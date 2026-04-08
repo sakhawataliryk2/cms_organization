@@ -4,7 +4,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiEye, FiX, FiChevronLeft, FiChevronRight, FiUser, FiRefreshCw } from 'react-icons/fi';
+import { FiX, FiChevronLeft, FiChevronRight, FiUser, FiRefreshCw } from 'react-icons/fi';
+import { TbBinoculars } from 'react-icons/tb';
 import { FaFacebookF, FaLinkedinIn } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
 import { useRouter } from 'next/navigation';
@@ -509,6 +510,10 @@ export default function CandidateFlowDashboard() {
 
   const handleViewCandidate = (id: number) => {
     setSelectedJobSeekerId(id);
+  };
+
+  const openJobSeekerProfilePage = (id: number) => {
+    router.push(`/dashboard/job-seekers/view?id=${id}`);
   };
 
   const handleViewJob = (jobNumericId?: number | string | null) => {
@@ -1119,18 +1124,22 @@ export default function CandidateFlowDashboard() {
       <div
         key={c.id}
         draggable
+        onClick={() => openJobSeekerProfilePage(c.id)}
         onDragStart={() =>
           setDragPayload({
             fromColumnId: "prescreened",
             candidate: c,
           })
         }
-        className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 flex flex-col justify-between cursor-move"
+        className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 flex flex-col items-center justify-center text-center cursor-pointer"
       >
         <button
           type="button"
-          className="text-left"
-          onClick={() => handleViewCandidate(c.id)}
+          className="w-full text-center"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleViewCandidate(c.id);
+          }}
         >
           <div className="text-slate-800 font-medium truncate">
             {c.name || `Record #${c.record_number ?? c.id}`}
@@ -1141,9 +1150,8 @@ export default function CandidateFlowDashboard() {
           </div>
         </button>
   
-        <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
-          <FiEye size={14} />
-          <span>Preview</span>
+        <div className="mt-2 flex items-center justify-center text-teal-600">
+          <TbBinoculars size={24} />
         </div>
       </div>
     );
@@ -1153,37 +1161,43 @@ export default function CandidateFlowDashboard() {
     <div
       key={candidate.id}
       draggable
+      onClick={() => openJobSeekerProfilePage(candidate.id)}
       onDragStart={() =>
         setDragPayload({
           fromColumnId,
           candidate,
         })
       }
-      className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 flex flex-col justify-between cursor-move"
+      className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 flex flex-col items-center justify-center text-center cursor-pointer"
     >
       <div>
         <button
           type="button"
-          className="text-left w-full"
-          onClick={() => handleViewCandidate(candidate.id)}
+          className="text-center w-full"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleViewCandidate(candidate.id);
+          }}
         >
-          <div className="text-slate-800 font-medium truncate">
+          <div className="text-slate-800 font-medium">
             {candidate.name}
           </div>
         </button>
         {candidate.jobId && candidate.jobNumericId ? (
           <button
             type="button"
-            className="text-slate-500 text-xs mt-0.5 truncate hover:underline"
-            onClick={() => handleViewJob(candidate.jobNumericId)}
+            className="text-slate-500 text-xs mt-0.5 truncate hover:underline text-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleViewJob(candidate.jobNumericId);
+            }}
           >
             <JobRecordNumber jobNumericId={Number(candidate.jobNumericId)} />
           </button>
         ) : null}
       </div>
-      <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
-        <FiEye size={14} />
-        <span>Preview</span>
+      <div className="mt-2 flex items-center justify-center text-teal-600">
+        <TbBinoculars size={24} />
       </div>
     </div>
   );
