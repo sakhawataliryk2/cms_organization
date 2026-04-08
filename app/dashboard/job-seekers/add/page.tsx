@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -404,9 +405,12 @@ export default function AddJobSeeker() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("job-seekers", {
     applyAutoCurrentDefaults: !jobSeekerId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
 
   const sortedCustomFields = useMemo(
     () =>
@@ -1764,10 +1768,20 @@ export default function AddJobSeeker() {
         }
       }
 
-      if (resultId) {
-        router.push("/dashboard/job-seekers/view?id=" + resultId);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        setHasConfirmedEmailDupSave(false);
+        setHasConfirmedPhoneDupSave(false);
+        setEmailDupMatches([]);
+        setPhoneDupMatches([]);
+        setResumeFile(null);
+        window.scrollTo(0, 0);
       } else {
-        router.push("/dashboard/job-seekers");
+        if (resultId) {
+          router.push("/dashboard/job-seekers/view?id=" + resultId);
+        } else {
+          router.push("/dashboard/job-seekers");
+        }
       }
     } catch (error) {
       console.error(

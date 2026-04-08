@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import "../styles/description.css";
 import NextTopLoader from "nextjs-toploader";
+import { MultipleAddProvider } from "@/contexts/MultipleAddContext";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -35,7 +36,9 @@ export default function RootLayout({
           speed={200}
           shadow="0 0 10px #2563eb,0 0 5px #2563eb"
         />
-        {children}
+        <MultipleAddProvider>
+          {children}
+        </MultipleAddProvider>
         <Toaster richColors position="top-right" closeButton />
       </body>
     </html>

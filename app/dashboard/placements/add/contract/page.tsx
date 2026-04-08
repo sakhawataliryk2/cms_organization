@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -172,9 +173,12 @@ export default function AddPlacement() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("placements", {
     applyAutoCurrentDefaults: !placementId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
 
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -390,7 +394,7 @@ export default function AddPlacement() {
     if (payRateField && payRateVal) {
       handleCustomFieldChange(payRateField.field_name, payRateVal);
     }
-  // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+    // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
   }, [selectedJob, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
 
   // Prefill Job Seeker when coming from Jobs → Applied → Placement flow
@@ -491,7 +495,7 @@ export default function AddPlacement() {
     if (payRateField && payRateVal) {
       handleCustomFieldChange(payRateField.field_name, payRateVal);
     }
-  // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+    // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
   }, [jobs, customFieldValues, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
 
   // When user selects a job from the dropdown, fetch full job so we have start_date, pay_rate (list may omit them)
@@ -950,8 +954,13 @@ export default function AddPlacement() {
         return;
       }
 
-      const id = isEditMode ? placementId : data.placement?.id;
-      router.push(`/dashboard/placements/view?id=${id}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        window.scrollTo(0, 0);
+      } else {
+        const id = isEditMode ? placementId : data.placement?.id;
+        router.push(`/dashboard/placements/view?id=${id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
@@ -1183,9 +1192,9 @@ export default function AddPlacement() {
 
           <div className="h-20" aria-hidden="true" />
           <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end items-center space-x-4">
-            {!canSubmit && (
-              <div className="mr-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-sm animate-pulse">
-                <FiInfo className="shrink-0" />
+            {process.env.NODE_ENV === "development" && !canSubmit && (
+              <div className="text-red-500">
+                Debug:
                 <span>{validationStatus.message || "Missing required fields"}</span>
               </div>
             )}

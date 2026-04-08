@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -132,9 +133,12 @@ export default function AddHiringManager() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("hiring-managers", {
     applyAutoCurrentDefaults: !hiringManagerId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
   const addressFields = useMemo(
     () => getAddressFields(customFields as any, "hiring-managers"),
     [customFields]
@@ -1209,9 +1213,16 @@ export default function AddHiringManager() {
         );
       }
 
-      // After save/update, always go to the Hiring Manager record page
-      const id = isEditMode ? hiringManagerId : data.hiringManager.id;
-      router.push(`/dashboard/hiring-managers/view?id=${id}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        setHasConfirmedEmailDupSave(false);
+        setEmailDupMatches([]);
+        window.scrollTo(0, 0);
+      } else {
+        // After save/update, always go to the Hiring Manager record page
+        const id = isEditMode ? hiringManagerId : data.hiringManager.id;
+        router.push(`/dashboard/hiring-managers/view?id=${id}`);
+      }
     } catch (err) {
       console.error(
         `Error ${isEditMode ? "updating" : "creating"} hiring manager:`,

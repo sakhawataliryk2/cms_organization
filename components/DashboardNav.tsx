@@ -13,13 +13,13 @@ import {
   pinRecord,
   buildPinnedKey,
   savePinnedRecords,
-  dispatchPinnedRecordsChanged,
 } from "@/lib/pinnedRecords";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 // Import icons from react-icons
 import {
   FiHome,
@@ -36,14 +36,15 @@ import {
   FiFile,
   FiSettings,
   FiBriefcase,
-  FiGrid,
   FiX,
   FiLogOut,
   FiUpload,
   FiMenu,
+  FiLayers,
+  FiChevronDown,
+  FiChevronRight,
 } from "react-icons/fi";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
-import { FaRegUserCircle } from "react-icons/fa";
 import { toast } from "sonner";
 
 interface User {
@@ -198,6 +199,18 @@ export default function DashboardNav() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
+  const { isMultipleAddMode, setMultipleAddMode } = useMultipleAdd();
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    jobs: false,
+    placements: false,
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
 
   const [pinnedRecords, setPinnedRecords] = useState<PinnedRecord[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
@@ -276,6 +289,16 @@ export default function DashboardNav() {
       name: "Placement",
       path: "/dashboard/placements/add",
       icon: <FiDollarSign size={16} />,
+    },
+    {
+      name: "Multiple Add",
+      path: "#multiple-add",
+      icon: <FiLayers size={16} />,
+      isSpecial: true,
+      onClick: () => {
+        setMultipleAddMode(true);
+        setIsAddMenuOpen(false);
+      }
     },
   ];
 
@@ -730,9 +753,13 @@ export default function DashboardNav() {
   };
 
   // Navigation to add menu item
-  const navigateToAddItem = (path: string) => {
-    router.push(path);
-    setIsAddMenuOpen(false);
+  const navigateToAddItem = (item: { path: string; onClick?: () => void; isSpecial?: boolean }) => {
+    if (item.isSpecial && item.onClick) {
+      item.onClick();
+    } else {
+      router.push(item.path);
+      setIsAddMenuOpen(false);
+    }
   };
 
   // Handle Close All Tabs functionality
@@ -742,6 +769,7 @@ export default function DashboardNav() {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event(PINNED_RECORDS_CHANGED_EVENT));
     }
+    setMultipleAddMode(false);
     setIsUserMenuOpen(false);
     setIsSidebarOpen(false);
     router.push("/dashboard");
@@ -854,6 +882,56 @@ export default function DashboardNav() {
     },
     // { name: 'Profile', path: '/dashboard/profile', icon: <FaRegUserCircle size={20} /> },
     // { name: 'API', path: '/dashboard/api', icon: <FiGrid size={20} /> },
+  ];
+
+  const multipleAddNavItems = [
+    {
+      name: "Add Organization",
+      path: "/dashboard/organizations/add",
+      icon: <HiOutlineOfficeBuilding size={20} />,
+    },
+    {
+      name: "Add Job",
+      id: "jobs",
+      icon: <FiBriefcase size={20} />,
+      isCollapsible: true,
+      subItems: [
+        { name: "Contract", path: "/dashboard/jobs/add/contract" },
+        { name: "Direct Hire", path: "/dashboard/jobs/add/direct-hire" },
+        { name: "Executive Search", path: "/dashboard/jobs/add/executive-search" },
+      ]
+    },
+    {
+      name: "Add Job Seeker",
+      path: "/dashboard/job-seekers/add",
+      icon: <FiUsers size={20} />,
+    },
+    {
+      name: "Add Lead",
+      path: "/dashboard/leads/add",
+      icon: <FiTarget size={20} />,
+    },
+    {
+      name: "Add Hiring Manager",
+      path: "/dashboard/hiring-managers/add",
+      icon: <FiUserCheck size={20} />,
+    },
+    {
+      name: "Add Task",
+      path: "/dashboard/tasks/add",
+      icon: <FiCheckSquare size={20} />,
+    },
+    {
+      name: "Add Placement",
+      id: "placements",
+      icon: <FiDollarSign size={20} />,
+      isCollapsible: true,
+      subItems: [
+        { name: "Contract", path: "/dashboard/placements/add/contract" },
+        { name: "Direct Hire", path: "/dashboard/placements/add/direct-hire" },
+        { name: "Executive Search", path: "/dashboard/placements/add/executive-search" },
+      ]
+    },
   ];
 
   // Don't filter navigation items based on search query - always show all items
@@ -1372,7 +1450,7 @@ export default function DashboardNav() {
                     <button
                       key={item.path}
                       className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                      onClick={() => navigateToAddItem(item.path)}
+                      onClick={() => navigateToAddItem(item)}
                     >
                       <span className="mr-2">{item.icon}</span>
                       {item.name}
@@ -1453,22 +1531,85 @@ export default function DashboardNav() {
 
         {/* Navigation links - always show all items, not filtered by search */}
         <div className="flex-1 min-h-0 overflow-auto">
-          {filteredNavItems.map((item) => (
-            <Link
-              key={item.path}
-              href={item.path}
-              onClick={() => setIsSidebarOpen(false)}
-              className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
-                ? "bg-blue-600 text-white"
-                : "text-gray-300 hover:bg-slate-700"
-                }`}
-            >
-              <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
-                {item.icon}
+          {!isMultipleAddMode ? (
+            filteredNavItems.map((item) => (
+              <Link
+                key={item.path}
+                href={item.path}
+                onClick={() => setIsSidebarOpen(false)}
+                className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-slate-700"
+                  }`}
+              >
+                <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
+                  {item.icon}
+                </div>
+                {item.name}
+              </Link>
+            ))
+          ) : (
+            <>
+              <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                Multiple Add Mode
               </div>
-              {item.name}
-            </Link>
-          ))}
+              {multipleAddNavItems.map((item) => (
+                <div key={item.name}>
+                  {item.isCollapsible ? (
+                    <div>
+                      <button
+                        onClick={() => toggleSection(item.id!)}
+                        className="w-full flex items-center justify-between py-2 px-4 text-gray-300 hover:bg-slate-700"
+                      >
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
+                            {item.icon}
+                          </div>
+                          {item.name}
+                        </div>
+                        {expandedSections[item.id!] ? (
+                          <FiChevronDown size={16} />
+                        ) : (
+                          <FiChevronRight size={16} />
+                        )}
+                      </button>
+                      {expandedSections[item.id!] && (
+                        <div className="bg-slate-900/50">
+                          {item.subItems?.map((subItem) => (
+                            <Link
+                              key={subItem.path}
+                              href={subItem.path}
+                              onClick={() => setIsSidebarOpen(false)}
+                              className={`flex items-center py-2 px-4 pl-12 text-sm ${pathname === subItem.path
+                                ? "text-white bg-blue-600/50"
+                                : "text-gray-400 hover:text-white hover:bg-slate-700"
+                                }`}
+                            >
+                              {subItem.name}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Link
+                      href={item.path!}
+                      onClick={() => setIsSidebarOpen(false)}
+                      className={`flex items-center py-2 px-4 ${pathname === item.path
+                        ? "bg-blue-600 text-white"
+                        : "text-gray-300 hover:bg-slate-700"
+                        }`}
+                    >
+                      <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
+                        {item.icon}
+                      </div>
+                      {item.name}
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         {/* T.B.I Button - Static, always visible */}
