@@ -86,7 +86,21 @@ function SortableFieldRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+      className={`cursor-pointer flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+      onClick={!isOverlay ? onToggle : undefined}
+      role={!isOverlay ? "button" : undefined}
+      tabIndex={!isOverlay ? 0 : -1}
+      onKeyDown={
+        !isOverlay
+          ? (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onToggle();
+            }
+          }
+          : undefined
+      }
+      aria-label={!isOverlay ? `Toggle visibility for ${label}` : undefined}
     >
       {!isOverlay && (
         <button

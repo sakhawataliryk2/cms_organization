@@ -42,6 +42,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import DocumentViewer from "@/components/DocumentViewer";
+import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
+
 
 interface Appointment {
   id: number;
@@ -416,107 +418,6 @@ function OwnerSearchSelect({
   );
 }
 
-function InviteeSearchAdd({
-  jobSeekers,
-  hiringManagers,
-  internalUsers,
-  disabled,
-  onAdd,
-}: {
-  jobSeekers: any[];
-  hiringManagers: any[];
-  internalUsers: { id: number; name: string; email?: string }[];
-  disabled?: boolean;
-  onAdd: (inv: { type: InviteeType; id: number }) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  const options = useMemo(() => {
-    const js = (jobSeekers || []).map((r: any) => {
-      const name =
-        r.full_name ||
-        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
-        `Job Seeker #${r.id}`;
-      const label = `${name}${r.email ? ` (${r.email})` : ""}`;
-      return { type: "job_seeker" as const, id: Number(r.id), label };
-    });
-    const hm = (hiringManagers || []).map((r: any) => {
-      const name =
-        r.full_name ||
-        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
-        `Hiring Manager #${r.id}`;
-      const label = `${name}${r.email ? ` (${r.email})` : ""}`;
-      return { type: "hiring_manager" as const, id: Number(r.id), label };
-    });
-    const iu = (internalUsers || []).map((u) => ({
-      type: "internal" as const,
-      id: Number(u.id),
-      label: `${u.name}${u.email ? ` (${u.email})` : ""}`,
-    }));
-    return [...js, ...hm, ...iu].filter((o) => Number.isFinite(o.id));
-  }, [jobSeekers, hiringManagers, internalUsers]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, search]);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
-  return (
-    <div ref={wrapperRef} className="relative">
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setIsOpen(true);
-        }}
-        onFocus={() => setIsOpen(true)}
-        placeholder="Search and select invitee..."
-        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        disabled={disabled}
-        autoComplete="off"
-      />
-      {isOpen && (
-        <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-gray-500 text-center">
-              No matches.
-            </div>
-          ) : (
-            filtered.map((opt) => (
-              <button
-                key={`${opt.type}-${opt.id}`}
-                type="button"
-                onClick={() => {
-                  onAdd({ type: opt.type, id: opt.id });
-                  setSearch("");
-                  setIsOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
-              >
-                {opt.label}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const PLANNER_PINNED_KEY = "planner";
 
 const Planners = () => {
@@ -600,6 +501,35 @@ const Planners = () => {
   >({});
   const [monthTableCurrentPage, setMonthTableCurrentPage] = useState(1);
   const [monthTableItemsPerPage, setMonthTableItemsPerPage] = useState(10);
+
+  const inviteeOptions = useMemo<StyledSelectOption[]>(() => {
+    const js = (jobSeekers || []).map((r: any) => {
+      const name =
+        r.full_name ||
+        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
+        `Job Seeker #${r.id}`;
+      return {
+        label: `[JS] ${name}${r.email ? ` (${r.email})` : ""}`,
+        value: `job_seeker-${r.id}`,
+      };
+    });
+    const hm = (hiringManagers || []).map((r: any) => {
+      const name =
+        r.full_name ||
+        [r.first_name, r.last_name].filter(Boolean).join(" ") ||
+        `Hiring Manager #${r.id}`;
+      return {
+        label: `[HM] ${name}${r.email ? ` (${r.email})` : ""}`,
+        value: `hiring_manager-${r.id}`,
+      };
+    });
+    const iu = (internalUsers || []).map((u) => ({
+      label: `[User] ${u.name}${u.email ? ` (${u.email})` : ""}`,
+      value: `internal-${u.id}`,
+    }));
+    return [...js, ...hm, ...iu];
+  }, [jobSeekers, hiringManagers, internalUsers]);
+
 
   const searchParams = useSearchParams();
   const [highlightAppointmentId, setHighlightAppointmentId] = useState<
@@ -3376,76 +3306,31 @@ const Planners = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Invite to calendar (emails will receive the invite)
                   </label>
-                  <InviteeSearchAdd
-                    jobSeekers={jobSeekers}
-                    hiringManagers={hiringManagers}
-                    internalUsers={internalUsers}
-                    disabled={isLoadingLookups}
-                    onAdd={(inv) => {
-                      if (invitees.some((i) => i.type === inv.type && i.id === inv.id))
-                        return;
-                      setInvitees((prev) => [...prev, inv]);
+                  <StyledReactSelect
+                    isMulti
+                    options={inviteeOptions}
+                    value={inviteeOptions.filter((opt) =>
+                      invitees.some(
+                        (inv) => `${inv.type}-${inv.id}` === opt.value,
+                      ),
+                    )}
+                    onChange={(selected) => {
+                      const vals = (selected as StyledSelectOption[]).map(
+                        (opt) => {
+                          const [type, id] = opt.value.split("-");
+                          return {
+                            type: type as InviteeType,
+                            id: parseInt(id, 10),
+                          };
+                        },
+                      );
+                      setInvitees(vals);
                     }}
+                    placeholder="Search and select invitees..."
+                    isDisabled={isLoadingLookups}
                   />
-                  {invitees.length > 0 && (
-                    <ul className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                      {invitees.map((inv, idx) => {
-                        let label = "";
-                        if (inv.type === "job_seeker") {
-                          const js = jobSeekers.find(
-                            (j: any) => j.id === inv.id,
-                          );
-                          label =
-                            js?.full_name ||
-                            [js?.first_name, js?.last_name]
-                              .filter(Boolean)
-                              .join(" ") ||
-                            `Job Seeker #${inv.id}`;
-                        } else if (inv.type === "hiring_manager") {
-                          const hm = hiringManagers.find(
-                            (h: any) => h.id === inv.id,
-                          );
-                          label =
-                            hm?.full_name ||
-                            [hm?.first_name, hm?.last_name]
-                              .filter(Boolean)
-                              .join(" ") ||
-                            `Hiring Manager #${inv.id}`;
-                        } else {
-                          const u = internalUsers.find(
-                            (u) => u.id === inv.id,
-                          );
-                          label = u?.name || `User #${inv.id}`;
-                        }
-                        return (
-                          <li
-                            key={`${inv.type}-${inv.id}-${idx}`}
-                            className="flex items-center justify-between text-sm bg-gray-50 rounded px-2 py-1.5"
-                          >
-                            <span className="text-gray-800 truncate">
-                              {label}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setInvitees((prev) =>
-                                  prev.filter(
-                                    (i) =>
-                                      !(i.type === inv.type && i.id === inv.id),
-                                  ),
-                                )
-                              }
-                              className="text-red-600 hover:text-red-800 ml-2 shrink-0"
-                              aria-label="Remove invitee"
-                            >
-                              <FiX size={14} />
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
                 </div>
+
               </div>
             </div>
 

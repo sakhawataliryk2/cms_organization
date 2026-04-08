@@ -669,17 +669,30 @@ export default function FieldValueRenderer({
     str.toLowerCase().includes("https://") ||
     str.toLowerCase().startsWith("http") ||
     str.toLowerCase().startsWith("https");
+
   if (isUrl) {
     const href = str.startsWith("http") ? str : `https://${str}`;
+
+    // Extract domain name for display
+    let displayText = href;
+    try {
+      const urlObj = new URL(href);
+      displayText = urlObj.hostname.replace(/^www\./, ""); // remove www if present
+    } catch (err) {
+      // fallback if URL parsing fails
+      displayText = href;
+    }
+
     return (
       <a
         href={href}
+        title={href}
         target="_blank"
         rel="noopener noreferrer"
         className={`text-blue-600 hover:underline ${className}`}
         onClick={handleClick}
       >
-        {str}
+        {displayText}
       </a>
     );
   }
