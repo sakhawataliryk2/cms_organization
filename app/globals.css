@@ -92,6 +92,16 @@ body {
   margin-right: 0;
 }
 
+.sd-tab-label.tbi-tab {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.sd-tab-label.tbi-tab:hover {
+  background-color: #15803d;
+  color: #ffffff;
+}
+
 .sd-tab-label.is-pinned {
   /* Default background for pinned tabs - same as regular tabs */
   background-color: rgb(29 41 61);

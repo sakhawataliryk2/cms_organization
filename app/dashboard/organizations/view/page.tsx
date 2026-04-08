@@ -65,6 +65,7 @@ import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
+import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -92,8 +93,40 @@ const ORG_PANEL_TITLES: Record<string, string> = {
   openTasks: "Open Tasks:",
 };
 
+const CLIENT_VISIT_FILTER_KEY = "Client Visits";
+const HIRING_MANAGER_CUSTOM_FIELD_ENTITY = "hiring-managers";
+const JOBS_CUSTOM_FIELD_ENTITY = "jobs";
+
 // Storage for Organization Contact Info panel – field list comes from admin (custom field definitions)
 const CONTACT_INFO_STORAGE_KEY = "organizationContactInfoFields";
+const REQUIRED_HM_CONTACT_FIELD_NAMES = [
+  "Field_1",
+  "Field_4",
+  "Field_7",
+  "Field_10",
+  "Field_69",
+  "Field_70",
+] as const;
+const REQUIRED_JOB_FIELD_NAMES = [
+  "Field_1",
+  "Field_10",
+  "Field_4",
+  "Field_69",
+  "Field_70",
+] as const;
+const JOB_FULL_ADDRESS_FIELD_NAMES = [
+  "Field_12",
+  "Field_13",
+  "Field_14",
+  "Field_15",
+  "Field_17",
+] as const;
+
+const isClientVisitAction = (action?: string) => {
+  const normalized = (action || "").toLowerCase();
+  if (!normalized.trim()) return false;
+  return normalized.includes("client") && normalized.includes("visit");
+};
 
 // Sortable Panel Component with drag handle
 function SortablePanel({
@@ -237,7 +270,7 @@ function SortableColumnHeader({
         </button>
 
         {/* Column Label */}
-        <span className="flex-1">{label}</span>
+        <span className="flex-1 whitespace-nowrap">{label}</span>
 
         {/* Sort Control */}
         <button
@@ -378,7 +411,12 @@ export default function OrganizationView() {
     let out = [...notes];
 
     if (noteActionFilter) {
-      out = out.filter((n) => (n.action || "") === noteActionFilter);
+      out = out.filter((n) => {
+        if (isClientVisitAction(noteActionFilter)) {
+          return isClientVisitAction(n.action || "");
+        }
+        return (n.action || "") === noteActionFilter;
+      });
     }
     if (noteAuthorFilter) {
       out = out.filter(
@@ -533,11 +571,52 @@ export default function OrganizationView() {
   );
 
   // Contacts tab: sortable/filterable column state
-  const CONTACT_DEFAULT_COLUMNS = ["name", "title", "email", "phone", "jobs", "status"];
+  const CONTACT_DEFAULT_COLUMNS = [...REQUIRED_HM_CONTACT_FIELD_NAMES];
   const [contactColumnFields, setContactColumnFields] = useState<string[]>(CONTACT_DEFAULT_COLUMNS);
   const [contactColumnSorts, setContactColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [contactColumnFilters, setContactColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [contactSearchTerm, setContactSearchTerm] = useState("");
+  const [hiringManagerFieldLabels, setHiringManagerFieldLabels] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const labelEntries = await Promise.all(
+        REQUIRED_HM_CONTACT_FIELD_NAMES.map(async (fieldName) => {
+          const label = await getCustomFieldLabel(HIRING_MANAGER_CUSTOM_FIELD_ENTITY, fieldName);
+          return [fieldName, label || fieldName] as const;
+        })
+      );
+      if (!cancelled) {
+        setHiringManagerFieldLabels(Object.fromEntries(labelEntries));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const allJobFieldNames = [
+        ...REQUIRED_JOB_FIELD_NAMES,
+        ...JOB_FULL_ADDRESS_FIELD_NAMES,
+      ];
+      const labelEntries = await Promise.all(
+        allJobFieldNames.map(async (fieldName) => {
+          const label = await getCustomFieldLabel(JOBS_CUSTOM_FIELD_ENTITY, fieldName);
+          return [fieldName, label || fieldName] as const;
+        })
+      );
+      if (!cancelled) {
+        setJobFieldLabels(Object.fromEntries(labelEntries));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Tasks state
   const [tasks, setTasks] = useState<Array<any>>([]);
@@ -548,6 +627,7 @@ export default function OrganizationView() {
   const [jobs, setJobs] = useState<Array<any>>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [jobFieldLabels, setJobFieldLabels] = useState<Record<string, string>>({});
 
   // Website metadata state
   const [websiteMetadata, setWebsiteMetadata] = useState<{
@@ -625,10 +705,7 @@ export default function OrganizationView() {
 
   // Derived counts on the frontend so pills always match visible data
   const clientVisitNoteCount = useMemo(
-    () =>
-      notes.filter((n) =>
-        (n.action || "").toLowerCase().includes("client visit")
-      ).length,
+    () => notes.filter((n) => isClientVisitAction(n.action || "")).length,
     [notes]
   );
   const organizationJobsCount = useMemo(() => jobs.length, [jobs]);
@@ -2059,13 +2136,13 @@ export default function OrganizationView() {
 
   // Contacts (Hiring Managers) columns catalog and helpers
   const contactColumnsCatalog = useMemo(() => [
-    { key: "name", label: "Name", sortable: true, filterType: "text" as const },
-    { key: "title", label: "Title", sortable: true, filterType: "text" as const },
-    { key: "email", label: "Email", sortable: true, filterType: "text" as const },
-    { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
-    { key: "jobs", label: "Jobs", sortable: true, filterType: "number" as const },
-    { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-  ], []);
+    ...REQUIRED_HM_CONTACT_FIELD_NAMES.map((fieldName) => ({
+      key: fieldName,
+      label: hiringManagerFieldLabels[fieldName] || fieldName,
+      sortable: true,
+      filterType: "text" as const,
+    })),
+  ], [hiringManagerFieldLabels]);
 
   const getContactColumnLabel = (key: string) =>
     contactColumnsCatalog.find((c) => c.key === key)?.label || key;
@@ -2074,6 +2151,41 @@ export default function OrganizationView() {
     contactColumnsCatalog.find((c) => c.key === key);
 
   const getContactColumnValue = (hm: any, key: string) => {
+    const parseCustomFields = (customFields: unknown): Record<string, any> => {
+      if (!customFields) return {};
+      if (typeof customFields === "string") {
+        try {
+          const parsed = JSON.parse(customFields);
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+      return typeof customFields === "object" ? (customFields as Record<string, any>) : {};
+    };
+
+    const getCustomFieldValue = (fieldName: string) => {
+      const customFields = parseCustomFields(hm?.custom_fields ?? hm?.customFields);
+      const resolvedLabel = hiringManagerFieldLabels[fieldName] || fieldName;
+      const exactByLabel = customFields?.[resolvedLabel];
+      if (exactByLabel != null && String(exactByLabel).trim() !== "") {
+        return exactByLabel;
+      }
+      const exactByName = customFields?.[fieldName];
+      if (exactByName != null && String(exactByName).trim() !== "") {
+        return exactByName;
+      }
+      const labelLower = resolvedLabel.toLowerCase();
+      const nameLower = fieldName.toLowerCase();
+      for (const [k, v] of Object.entries(customFields)) {
+        const keyLower = String(k || "").toLowerCase();
+        if ((keyLower === labelLower || keyLower === nameLower) && v != null && String(v).trim() !== "") {
+          return v;
+        }
+      }
+      return "—";
+    };
+
     switch (key) {
       case "name":
         return hm.full_name || `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || "—";
@@ -2088,8 +2200,50 @@ export default function OrganizationView() {
       case "status":
         return hm.status || "Active";
       default:
+        if (REQUIRED_HM_CONTACT_FIELD_NAMES.includes(key as typeof REQUIRED_HM_CONTACT_FIELD_NAMES[number])) {
+          return getCustomFieldValue(key);
+        }
         return "—";
     }
+  };
+
+  const parseJobCustomFields = (customFields: unknown): Record<string, any> => {
+    if (!customFields) return {};
+    if (typeof customFields === "string") {
+      try {
+        const parsed = JSON.parse(customFields);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return typeof customFields === "object" ? (customFields as Record<string, any>) : {};
+  };
+
+  const getJobCustomFieldValue = (job: any, fieldName: string) => {
+    const customFields = parseJobCustomFields(job?.custom_fields ?? job?.customFields);
+    const resolvedLabel = jobFieldLabels[fieldName] || fieldName;
+    const byLabel = customFields?.[resolvedLabel];
+    if (byLabel != null && String(byLabel).trim() !== "") return byLabel;
+    const byName = customFields?.[fieldName];
+    if (byName != null && String(byName).trim() !== "") return byName;
+
+    const labelLower = resolvedLabel.toLowerCase();
+    const nameLower = fieldName.toLowerCase();
+    for (const [k, v] of Object.entries(customFields)) {
+      const keyLower = String(k || "").toLowerCase();
+      if ((keyLower === labelLower || keyLower === nameLower) && v != null && String(v).trim() !== "") {
+        return v;
+      }
+    }
+    return "—";
+  };
+
+  const getJobFullAddressValue = (job: any) => {
+    const parts = JOB_FULL_ADDRESS_FIELD_NAMES.map((fieldName) =>
+      String(getJobCustomFieldValue(job, fieldName) ?? "").trim()
+    ).filter((v) => v && v !== "—");
+    return parts.length ? parts.join(", ") : "—";
   };
 
   const contactStatusOptions = useMemo(() => {
@@ -2128,13 +2282,6 @@ export default function OrganizationView() {
         let value = getContactColumnValue(hm, columnKey);
         const valueStr = String(value).toLowerCase();
         const filterStr = String(filterValue).toLowerCase();
-        const columnInfo = getContactColumnInfo(columnKey);
-        if (columnInfo?.filterType === "select") {
-          return valueStr === filterStr;
-        }
-        if (columnInfo?.filterType === "number") {
-          return String(value) === String(filterValue);
-        }
         return valueStr.includes(filterStr);
       });
     });
@@ -4735,11 +4882,11 @@ export default function OrganizationView() {
   ];
 
   const quickActions = [
-    { id: "client-visit", label: "Client Visit" },
+    { id: "client-visit", label: "Client Visits" },
     { id: "jobs", label: "Jobs" },
-    { id: "submissions", label: "Submissions" },
-    { id: "client-submissions", label: "Client Submissions" },
-    { id: "interviews", label: "Interviews" },
+    // { id: "submissions", label: "Submissions" },
+    // { id: "client-submissions", label: "Client Submissions" },
+    // { id: "interviews", label: "Interviews" },
     { id: "placements", label: "Placements" },
   ];
 
@@ -4840,7 +4987,7 @@ export default function OrganizationView() {
               className="p-2 border border-gray-300 rounded text-sm"
             >
               <option value="">All Actions</option>
-              {actionFields.map((af) => (
+              {[...actionFields].map((af) => (
                 <option
                   key={af.id || af.field_name || af.field_label}
                   value={af.field_name || af.field_label}
@@ -4848,6 +4995,7 @@ export default function OrganizationView() {
                   {af.field_label || af.field_name}
                 </option>
               ))}
+              <option value={CLIENT_VISIT_FILTER_KEY}>{CLIENT_VISIT_FILTER_KEY}</option>
             </select>
           </div>
 
@@ -5475,7 +5623,7 @@ export default function OrganizationView() {
                         String(count)
                       );
                     }
-                    setNoteActionFilter("Client Visit");
+                    setNoteActionFilter(CLIENT_VISIT_FILTER_KEY);
                     setActiveTab("notes");
                   }}
                 >
@@ -5806,7 +5954,7 @@ export default function OrganizationView() {
                       <table className="w-full border-collapse">
                         <thead>
                           <tr className="bg-gray-100 border-b">
-                            <th className="text-left px-6 py-3 font-medium">Actions</th>
+                            <th className="text-left px-6 py-3  font-medium">Actions</th>
                             <SortableContext
                               items={contactColumnFields}
                               strategy={horizontalListSortingStrategy}
@@ -5853,7 +6001,21 @@ export default function OrganizationView() {
                               </td>
                               {contactColumnFields.map((key) => (
                                 <td key={key} className="px-6 py-3">
-                                  {key === "name" ? (
+                                  {REQUIRED_HM_CONTACT_FIELD_NAMES.includes(
+                                    key as typeof REQUIRED_HM_CONTACT_FIELD_NAMES[number]
+                                  ) ? (
+                                    <FieldValueRenderer
+                                      value={getContactColumnValue(hm, key)}
+                                      fieldInfo={{
+                                        key,
+                                        name: key,
+                                        label: hiringManagerFieldLabels[key] || key,
+                                        fieldType: key === "Field_69" ? "lookup" : undefined,
+                                        lookupType: key === "Field_69" ? "owner" : undefined,
+                                      }}
+                                      entityType={HIRING_MANAGER_CUSTOM_FIELD_ENTITY}
+                                    />
+                                  ) : key === "name" ? (
                                     <button
                                       onClick={() =>
                                         router.push(
@@ -6333,60 +6495,83 @@ export default function OrganizationView() {
               </div>
             ) : jobsError ? (
               <div className="text-red-500 py-2">{jobsError}</div>
-            ) : jobs.length > 0 ? (
+            ) : filteredJobs.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-100 border-b">
-                      <th className="text-left p-3 font-medium">Job Title</th>
-                      <th className="text-left p-3 font-medium">Category</th>
-                      <th className="text-left p-3 font-medium">Status</th>
-                      <th className="text-left p-3 font-medium">Location</th>
-                      <th className="text-left p-3 font-medium">
-                        Employment Type
-                      </th>
                       <th className="text-left p-3 font-medium">Actions</th>
+                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_1"] || "Field_1"}</th>
+                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_10"] || "Field_10"}</th>
+                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_4"] || "Field_4"}</th>
+                      <th className="text-left p-3 font-medium">Full Address</th>
+                      <th className="text-left p-3 font-medium">Employment Type</th>
+                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_69"] || "Field_69"}</th>
+                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_70"] || "Field_70"}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {jobs.map((job: any) => (
+                    {filteredJobs.map((job: any) => (
                       <tr key={job.id} className="border-b hover:bg-gray-50">
                         <td className="p-3">
-                          <button
-                            onClick={() =>
-                              router.push(`/dashboard/jobs/view?id=${job.id}`)
-                            }
-                            className="text-blue-600 hover:underline font-medium"
-                          >
-                            {job.job_title || "Untitled Job"}
-                          </button>
+                          <ActionDropdown
+                            label="Actions"
+                            options={[
+                              {
+                                label: "View",
+                                action: () => router.push(`/dashboard/jobs/view?id=${job.id}`),
+                              },
+                            ]}
+                          />
                         </td>
-                        <td className="p-3">{job.category || "-"}</td>
                         <td className="p-3">
-                          <span
-                            className={`px-2 py-1 rounded text-xs ${job.status === "Open"
-                              ? "bg-green-100 text-green-800"
-                              : job.status === "On Hold"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : job.status === "Filled"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-gray-100 text-gray-800"
-                              }`}
-                          >
-                            {job.status || "Open"}
-                          </span>
+                          <FieldValueRenderer
+                            value={getJobCustomFieldValue(job, "Field_1")}
+                            fieldInfo={{ key: "Field_1", name: "Field_1", label: jobFieldLabels["Field_1"] || "Field_1" }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
                         </td>
-                        <td className="p-3">{job.worksite_location || "-"}</td>
-                        <td className="p-3">{job.employment_type || "-"}</td>
                         <td className="p-3">
-                          <button
-                            onClick={() =>
-                              router.push(`/dashboard/jobs/view?id=${job.id}`)
-                            }
-                            className="text-blue-500 hover:text-blue-700 text-sm"
-                          >
-                            View
-                          </button>
+                          <FieldValueRenderer
+                            value={getJobCustomFieldValue(job, "Field_10")}
+                            fieldInfo={{ key: "Field_10", name: "Field_10", label: jobFieldLabels["Field_10"] || "Field_10" }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <FieldValueRenderer
+                            value={getJobCustomFieldValue(job, "Field_4")}
+                            fieldInfo={{ key: "Field_4", name: "Field_4", label: jobFieldLabels["Field_4"] || "Field_4" }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <FieldValueRenderer
+                            value={getJobFullAddressValue(job)}
+                            fieldInfo={{ key: "full_address", name: "full_address", label: "Full Address" }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
+                        </td>
+                        <td className="p-3">{job.employment_type || "—"}</td>
+                        <td className="p-3">
+                          <FieldValueRenderer
+                            value={getJobCustomFieldValue(job, "Field_69")}
+                            fieldInfo={{
+                              key: "Field_69",
+                              name: "Field_69",
+                              label: jobFieldLabels["Field_69"] || "Field_69",
+                              fieldType: "lookup",
+                              lookupType: "owner",
+                            }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
+                        </td>
+                        <td className="p-3">
+                          <FieldValueRenderer
+                            value={getJobCustomFieldValue(job, "Field_70")}
+                            fieldInfo={{ key: "Field_70", name: "Field_70", label: jobFieldLabels["Field_70"] || "Field_70" }}
+                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                          />
                         </td>
                       </tr>
                     ))}

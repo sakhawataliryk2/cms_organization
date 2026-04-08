@@ -376,37 +376,6 @@ export default function FieldValueRenderer({
 
   let raw = rawOriginal;
 
-  // Field_6 = job description (HTML / rich text); summary grid uses icon + modal like tasks long text
-  const isJobsEntity =
-    entityType != null &&
-    ["job", "jobs", "jobs-direct-hire", "jobs-executive-search"].includes(
-      entityType.trim().toLowerCase()
-    );
-  if (fieldName === "field_6" && isJobsEntity) {
-    return (
-      <>
-        <Tooltip text="Click to view description">
-          <button
-            type="button"
-            onClick={(e) => {
-              if (stopPropagation) e.stopPropagation();
-              setIsDescriptionModalOpen(true);
-            }}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors text-blue-600"
-          >
-            <FileText className="w-5 h-5" />
-          </button>
-        </Tooltip>
-        <DescriptionModal
-          isOpen={isDescriptionModalOpen}
-          onClose={() => setIsDescriptionModalOpen(false)}
-          content={rawOriginal}
-          title={fieldInfo?.label || "Job Description"}
-        />
-      </>
-    );
-  }
-
   // Full Address fallback: if this is a Full Address field but its own value is empty/placeholder,
   // try to auto-combine Address, Address 2, City, State, Zip from the full values record.
   let autoCombinedAddress: string | null = null;
@@ -558,6 +527,7 @@ export default function FieldValueRenderer({
 
   const isEmpty = raw === "";
   const str = isEmpty ? emptyPlaceholder : raw;
+  const rawTextLength = String(rawOriginal ?? "").trim().length;
 
   const isStatus =
     forceRenderAsStatus ||
@@ -580,6 +550,43 @@ export default function FieldValueRenderer({
       );
     }
     return <span className={className}>{str}</span>;
+  }
+
+  
+  // URL / link
+  const isUrl =
+    fieldType === "url" ||
+    fieldType === "link" ||
+    str.toLowerCase().includes("http://") ||
+    str.toLowerCase().includes("https://") ||
+    str.toLowerCase().startsWith("http") ||
+    str.toLowerCase().startsWith("https") ||
+    str.toLowerCase().startsWith("www.");
+
+  // Universal long-text behavior: show icon + modal for values longer than 100 chars
+  if (!isUrl && rawTextLength > 100) {
+    return (
+      <>
+        <Tooltip text="Click to view full content">
+          <button
+            type="button"
+            onClick={(e) => {
+              if (stopPropagation) e.stopPropagation();
+              setIsDescriptionModalOpen(true);
+            }}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors text-blue-600"
+          >
+            <FileText className="w-5 h-5" />
+          </button>
+        </Tooltip>
+        <DescriptionModal
+          isOpen={isDescriptionModalOpen}
+          onClose={() => setIsDescriptionModalOpen(false)}
+          content={rawOriginal}
+          title={fieldInfo?.label || "Details"}
+        />
+      </>
+    );
   }
 
   // Lookup fields
@@ -661,14 +668,6 @@ export default function FieldValueRenderer({
     );
   }
 
-  // URL / link
-  const isUrl =
-    fieldType === "url" ||
-    fieldType === "link" ||
-    str.toLowerCase().includes("http://") ||
-    str.toLowerCase().includes("https://") ||
-    str.toLowerCase().startsWith("http") ||
-    str.toLowerCase().startsWith("https");
 
   if (isUrl) {
     const href = str.startsWith("http") ? str : `https://${str}`;

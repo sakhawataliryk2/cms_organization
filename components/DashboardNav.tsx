@@ -967,7 +967,7 @@ export default function DashboardNav() {
                     <button
                       key="tbi"
                       type="button"
-                      className={`sd-tab-label ${isActive ? "is-active" : "hover:bg-slate-200"} transition-colors`}
+                      className={`sd-tab-label tbi-tab ${isActive ? "is-active" : ""} transition-colors`}
                       style={
                         isActive
                           ? ({
