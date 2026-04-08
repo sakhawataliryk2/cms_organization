@@ -199,7 +199,7 @@ export default function DashboardNav() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
-  const { isMultipleAddMode, setMultipleAddMode } = useMultipleAdd();
+  const { isMultipleAddMode, setMultipleAddMode, toggleMultipleAddMode } = useMultipleAdd();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     jobs: false,
     placements: false,
@@ -291,12 +291,12 @@ export default function DashboardNav() {
       icon: <FiDollarSign size={16} />,
     },
     {
-      name: "Multiple Add",
+      name: `${!isMultipleAddMode ? "Add Multiple" : "Close Multiple Add"}`,
       path: "#multiple-add",
-      icon: <FiLayers size={16} />,
+      icon: !isMultipleAddMode ? <FiLayers size={16} /> : <FiX size={16} />,
       isSpecial: true,
       onClick: () => {
-        setMultipleAddMode(true);
+        toggleMultipleAddMode();
         setIsAddMenuOpen(false);
       }
     },
