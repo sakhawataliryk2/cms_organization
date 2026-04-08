@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -62,6 +62,8 @@ type JobsFavorite = {
   advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
+
+const PAGE_SIZE_OPTIONS = [50, 100, 150, 200] as const;
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -303,6 +305,7 @@ export default function JobList() {
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
     AdvancedSearchCriterion[]
   >([]);
@@ -311,8 +314,15 @@ export default function JobList() {
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isPageLoading, setIsPageLoading] = useState<boolean>(false);
+  const [totalJobsCount, setTotalJobsCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const latestRequestIdRef = useRef(0);
 
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -496,7 +506,9 @@ export default function JobList() {
       nextSorts[k] = v;
     }
 
-    setSearchTerm(fav.searchTerm || "");
+    const nextSearch = fav.searchTerm || "";
+    setSearchInput(nextSearch);
+    setSearchTerm(nextSearch);
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
@@ -525,7 +537,7 @@ export default function JobList() {
     const next: JobsFavorite = {
       id,
       name: trimmed,
-      searchTerm,
+      searchTerm: searchInput,
       columnFilters,
       columnSorts,
       columnFields,
@@ -541,6 +553,7 @@ export default function JobList() {
   };
 
   const handleClearAllFilters = () => {
+    setSearchInput("");
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
@@ -548,41 +561,120 @@ export default function JobList() {
     setSelectedFavoriteId("");
   };
 
-  // Fetch jobs data when component mounts
+  // Debounce keystrokes so heavy filtering is not recalculated on each key press
   useEffect(() => {
-    fetchJobs();
-  }, []);
+    const timer = setTimeout(() => {
+      setSearchTerm(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const fetchJobs = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/jobs", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+  const fetchJobs = useCallback(
+    async (page: number) => {
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch jobs");
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
+        setError(null);
+      } else {
+        setIsPageLoading(true);
       }
 
-      const data = await response.json();
-      console.log("Jobs data:", data);
-      setJobs(data.jobs || []);
-    } catch (err) {
-      console.error("Error fetching jobs:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching jobs"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      try {
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(pageSize),
+        });
+        if (searchTerm.trim() !== "") {
+          query.set("search", searchTerm.trim());
+        }
+
+        const response = await fetch(`/api/jobs?${query.toString()}`, {
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch jobs");
+        }
+
+        const data = await response.json();
+        if (requestId !== latestRequestIdRef.current) {
+          return;
+        }
+        const incomingJobs: Job[] = Array.isArray(data?.jobs) ? data.jobs : [];
+        const total =
+          typeof data?.total === "number"
+            ? data.total
+            : typeof data?.count === "number"
+              ? data.count
+              : typeof data?.pagination?.total === "number"
+                ? data.pagination.total
+                : null;
+
+        setTotalJobsCount(total);
+        if (total == null && incomingJobs.length > pageSize * 2) {
+          console.warn("Jobs API did not return total and appears unpaginated.");
+        }
+
+        // Fallback: some backends ignore page/limit and return the full dataset.
+        // Enforce page-size rendering on the client so each page shows exact rows.
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const pageJobs =
+          incomingJobs.length > pageSize
+            ? incomingJobs.slice(start, end)
+            : incomingJobs;
+
+        setJobs(pageJobs);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
+        console.error("Error fetching jobs:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching jobs"
+        );
+      } finally {
+        if (requestId !== latestRequestIdRef.current) {
+          return;
+        }
+        hasLoadedOnceRef.current = true;
+        setIsLoading(false);
+        setIsPageLoading(false);
+      }
+    },
+    [pageSize, searchTerm]
+  );
+
+  // Fetch page whenever page number or size changes
+  useEffect(() => {
+    void fetchJobs(currentPage);
+  }, [currentPage, fetchJobs]);
+
+  useEffect(() => {
+    return () => {
+      activeFetchControllerRef.current?.abort();
+    };
+  }, []);
+
+  // Reset to first page whenever client-side filters/search criteria change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -757,6 +849,15 @@ export default function JobList() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [jobs, statusField]);
 
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const shouldApplyClientGlobalSearch = totalJobsCount == null;
+  const totalPages =
+    totalJobsCount != null ? Math.max(1, Math.ceil(totalJobsCount / pageSize)) : null;
+  const canGoPrev = currentPage > 1 && !isPageLoading;
+  const canGoNext =
+    (totalPages != null ? currentPage < totalPages : jobs.length === pageSize) &&
+    !isPageLoading;
+
   const filteredAndSortedJobs = useMemo(() => {
     // Exclude archived jobs from main listing (same as Organization)
     let result = jobs.filter((job) => job.status !== "Archived" && !job.archived_at);
@@ -778,8 +879,8 @@ export default function JobList() {
     }
 
     // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
+    if (shouldApplyClientGlobalSearch && deferredSearchTerm.trim() !== "") {
+      const term = deferredSearchTerm.toLowerCase();
       result = result.filter((job) => {
         const idMatch =
           String(job.id || "").toLowerCase().includes(term) ||
@@ -847,7 +948,7 @@ export default function JobList() {
     }
 
     return result;
-  }, [jobs, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
+  }, [jobs, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1085,7 +1186,7 @@ export default function JobList() {
   };
 
   const handleIndividualActionSuccess = () => {
-    fetchJobs();
+    void fetchJobs(currentPage);
     setSelectedJobId(null);
     setShowOwnershipModal(false);
     setShowStatusModal(false);
@@ -1385,7 +1486,8 @@ export default function JobList() {
         errors: allErrors,
       });
       if (totalCreated > 0) {
-        fetchJobs();
+        setCurrentPage(1);
+        void fetchJobs(1);
         toast.success(`Imported ${totalCreated} job(s).`);
       }
       if (totalFailed > 0) toast.error(`${totalFailed} job(s) failed to import.`);
@@ -1430,8 +1532,8 @@ export default function JobList() {
                   type="text"
                   placeholder="Search jobs..."
                   className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1459,7 +1561,7 @@ export default function JobList() {
               >
                 <IoFilterSharp /> Filter
               </button>
-              {(searchTerm ||
+              {(searchInput ||
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
@@ -1533,7 +1635,7 @@ export default function JobList() {
               entityIds={selectedJobs}
               availableFields={availableFields}
               onSuccess={() => {
-                fetchJobs();
+                void fetchJobs(currentPage);
                 setSelectedJobs([]);
                 setSelectAll(false);
               }}
@@ -1584,7 +1686,7 @@ export default function JobList() {
               entityIds={selectedJobs}
               availableFields={availableFields}
               onSuccess={() => {
-                fetchJobs();
+                void fetchJobs(currentPage);
                 setSelectedJobs([]);
                 setSelectAll(false);
               }}
@@ -1777,8 +1879,7 @@ export default function JobList() {
                               clickable
                               stopPropagation
                               className=""
-                              entityType="jobs"
-                              recordId={job.id}
+                              // entityType="jobs"
                             />
                           </td>
                         );
@@ -1803,69 +1904,76 @@ export default function JobList() {
         </div>
 
         {/* Pagination */}
-        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+        <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
+          <div>
+            <p className="text-sm text-gray-700">
+              Showing{" "}
+              <span className="font-medium">
+                {totalJobsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium">
+                {(currentPage - 1) * pageSize + jobs.length}
+              </span>{" "}
+              of{" "}
+              {totalJobsCount != null ? (
+                <span className="font-medium">{totalJobsCount}</span>
+              ) : (
+                <span className="font-medium">{jobs.length}</span>
+              )}{" "}
+              jobs
+              {filteredAndSortedJobs.length !== jobs.length ? (
+                <>
+                  {" "}(
+                  <span className="font-medium">{filteredAndSortedJobs.length}</span> shown
+                  after filters)
+                </>
+              ) : null}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="jobs-page-size" className="text-sm text-gray-600">
+              Rows per page
+            </label>
+            <select
+              id="jobs-page-size"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+                setSelectedJobs([]);
+                setSelectAll(false);
+              }}
+              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={!canGoPrev}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
               Previous
             </button>
-            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            <span className="text-sm text-gray-600 min-w-[90px] text-center">
+              Page {currentPage}
+              {totalPages != null ? ` of ${totalPages}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => canGoNext && setCurrentPage((p) => p + 1)}
+              disabled={!canGoNext}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
               Next
             </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-                of{" "}
-                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-                results
-              </p>
-            </div>
-            {filteredAndSortedJobs.length > 0 && (
-              <div>
-                <nav
-                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                  aria-label="Pagination"
-                >
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Previous</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    1
-                  </button>
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Next</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                </nav>
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -699,27 +699,35 @@ export default function AddNoteModal({
             }));
 
             // Create note on the primary record first
+            const primaryNoteBody = {
+                text: noteForm.text,
+                action: noteForm.action,
+                about: aboutData,
+                copy_note: noteForm.copyNote === 'Yes',
+                replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                additional_references: noteForm.additionalReferences,
+                schedule_next_action: noteForm.scheduleNextAction,
+                email_notification: noteForm.emailNotification
+            };
+
             const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    text: noteForm.text,
-                    action: noteForm.action,
-                    about: aboutData,
-                    copy_note: noteForm.copyNote === 'Yes',
-                    replace_general_contact_comments: noteForm.replaceGeneralContactComments,
-                    additional_references: noteForm.additionalReferences,
-                    schedule_next_action: noteForm.scheduleNextAction,
-                    email_notification: noteForm.emailNotification
-                })
+                body: JSON.stringify(primaryNoteBody)
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to add note');
+                let errorMessage = 'Failed to add note';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorMessage;
+                } catch (parseErr) {
+                    console.error('AddNoteModal: Failed to parse error response', parseErr);
+                }
+                throw new Error(errorMessage);
             }
 
             // Best-effort: also add this note to each referenced record (About + Additional References)
@@ -764,10 +772,11 @@ export default function AddNoteModal({
                     if (!refApiPath) continue;
 
                     try {
-                        await fetch(`/api/${refApiPath}/${ref.id}/notes`, {
+                        const propResponse = await fetch(`/api/${refApiPath}/${ref.id}/notes`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
                             },
                             body: JSON.stringify({
                                 text: noteForm.text,
@@ -781,18 +790,32 @@ export default function AddNoteModal({
                                 email_notification: noteForm.emailNotification,
                             }),
                         });
+                        
+                        if (!propResponse.ok) {
+                            const errorData = await propResponse.json().catch(() => ({}));
+                            console.warn(`Note propagation failed for ${ref.type} ${ref.id}:`, errorData.message || propResponse.statusText);
+                        }
                     } catch (propErr) {
                         console.error('Error propagating note to reference:', propErr);
                     }
                 }
             }
 
-            const data = await response.json();
             toast.success('Note added successfully');
             onSuccess?.();
             onClose();
         } catch (err) {
-            console.error('Error adding note:', err);
+            console.error('AddNoteModal: handleSubmit error details:', {
+                error: err,
+                message: err instanceof Error ? err.message : 'Unknown error',
+                stack: err instanceof Error ? err.stack : 'No stack',
+                entityType,
+                entityId,
+                noteForm: {
+                    ...noteForm,
+                    text: noteForm.text.substring(0, 50) + '...'
+                }
+            });
             toast.error(err instanceof Error ? err.message : 'An error occurred while adding the note');
         } finally {
             setIsLoading(false);
