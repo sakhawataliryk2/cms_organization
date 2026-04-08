@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2 } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2, FiMonitor } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -94,6 +94,7 @@ export default function Dashboard() {
     const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
     const [editMessageText, setEditMessageText] = useState('');
     const [isUpdatingMessage, setIsUpdatingMessage] = useState(false);
+    const [isRefreshingDashboard, setIsRefreshingDashboard] = useState(false);
 
     // Activity Report (Goals & Quotas) - scoped to logged-in user + selected date range
     const toISODateInput = (d: Date) => d.toISOString().slice(0, 10);
@@ -379,47 +380,47 @@ export default function Dashboard() {
     const getCalendarData = () => {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
-        
+
         // First day of the month
         const firstDay = new Date(year, month, 1);
         const firstDayOfWeek = firstDay.getDay();
-        
+
         // Last day of the month
         const lastDay = new Date(year, month + 1, 0);
         const daysInMonth = lastDay.getDate();
-        
+
         // Days from previous month to show
         const daysFromPrevMonth = firstDayOfWeek;
         const prevMonth = new Date(year, month, 0);
         const daysInPrevMonth = prevMonth.getDate();
-        
+
         const calendarDays: Array<{ day: number; isCurrentMonth: boolean; date: Date }> = [];
-        
+
         // Add days from previous month
         for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
             const date = new Date(year, month - 1, daysInPrevMonth - i);
             calendarDays.push({ day: daysInPrevMonth - i, isCurrentMonth: false, date });
         }
-        
+
         // Add days from current month
         for (let day = 1; day <= daysInMonth; day++) {
             const date = new Date(year, month, day);
             calendarDays.push({ day, isCurrentMonth: true, date });
         }
-        
+
         // Add days from next month to fill the grid
         const remainingDays = 42 - calendarDays.length; // 6 weeks * 7 days
         for (let day = 1; day <= remainingDays; day++) {
             const date = new Date(year, month + 1, day);
             calendarDays.push({ day, isCurrentMonth: false, date });
         }
-        
+
         // Group into weeks
         const weeks: Array<Array<{ day: number; isCurrentMonth: boolean; date: Date }>> = [];
         for (let i = 0; i < calendarDays.length; i += 7) {
             weeks.push(calendarDays.slice(i, i + 7));
         }
-        
+
         return weeks;
     };
 
@@ -447,16 +448,16 @@ export default function Dashboard() {
     const isToday = (date: Date) => {
         const today = new Date();
         return date.getDate() === today.getDate() &&
-               date.getMonth() === today.getMonth() &&
-               date.getFullYear() === today.getFullYear();
+            date.getMonth() === today.getMonth() &&
+            date.getFullYear() === today.getFullYear();
     };
 
     // Check if a date is selected
     const isSelected = (date: Date) => {
         if (!selectedDate) return false;
         return date.getDate() === selectedDate.getDate() &&
-               date.getMonth() === selectedDate.getMonth() &&
-               date.getFullYear() === selectedDate.getFullYear();
+            date.getMonth() === selectedDate.getMonth() &&
+            date.getFullYear() === selectedDate.getFullYear();
     };
 
     // Handle date click - fetch tasks for selected date
@@ -483,7 +484,7 @@ export default function Dashboard() {
         setSelectedDate(date);
         await fetchTasksForDate(date);
     };
-    
+
     // Format date to YYYY-MM-DD for API comparison
     const formatDateForAPI = (date: Date): string => {
         const year = date.getFullYear();
@@ -544,7 +545,7 @@ export default function Dashboard() {
             if (!apt.date) return false;
             const aptDate = new Date(apt.date);
             return formatDateForAPI(aptDate) === formatDateForAPI(selectedDate);
-          })
+        })
         : appointments;
 
     // Check if a date is within the selected date range
@@ -571,7 +572,7 @@ export default function Dashboard() {
                     'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Failed to fetch tasks');
             }
@@ -589,7 +590,7 @@ export default function Dashboard() {
             // Filter tasks for the selected date using primary date (Date Added, then due_date)
             const tasksForDate = userTasks.filter((task: Task) => isTaskForDate(task, date));
             const sortedForDate = sortTasksByRecent(tasksForDate);
-            
+
             setTasks(sortedForDate);
             setFilteredTasks(sortedForDate);
         } catch (err) {
@@ -666,7 +667,7 @@ export default function Dashboard() {
                     return createdBy != null && String(createdBy) === userIdStr;
                 });
             }
-            
+
             // Map API response to Appointment interface
             const mappedAppointments: Appointment[] = appointmentsList.map((apt: any) => ({
                 id: apt.id,
@@ -687,7 +688,7 @@ export default function Dashboard() {
                 }
                 return a.time.localeCompare(b.time);
             });
-            
+
             setAppointments(mappedAppointments);
         } catch (err) {
             console.error('Error fetching appointments:', err);
@@ -705,7 +706,7 @@ export default function Dashboard() {
         try {
             const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
             let url = '/api/tasks';
-            
+
             // Add date range query parameters if available
             if (activityRange.start && activityRange.end) {
                 const queryParams = new URLSearchParams({
@@ -720,7 +721,7 @@ export default function Dashboard() {
                     'Authorization': `Bearer ${token}`
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Failed to fetch tasks');
             }
@@ -791,9 +792,9 @@ export default function Dashboard() {
     // Toggle task completion status
     const handleToggleTaskComplete = async (task: Task, e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent navigation when clicking checkbox
-        
+
         const newCompletedStatus = !task.is_completed;
-        
+
         try {
             const response = await fetch(`/api/tasks/${task.id}`, {
                 method: 'PUT',
@@ -813,9 +814,9 @@ export default function Dashboard() {
             }
 
             // Update the task in local state with the response data if available
-            const updatedTask = data.task || { 
-                ...task, 
-                is_completed: newCompletedStatus, 
+            const updatedTask = data.task || {
+                ...task,
+                is_completed: newCompletedStatus,
                 status: newCompletedStatus ? 'Completed' : (task.status === 'Completed' ? 'Open' : task.status || 'Open')
             };
 
@@ -854,7 +855,7 @@ export default function Dashboard() {
 
         // Apply search query filter
         if (taskSearchQuery.trim()) {
-            filtered = filtered.filter(task => 
+            filtered = filtered.filter(task =>
                 task.title.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
                 task.description?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
                 task.status?.toLowerCase().includes(taskSearchQuery.toLowerCase())
@@ -867,6 +868,25 @@ export default function Dashboard() {
     // Handle close/return to home
     const handleClose = () => {
         router.push('/dashboard');
+    };
+
+    const refreshDashboardData = async () => {
+        setIsRefreshingDashboard(true);
+        try {
+            await Promise.all([
+                fetchAllTasks(),
+                fetchAppointments(),
+                fetchSharedDocuments(),
+                fetchBroadcastMessages(),
+                fetchActivityReport(activityRange),
+            ]);
+            toast.success('Dashboard refreshed');
+        } catch (err) {
+            console.error('Error refreshing dashboard:', err);
+            toast.error('Failed to refresh dashboard');
+        } finally {
+            setIsRefreshingDashboard(false);
+        }
     };
 
     // Fetch shared documents
@@ -927,13 +947,13 @@ export default function Dashboard() {
             ];
             const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.rtf'];
             const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-            
+
             if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
                 toast.error('Invalid file type. Please upload PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, or RTF files only.');
                 e.target.value = '';
                 return;
             }
-            
+
             setUploadFile(file);
         }
     };
@@ -1161,14 +1181,27 @@ export default function Dashboard() {
     return (
         <div className="flex flex-col h-full relative">
             {/* X button in top right corner */}
-            <Link
-                href="/home"
-                className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-                aria-label="Close and return to home"
-            >
-                <FiX size={24} />
-            </Link>
-            
+            <div>
+                <button
+                    type="button"
+                    onClick={refreshDashboardData}
+                    disabled={isRefreshingDashboard}
+                    className="absolute top-2 right-14 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    aria-label="Refresh dashboard"
+                    title="Refresh dashboard"
+                >
+                    <FiMonitor size={22} />
+                </button>
+
+                <Link
+                    href="/home"
+                    className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                    aria-label="Close and return to home"
+                >
+                    <FiX size={24} />
+                </Link>
+            </div>
+
             {/* Date Range Picker - Top Left */}
             <div className="mb-4 px-2">
                 <div className="bg-white rounded-md shadow p-4 inline-block">
@@ -1187,9 +1220,8 @@ export default function Dashboard() {
                                     }
                                 }}
                                 max={activityRange.end || undefined}
-                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    dateRangeError ? 'border-red-300' : 'border-gray-300'
-                                }`}
+                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${dateRangeError ? 'border-red-300' : 'border-gray-300'
+                                    }`}
                             />
                         </div>
                         <div>
@@ -1202,9 +1234,8 @@ export default function Dashboard() {
                                     setActivityRange(prev => ({ ...prev, end: newEnd }));
                                 }}
                                 min={activityRange.start || undefined}
-                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    dateRangeError ? 'border-red-300' : 'border-gray-300'
-                                }`}
+                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${dateRangeError ? 'border-red-300' : 'border-gray-300'
+                                    }`}
                             />
                         </div>
                     </div>
@@ -1271,7 +1302,7 @@ export default function Dashboard() {
                                     const hasTasksDate = hasTasks(date);
                                     const hasAppointmentsDate = hasAppointments(date);
                                     const inRange = isInDateRange(date);
-                                    
+
                                     return (
                                         <button
                                             key={dayIndex}
@@ -1295,7 +1326,7 @@ export default function Dashboard() {
 
                         {/* Event button */}
                         <div className="mt-4">
-                            <button 
+                            <button
                                 className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-md text-sm font-medium transition-colors"
                                 onClick={() => {
                                     if (selectedDate) {
@@ -1337,8 +1368,8 @@ export default function Dashboard() {
                                 <div className="text-center py-4">
                                     <p className="text-sm text-gray-500">No appointments found</p>
                                     <p className="text-xs text-gray-400 mt-1">
-                                        {activityRange.start && activityRange.end 
-                                            ? `in the selected date range` 
+                                        {activityRange.start && activityRange.end
+                                            ? `in the selected date range`
                                             : 'Select a date range to view appointments'}
                                     </p>
                                 </div>
@@ -1355,28 +1386,28 @@ export default function Dashboard() {
                                             ? `/dashboard/planner?date=${aptDateStr}&view=List${apt.id ? `&appointmentId=${apt.id}` : ''}`
                                             : '/dashboard/planner';
                                         return (
-                                        <div
-                                            key={apt.id}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => router.push(plannerUrl)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(plannerUrl); } }}
-                                            className="p-2 border border-gray-200 rounded text-xs hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition-colors"
-                                        >
-                                            <div className="font-medium text-gray-700">
-                                                {apt.date && new Date(apt.date).toLocaleDateString('en-US', { 
-                                                    month: 'short', 
-                                                    day: 'numeric', 
-                                                    year: 'numeric' 
-                                                })} {apt.time}
+                                            <div
+                                                key={apt.id}
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => router.push(plannerUrl)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(plannerUrl); } }}
+                                                className="p-2 border border-gray-200 rounded text-xs hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition-colors"
+                                            >
+                                                <div className="font-medium text-gray-700">
+                                                    {apt.date && new Date(apt.date).toLocaleDateString('en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        year: 'numeric'
+                                                    })} {apt.time}
+                                                </div>
+                                                <div className="text-gray-600 mt-1">
+                                                    <div className="font-medium">{apt.type}</div>
+                                                    {apt.client && <div>Client: {apt.client}</div>}
+                                                    {apt.job && <div>Job: {apt.job}</div>}
+                                                    {apt.owner && <div className="text-gray-500 text-xs mt-1">Owner: {apt.owner}</div>}
+                                                </div>
                                             </div>
-                                            <div className="text-gray-600 mt-1">
-                                                <div className="font-medium">{apt.type}</div>
-                                                {apt.client && <div>Client: {apt.client}</div>}
-                                                {apt.job && <div>Job: {apt.job}</div>}
-                                                {apt.owner && <div className="text-gray-500 text-xs mt-1">Owner: {apt.owner}</div>}
-                                            </div>
-                                        </div>
                                         );
                                     })}
                                 </div>
@@ -1389,7 +1420,7 @@ export default function Dashboard() {
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                     <div className="p-2 border-b border-gray-200">
                         <h2 className="text-lg font-semibold mb-2">Tasks</h2>
-                        
+
                         {/* Filter dropdown */}
                         <div className="mb-2">
                             <select
@@ -1437,12 +1468,12 @@ export default function Dashboard() {
                                     <FiCheckSquare size={24} className="text-gray-500" />
                                 </div>
                                 <p className="text-gray-600 text-sm">
-                                    {selectedDate 
+                                    {selectedDate
                                         ? `No tasks found for ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
                                         : 'No tasks found'}
                                 </p>
                                 <p className="text-gray-400 text-xs mt-2">
-                                    {selectedDate 
+                                    {selectedDate
                                         ? 'Click on a different date or create a new task'
                                         : 'Create your first task to get started'}
                                 </p>
@@ -1654,7 +1685,7 @@ export default function Dashboard() {
                                 <FiMessageSquare className="mr-2" size={16} />
                                 Broadcast Messages
                             </h3>
-                            
+
                             {/* Post Message Form */}
                             <div className="mb-3">
                                 <textarea
@@ -1750,7 +1781,7 @@ export default function Dashboard() {
 
             {/* Bottom Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                
+
             </div>
 
             <ActivityReportGrid
