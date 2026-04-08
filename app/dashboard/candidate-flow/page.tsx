@@ -108,6 +108,7 @@ const JOB_SEEKER_MODAL_FIELD_NAMES = [
 const JOB_MODAL_FIELD_NAMES = [
   'Field_1',
   'Field_2',
+  'Field_22',
   'Field_4',
   'Field_6',
   'Field_8',
@@ -119,6 +120,13 @@ const JOB_MODAL_FIELD_NAMES = [
   'Field_24',
   'Field_69',
   'Field_70',
+] as const;
+
+const HIRING_MANAGER_CONTACT_FIELD_NAMES = [
+  'Field_3',
+  'Field_10',
+  'Field_16',
+  'Field_7',
 ] as const;
 
 const PLACEHOLDER_COLUMNS: Omit<CandidateColumn, 'candidates' | 'count'>[] = [
@@ -191,6 +199,10 @@ export default function CandidateFlowDashboard() {
   const [loadingJobProfile, setLoadingJobProfile] = useState(false);
   const [jobFieldLabelsByName, setJobFieldLabelsByName] = useState<Record<string, string>>({});
   const [loadingJobFieldLabels, setLoadingJobFieldLabels] = useState(false);
+  const [selectedHiringManagerProfile, setSelectedHiringManagerProfile] = useState<Record<string, any> | null>(null);
+  const [hiringManagerFieldLabelsByName, setHiringManagerFieldLabelsByName] = useState<Record<string, string>>({});
+  const [loadingHiringManagerContact, setLoadingHiringManagerContact] = useState(false);
+  const [hasHiringManagerLookup, setHasHiringManagerLookup] = useState(false);
   const [jobProfileRefreshTick, setJobProfileRefreshTick] = useState(0);
 
   const getToken = () =>
@@ -849,6 +861,112 @@ export default function CandidateFlowDashboard() {
     };
   }, [selectedJobId]);
 
+  useEffect(() => {
+    if (selectedJobId == null || !selectedJobProfile) {
+      setSelectedHiringManagerProfile(null);
+      setHiringManagerFieldLabelsByName({});
+      setLoadingHiringManagerContact(false);
+      setHasHiringManagerLookup(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadHiringManagerContact = async () => {
+      setLoadingHiringManagerContact(true);
+      try {
+        const jobField22Label = (await getCustomFieldLabel('jobs', 'Field_22')) || 'Field_22';
+        const jobCustomFields =
+          (selectedJobProfile.customFields as Record<string, any> | undefined) || {};
+        const hiringManagerLookupRaw = jobCustomFields[jobField22Label] ?? jobCustomFields.Field_22;
+        const hiringManagerId = getLookupIdValue(hiringManagerLookupRaw);
+
+        // If Field_22 is empty/null, do not render contact section.
+        if (!hiringManagerId) {
+          if (!cancelled) {
+            setSelectedHiringManagerProfile(null);
+            setHiringManagerFieldLabelsByName({});
+            setHasHiringManagerLookup(false);
+          }
+          return;
+        }
+        if (!cancelled) {
+          setHasHiringManagerLookup(true);
+        }
+
+        const hmLabelEntries = await Promise.all(
+          HIRING_MANAGER_CONTACT_FIELD_NAMES.map(async (fieldName) => {
+            const label = await getCustomFieldLabel('hiring-managers', fieldName);
+            return [fieldName, label || fieldName] as const;
+          })
+        );
+        if (cancelled) return;
+        setHiringManagerFieldLabelsByName(Object.fromEntries(hmLabelEntries));
+
+        const token = getToken();
+        const hmRes = await fetch(`/api/hiring-managers/${encodeURIComponent(hiringManagerId)}`, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        });
+        const hmData = await hmRes.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!hmRes.ok) {
+          setSelectedHiringManagerProfile(null);
+          return;
+        }
+
+        const record = (hmData.hiringManager ?? hmData) as Record<string, any>;
+        let normalizedCustomFields: Record<string, any> = {};
+        const customSources = [
+          record?.customFields,
+          record?.custom_fields,
+          record?.custom_fields_json,
+          record?.hiring_manager_custom_fields,
+          record?.fields,
+        ];
+        for (const src of customSources) {
+          if (!src) continue;
+          try {
+            const parsed = typeof src === 'string' ? JSON.parse(src) : src;
+            if (Array.isArray(parsed)) {
+              parsed.forEach((f: any) => {
+                const k = String(
+                  f?.field_label ?? f?.field_name ?? f?.label ?? f?.name ?? f?.key ?? ''
+                ).trim();
+                if (!k) return;
+                const v =
+                  f?.field_value ??
+                  f?.value ??
+                  f?.display_value ??
+                  f?.displayValue ??
+                  f?.selected_options ??
+                  f?.selectedOptions ??
+                  '';
+                if (v != null && v !== '') normalizedCustomFields[k] = v;
+              });
+            } else if (parsed && typeof parsed === 'object') {
+              normalizedCustomFields = { ...parsed, ...normalizedCustomFields };
+            }
+          } catch {
+            // Ignore malformed custom field source
+          }
+        }
+
+        setSelectedHiringManagerProfile({
+          ...record,
+          customFields: normalizedCustomFields,
+        });
+      } finally {
+        if (!cancelled) setLoadingHiringManagerContact(false);
+      }
+    };
+
+    void loadHiringManagerContact();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJobId, selectedJobProfile, jobProfileRefreshTick]);
+
   const openAddTaskForJobSeeker = (id: number) => {
     setSelectedJobSeekerId(null);
     router.push(`/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${id}`);
@@ -1063,6 +1181,33 @@ export default function CandidateFlowDashboard() {
     const customFields = selectedJobProfile.customFields as Record<string, any> | undefined;
     if (!customFields || typeof customFields !== 'object') return '';
     return formatPreviewValue(customFields[label]);
+  };
+
+  const getHiringManagerFieldLabel = (fieldName: string) =>
+    hiringManagerFieldLabelsByName[fieldName] || fieldName;
+
+  const getHiringManagerFieldValueByFieldName = (fieldName: string) => {
+    const label = getHiringManagerFieldLabel(fieldName);
+    if (!selectedHiringManagerProfile) return '';
+    const customFields = selectedHiringManagerProfile.customFields as Record<string, any> | undefined;
+    if (!customFields || typeof customFields !== 'object') return '';
+    return formatPreviewValue(customFields[label]);
+  };
+
+  const getHiringManagerFieldRawValueByFieldName = (fieldName: string) => {
+    const label = getHiringManagerFieldLabel(fieldName);
+    if (!selectedHiringManagerProfile) return '';
+    const customFields = selectedHiringManagerProfile.customFields as Record<string, any> | undefined;
+    if (!customFields || typeof customFields !== 'object') return '';
+    return customFields[label];
+  };
+
+  const getJobFieldRawValueByFieldName = (fieldName: string) => {
+    const label = getJobFieldLabel(fieldName);
+    if (!selectedJobProfile) return '';
+    const customFields = selectedJobProfile.customFields as Record<string, any> | undefined;
+    if (!customFields || typeof customFields !== 'object') return '';
+    return customFields[label];
   };
 
   const getJobFullAddress = () => {
@@ -1560,7 +1705,7 @@ export default function CandidateFlowDashboard() {
       )}
       {selectedJobId != null && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
-          <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-400">
+          <div className="bg-white w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col border border-slate-400">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-400 bg-slate-100">
               <div className="flex items-center gap-4 min-w-0">
                 <div className="text-sm font-semibold text-slate-800 truncate">
@@ -1675,6 +1820,67 @@ export default function CandidateFlowDashboard() {
                       </div>
                     );
                   })}
+
+                  {hasHiringManagerLookup && (
+                    <>
+                      <div className="px-3 py-2 text-sm font-semibold text-slate-700 border-t border-slate-300 bg-slate-50">
+                        Hiring Manager Details
+                      </div>
+                      {loadingHiringManagerContact ? (
+                        <div className="px-3 py-2 text-xs text-slate-600">Loading contact details...</div>
+                      ) : (
+                        selectedHiringManagerProfile ? (
+                          <>
+                            <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200">
+                              <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">
+                                {getJobFieldLabel('Field_22')}:
+                              </div>
+                              <div className="px-3 py-2 text-slate-800">
+                                {renderDetailCellValue(
+                                  getJobFieldRawValueByFieldName('Field_22'),
+                                  getJobFieldValueByFieldName('Field_22'),
+                                  'hiring-managers'
+                                )}
+                              </div>
+                            </div>
+                            {HIRING_MANAGER_CONTACT_FIELD_NAMES.map((fieldName) => {
+                          const label = getHiringManagerFieldLabel(fieldName);
+                          const value = getHiringManagerFieldValueByFieldName(fieldName);
+                          const isStatus = fieldName === 'Field_7';
+                          const isOrganizationLookup = fieldName === 'Field_3';
+                          const rawValue = getHiringManagerFieldRawValueByFieldName(fieldName);
+                          return (
+                            <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200 last:border-b-0">
+                              <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{label}:</div>
+                              <div className="px-3 py-2 text-slate-800">
+                                {isStatus ? (
+                                  <FieldValueRenderer
+                                    value={value || ''}
+                                    fieldInfo={{ name: fieldName, label, fieldType: 'status' }}
+                                    entityType="hiring-managers"
+                                    recordId={selectedHiringManagerProfile?.id}
+                                  />
+                                ) : (
+                                  isOrganizationLookup ? renderDetailCellValue(rawValue, value, 'organization') : (
+                                    <FieldValueRenderer
+                                      value={value || '-'}
+                                      fieldInfo={{ name: fieldName, label }}
+                                      entityType="hiring-managers"
+                                      recordId={selectedHiringManagerProfile?.id}
+                                    />
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          );
+                            })}
+                          </>
+                        ) : (
+                          <div className="px-3 py-2 text-xs text-slate-600">Contact details unavailable.</div>
+                        )
+                      )}
+                    </>
+                  )}
 
                   <div className="px-3 py-2 text-sm font-semibold text-slate-700 border-t border-slate-300 bg-slate-50">
                     {getJobFieldLabel('Field_6')}
