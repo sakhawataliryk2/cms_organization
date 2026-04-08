@@ -531,11 +531,11 @@ export default function AddJobSeeker() {
 
   const emailValidForDupCheck = Boolean(
     jsEmailFieldDef &&
-      isCustomFieldValueValid(jsEmailFieldDef, jsEmailFieldValue)
+    isCustomFieldValueValid(jsEmailFieldDef, jsEmailFieldValue)
   );
   const phoneValidForDupCheck = Boolean(
     jsPhoneFieldDef &&
-      isCustomFieldValueValid(jsPhoneFieldDef, jsPhoneFieldValue)
+    isCustomFieldValueValid(jsPhoneFieldDef, jsPhoneFieldValue)
   );
 
   const excludeIdForDup =
@@ -1522,14 +1522,14 @@ export default function AddJobSeeker() {
       const runEmailDup =
         Boolean(
           jsEmailFieldDef &&
-            isCustomFieldValueValid(jsEmailFieldDef, rawEmailVal) &&
-            emailForCheck
+          isCustomFieldValueValid(jsEmailFieldDef, rawEmailVal) &&
+          emailForCheck
         );
       const runPhoneDup =
         Boolean(
           jsPhoneFieldDef &&
-            isCustomFieldValueValid(jsPhoneFieldDef, rawPhoneVal) &&
-            phoneForCheck
+          isCustomFieldValueValid(jsPhoneFieldDef, rawPhoneVal) &&
+          phoneForCheck
         );
 
       if (runEmailDup) {
@@ -1588,9 +1588,9 @@ export default function AddJobSeeker() {
                 : "Confirm the checkbox under Primary Phone, then save again.";
           setError(
             "Possible duplicate job seeker(s) detected.\n\n" +
-              messages.join("\n") +
-              "\n\n" +
-              hint
+            messages.join("\n") +
+            "\n\n" +
+            hint
           );
           setIsSubmitting(false);
           return;
@@ -1873,8 +1873,8 @@ export default function AddJobSeeker() {
         {/* AI Parse Error */}
         {parseResumeError && (
           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 mb-6 rounded-lg flex items-center gap-3">
-             <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
-             <span className="font-medium">{parseResumeError}</span>
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+            <span className="font-medium">{parseResumeError}</span>
           </div>
         )}
 
@@ -1947,22 +1947,6 @@ export default function AddJobSeeker() {
                   fn === JS_DUP_PRIMARY_PHONE_FIELD_NAME ||
                   fnLower === JS_DUP_PRIMARY_PHONE_FIELD_NAME.toLowerCase();
 
-                const isSkillsField =
-                  field.field_name === "Field_32" ||
-                  field.field_name === "field_32" ||
-                  field.field_name?.toLowerCase() === "field_32" ||
-                  (field.field_label === "Skills" &&
-                    (field.field_name?.includes("32") ||
-                      field.field_name?.toLowerCase().includes("field_32")));
-
-                const isAdditionalSkillField =
-                  field.field_name === "Field_33" ||
-                  field.field_name === "field_33" ||
-                  field.field_name?.toLowerCase() === "field_33" ||
-                  (field.field_label === "Additional Skill" &&
-                    (field.field_name?.includes("33") ||
-                      field.field_name?.toLowerCase().includes("field_33")));
-
                 const parseMultiValue = (val: any): string[] => {
                   if (!val) return [];
                   if (Array.isArray(val)) return val.filter((s) => s && s.trim());
@@ -1975,13 +1959,6 @@ export default function AddJobSeeker() {
                   return [];
                 };
 
-                const isMultiValueField =
-                  isSkillsField ||
-                  isAdditionalSkillField;
-                const multiValueArray = isMultiValueField
-                  ? parseMultiValue(fieldValue)
-                  : [];
-
                 return (
                   <div key={field.id} className="flex items-center gap-4 mb-3">
                     <label className="w-48 font-medium flex items-center">
@@ -1989,24 +1966,7 @@ export default function AddJobSeeker() {
                     </label>
 
                     <div className="flex-1 relative">
-                      {isMultiValueField ? (
-                        <MultiValueTagInput
-                          values={multiValueArray}
-                          onChange={(newValues) => {
-                            handleCustomFieldChange(
-                              field.field_name,
-                              newValues.join(", ")
-                            );
-                          }}
-                          placeholder={
-                            isSkillsField
-                              ? "Type a skill and press Enter"
-                              : isAdditionalSkillField
-                                ? "Type an additional skill and press Enter"
-                                : "Type a value and press Enter"
-                          }
-                        />
-                      ) : (
+                      {(
                         <>
                           <CustomFieldRenderer
                             field={field}
@@ -2220,8 +2180,8 @@ export default function AddJobSeeker() {
                 !isFormValid ||
                 (emailDupMatches.length > 0 && !hasConfirmedEmailDupSave) ||
                 (phoneDupMatches.length > 0 && !hasConfirmedPhoneDupSave)
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-blue-500 hover:bg-blue-600"
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-600"
                 } text-white`}
               disabled={
                 isSubmitting ||

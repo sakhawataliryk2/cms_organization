@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FiCheck, FiSearch, FiX } from "react-icons/fi";
+import { FiCheck, FiX } from "react-icons/fi";
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import { toast } from "sonner";
 import StyledReactSelect, {
@@ -114,13 +114,12 @@ export default function ClientSubmissionModal({
   currentUserEmail,
   onSuccess,
 }: ClientSubmissionModalProps) {
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
-  const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
-  const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [candidateRecordNumbers, setCandidateRecordNumbers] = useState<
     Record<string, number | null>
   >({});
-  const candidateInputRef = useRef<HTMLDivElement | null>(null);
   const hiringManagerInputRef = useRef<HTMLDivElement | null>(null);
   const internalUserInputRef = useRef<HTMLDivElement | null>(null);
 
@@ -172,30 +171,33 @@ export default function ClientSubmissionModal({
     return `${prefix} ${title}`.trim();
   }, [job, jobFromApi, jobId]);
 
+  const selectedCandidateId = useMemo(
+    () => Array.from(selectedCandidateIds.values())[0] || "",
+    [selectedCandidateIds],
+  );
   const selectedCandidate = useMemo(
     () =>
       candidates.find((c) => String(c.id) === String(selectedCandidateId)) ??
       null,
     [candidates, selectedCandidateId],
   );
-
-  const filteredCandidates = useMemo(() => {
-    const query = candidateSearchQuery.trim().toLowerCase();
-    if (!query) return candidates;
-    return candidates.filter((c) => {
-      const name = getCandidateName(c, candidateRecordNumbers).toLowerCase();
-      const email = String(c.email || "").toLowerCase();
-      const id = String(c.id || "").toLowerCase();
-      return (
-        name.includes(query) || email.includes(query) || id.includes(query)
-      );
-    });
-  }, [candidateSearchQuery, candidates, candidateRecordNumbers]);
-
   const resolveCandidateName = useCallback(
     (candidate: any | null | undefined) =>
       getCandidateName(candidate, candidateRecordNumbers),
     [candidateRecordNumbers],
+  );
+  const candidateOptions = useMemo<StyledSelectOption[]>(
+    () =>
+      candidates.map((candidate) => ({
+        value: String(candidate.id),
+        label: resolveCandidateName(candidate),
+      })),
+    [candidates, resolveCandidateName],
+  );
+  const selectedCandidateOptions = useMemo<StyledSelectOption[]>(
+    () =>
+      candidateOptions.filter((opt) => selectedCandidateIds.has(opt.value)),
+    [candidateOptions, selectedCandidateIds],
   );
 
   useEffect(() => {
@@ -228,11 +230,9 @@ export default function ClientSubmissionModal({
     if (!open) return;
 
     const initialId = initialCandidate?.id ?? "";
-    setSelectedCandidateId(initialId ? String(initialId) : "");
-    setCandidateSearchQuery(
-      initialId ? resolveCandidateName(initialCandidate) : "",
+    setSelectedCandidateIds(
+      initialId ? new Set([String(initialId)]) : new Set(),
     );
-    setShowCandidateDropdown(false);
 
     setDocuments([]);
     setSelectedDocumentIds(new Set());
@@ -267,12 +267,6 @@ export default function ClientSubmissionModal({
     setHasExistingSubmissionForJob(false);
     setIsCheckingExistingSubmission(false);
 
-    if (initialId) {
-      void fetchDocumentsForCandidate(String(initialId));
-      if (jobId != null) {
-        void checkExistingSubmission(String(initialId), String(jobId));
-      }
-    }
     void fetchInternalUsers();
     void fetchHiringManagersForOrganization(
       job ?? jobFromApi,
@@ -281,20 +275,22 @@ export default function ClientSubmissionModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, jobFromApi]);
 
-  // Close candidate dropdown when clicking outside
   useEffect(() => {
-    if (!showCandidateDropdown) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        candidateInputRef.current &&
-        !candidateInputRef.current.contains(event.target as Node)
-      ) {
-        setShowCandidateDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showCandidateDropdown]);
+    if (!open) return;
+    if (!selectedCandidateId) {
+      setDocuments([]);
+      setSelectedDocumentIds(new Set());
+      setDocumentDistribution({});
+      setHasExistingSubmissionForJob(false);
+      return;
+    }
+    void fetchDocumentsForCandidate(String(selectedCandidateId));
+    if (jobId != null) {
+      void checkExistingSubmission(String(selectedCandidateId), String(jobId));
+    } else {
+      setHasExistingSubmissionForJob(false);
+    }
+  }, [open, selectedCandidateId, jobId]);
 
   // If job details are not provided but we have a jobId, fetch the job so we can
   // resolve its organization for hiring manager filtering and display.
@@ -640,7 +636,8 @@ export default function ClientSubmissionModal({
   };
 
   const handleSubmit = async (mode: "compose" | "no-email") => {
-    if (!selectedCandidateId) {
+    const selectedIds = Array.from(selectedCandidateIds.values());
+    if (selectedIds.length === 0) {
       toast.error("Please select a candidate.");
       return;
     }
@@ -648,7 +645,7 @@ export default function ClientSubmissionModal({
       toast.error("Missing job context for submission.");
       return;
     }
-    if (hasExistingSubmissionForJob) {
+    if (selectedIds.length === 1 && hasExistingSubmissionForJob) {
       toast.error(
         "This candidate has already been submitted to this job and cannot be submitted again.",
       );
@@ -663,7 +660,7 @@ export default function ClientSubmissionModal({
 
     setIsSubmitting(true);
     try {
-      const payload: any = {
+      const payloadBase: any = {
         type: "client_submissions",
         job_id: Number(jobId),
         status: "Client Submission",
@@ -682,25 +679,50 @@ export default function ClientSubmissionModal({
         send_email: true,
       };
 
-      const res = await fetch(
-        `/api/job-seekers/${selectedCandidateId}/client-submissions`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        },
+      const submissionResults = await Promise.allSettled(
+        selectedIds.map(async (candidateId) => {
+          const res = await fetch(
+            `/api/job-seekers/${candidateId}/client-submissions`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payloadBase),
+            },
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(
+              data.message || `Failed for candidate ${candidateId}`,
+            );
+          }
+          return candidateId;
+        }),
       );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to create client submission");
+      const successCount = submissionResults.filter(
+        (r) => r.status === "fulfilled",
+      ).length;
+      const failureCount = submissionResults.length - successCount;
+      if (successCount === 0) {
+        throw new Error("Failed to create client submissions");
+      }
+      if (failureCount > 0) {
+        toast.warning(
+          `${successCount} submission(s) created, ${failureCount} failed.`,
+        );
+      } else {
+        toast.success(
+          `Client submission created for ${successCount} candidate(s).`,
+        );
       }
 
-      toast.success("Client submission created successfully.");
-
       // If user chose Compose Email, open the OS default mail client
-      if (mode === "compose" && typeof window !== "undefined") {
+      if (
+        mode === "compose" &&
+        typeof window !== "undefined" &&
+        selectedIds.length === 1
+      ) {
         const toEmails = Array.from(selectedHiringManagerIds)
           .map((id: string) => {
             const hm = hiringManagers.find(
@@ -794,133 +816,31 @@ export default function ClientSubmissionModal({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Candidate{" "}
-              {initialCandidate ? (
+              {selectedCandidateIds.size > 0 ? (
                 <span className="text-green-500">✓</span>
               ) : (
                 <span className="text-red-500">*</span>
               )}
             </label>
-            {initialCandidate ? (
-              <div className="flex items-center gap-2 p-2 border border-gray-300 rounded bg-gray-50">
-                <span className="text-gray-900">
-                  {resolveCandidateName(selectedCandidate || initialCandidate)}
-                </span>
-                <FiCheck className="text-green-600 shrink-0" size={18} />
-              </div>
-            ) : (
-              <>
-                <div className="relative" ref={candidateInputRef}>
-                  <div className="flex border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
-                    <input
-                      type="text"
-                      value={
-                        selectedCandidate && !showCandidateDropdown
-                          ? resolveCandidateName(selectedCandidate)
-                          : candidateSearchQuery
-                      }
-                      onChange={(e) => {
-                        setCandidateSearchQuery(e.target.value);
-                        setShowCandidateDropdown(true);
-                        if (selectedCandidateId) {
-                          setSelectedCandidateId("");
-                        }
-                      }}
-                      onFocus={() => setShowCandidateDropdown(true)}
-                      placeholder="Search or select candidate..."
-                      className="flex-1 px-3 py-2 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowCandidateDropdown((prev: boolean) => !prev)
-                      }
-                      className="px-2 text-gray-500 hover:bg-gray-100 rounded-r"
-                      aria-label="Search candidates"
-                    >
-                      <FiSearch size={18} />
-                    </button>
-                    {selectedCandidate && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedCandidateId("");
-                          setCandidateSearchQuery("");
-                          setShowCandidateDropdown(true);
-                          setDocuments([]);
-                          setSelectedDocumentIds(new Set());
-                          setDocumentDistribution({});
-                        }}
-                        className="px-2 text-gray-500 hover:bg-gray-100"
-                        aria-label="Clear candidate"
-                      >
-                        <FiX size={18} />
-                      </button>
-                    )}
-                  </div>
-                  {showCandidateDropdown && (
-                    <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-56 overflow-y-auto">
-                      {filteredCandidates.length === 0 ? (
-                        <div className="p-3 text-sm text-gray-500">
-                          No candidates found
-                        </div>
-                      ) : (
-                        filteredCandidates
-                          .slice(0, 50)
-                          .map((candidate: any) => (
-                            <button
-                              key={candidate.id}
-                              type="button"
-                              onClick={() => {
-                                const id = String(candidate.id);
-                                setSelectedCandidateId(id);
-                                setCandidateSearchQuery("");
-                                setShowCandidateDropdown(false);
-                                void fetchDocumentsForCandidate(id);
-                                if (jobId != null) {
-                                  void checkExistingSubmission(
-                                    id,
-                                    String(jobId),
-                                  );
-                                } else {
-                                  setHasExistingSubmissionForJob(false);
-                                }
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <span className="font-medium text-gray-900">
-                                {resolveCandidateName(candidate)}
-                              </span>
-                              {candidate.email && (
-                                <span className="block text-xs text-gray-500">
-                                  {candidate.email}
-                                </span>
-                              )}
-                            </button>
-                          ))
-                      )}
-                    </div>
-                  )}
-                </div>
-                {selectedCandidate && !candidateSearchQuery && (
-                  <div className="mt-2 inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                    {resolveCandidateName(selectedCandidate)}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedCandidateId("");
-                        setCandidateSearchQuery("");
-                        setShowCandidateDropdown(true);
-                        setDocuments([]);
-                        setSelectedDocumentIds(new Set());
-                        setDocumentDistribution({});
-                      }}
-                      className="ml-2 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </>
+            <StyledReactSelect
+              isMulti
+              isClearable={false}
+              closeMenuOnSelect={false}
+              placeholder="Search and select candidate(s)..."
+              options={candidateOptions}
+              value={selectedCandidateOptions}
+              onChange={(next) => {
+                const selected = Array.isArray(next)
+                  ? next.map((opt) => String(opt.value))
+                  : [];
+                setSelectedCandidateIds(new Set(selected));
+              }}
+              noOptionsMessage={() => "No candidates found"}
+            />
+            {selectedCandidateIds.size > 1 && (
+              <p className="mt-1 text-xs text-blue-600">
+                Bulk mode: submissions will be created separately for each selected candidate.
+              </p>
             )}
           </div>
 
@@ -933,7 +853,7 @@ export default function ClientSubmissionModal({
               <span className="text-gray-900">{displayJob}</span>
               <FiCheck className="text-green-600 shrink-0" size={18} />
             </div>
-            {selectedCandidate && (
+            {selectedCandidate && selectedCandidateIds.size <= 1 && (
               <p className="mt-1 text-xs">
                 {isCheckingExistingSubmission && (
                   <span className="text-gray-500">
@@ -1027,7 +947,7 @@ export default function ClientSubmissionModal({
           </div>
 
           {/* Candidate overview */}
-          {selectedCandidate && (
+          {selectedCandidate && selectedCandidateIds.size <= 1 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Overview of Candidate Details
@@ -1205,11 +1125,7 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("compose")}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={
-              isSubmitting ||
-              !selectedCandidateId ||
-              hasExistingSubmissionForJob
-            }
+            disabled={isSubmitting || selectedCandidateIds.size === 0}
           >
             {isSubmitting ? "Submitting..." : "Compose Email"}
           </button>
@@ -1217,11 +1133,7 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("no-email")}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={
-              isSubmitting ||
-              !selectedCandidateId ||
-              hasExistingSubmissionForJob
-            }
+            disabled={isSubmitting || selectedCandidateIds.size === 0}
           >
             {isSubmitting ? "Submitting..." : "Add Without Email"}
           </button>

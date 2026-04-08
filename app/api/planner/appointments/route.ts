@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
             appointmentData.participant_type = body.participant_type;
             appointmentData.participant_id = body.participant_id;
         }
+        if (body.participant_type && Array.isArray(body.participant_ids) && body.participant_ids.length > 0) {
+            appointmentData.participant_type = body.participant_type;
+            appointmentData.participant_ids = body.participant_ids;
+        }
         // Legacy format: support for backward compatibility
         else if (body.job_seeker_id) {
             appointmentData.job_seeker_id = body.job_seeker_id;
