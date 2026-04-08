@@ -917,12 +917,12 @@ export default function CandidateFlowDashboard() {
 
       const label = String(
         source?.label ??
-          source?.name ??
-          source?.field_label ??
-          source?.fieldName ??
-          source?.field_name ??
-          source?.key ??
-          ''
+        source?.name ??
+        source?.field_label ??
+        source?.fieldName ??
+        source?.field_name ??
+        source?.key ??
+        ''
       ).trim();
       const value =
         source?.value ??
@@ -1149,7 +1149,7 @@ export default function CandidateFlowDashboard() {
             {formatRecordId(c.record_number ?? c.id, 'jobSeeker')}
           </div>
         </button>
-  
+
         <div className="mt-2 flex items-center justify-center text-teal-600">
           <TbBinoculars size={24} />
         </div>
@@ -1223,106 +1223,106 @@ export default function CandidateFlowDashboard() {
         </div>
         <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 pb-6">
           <div className="flex gap-4 h-full min-h-[420px]">
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className="shrink-0 w-[280px] max-w-[280px] flex flex-col rounded-xl bg-white   border border-slate-200 overflow-y-auto max-h-[500px]"
-            >
-              <div className={`px-4 py-3 border-b ${column.accent} bg-white`}>
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-semibold text-slate-800 text-sm leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
-                    {column.title}
-                  </h2>
-                  {column.count !== undefined && (
-                    <span className="shrink-0 min-w-[28px] h-7 px-2 rounded-full bg-green-100 text-green-800 text-xs font-bold flex items-center justify-center">
-                      {anyLoading ? '…' : column.count}
-                    </span>
-                  )}
-                </div>
-              </div>
+            {columns.map((column) => (
               <div
-                className="flex-1 p-3 overflow-y-auto"
-                onDragOver={(e) => {
-                  if (!dragPayload) return;
-                  const from = dragPayload.fromColumnId;
-                  const to = column.id;
-
-                  const allowed =
-                    (from === 'prescreened' && to === 'submitted') ||
-                    (from === 'submitted' && to === 'client-submitted') ||
-                    (from === 'client-submitted' && to === 'interviews') ||
-                    (from === 'interviews' && to === 'offer');
-
-                  if (allowed) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }
-                }}
-                onDrop={(e) => {
-                  if (!dragPayload) return;
-                  const from = dragPayload.fromColumnId;
-                  const to = column.id;
-
-                  if (from === 'prescreened' && to === 'submitted') {
-                    e.preventDefault();
-                    const source = dragPayload.candidate as PrescreenedCandidate;
-                    openSubmissionModalFor(source);
-                    setDragPayload(null);
-                    return;
-                  }
-
-                  const candidate = dragPayload.candidate as Candidate;
-
-                  if (from === 'submitted' && to === 'client-submitted') {
-                    e.preventDefault();
-                    openClientSubmissionModalFromBoard(candidate);
-                    setDragPayload(null);
-                    return;
-                  }
-
-                  if (from === 'client-submitted' && to === 'interviews') {
-                    e.preventDefault();
-                    goToInterviewPlannerFromBoard(candidate);
-                    setDragPayload(null);
-                    return;
-                  }
-
-                  if (from === 'interviews' && to === 'offer') {
-                    e.preventDefault();
-                    void extendOfferFromBoard(candidate);
-                    setDragPayload(null);
-                  }
-                }}
+                key={column.id}
+                className="shrink-0 w-[280px] max-w-[280px] flex flex-col rounded-xl bg-white   border border-slate-200 overflow-y-auto max-h-[500px]"
               >
-                {column.isPrescreenedColumn ? (
-                  (column.candidates as PrescreenedCandidate[]).length === 0 && !anyLoading ? (
-                    <p className="text-slate-500 text-sm py-4 text-center">
-                      No candidates prescreened by you in the last 30 days.
-                    </p>
-                  ) : (
-                    (column.candidates as PrescreenedCandidate[]).map(renderPrescreenedCard)
-                  )
-                ) : (() => {
-                  const candidateList = column.candidates as Candidate[];
-                  if (candidateList.length === 0 && !anyLoading) {
-                    if (column.id === 'submitted') {
+                <div className={`px-4 py-3 border-b ${column.accent} bg-white`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="font-semibold text-slate-800 text-sm leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
+                      {column.title}
+                    </h2>
+                    {column.count !== undefined && (
+                      <span className="shrink-0 min-w-[28px] h-7 px-2 rounded-full bg-green-100 text-green-800 text-xs font-bold flex items-center justify-center">
+                        {anyLoading ? '…' : column.count}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div
+                  className="flex-1 p-3 overflow-y-auto"
+                  onDragOver={(e) => {
+                    if (!dragPayload) return;
+                    const from = dragPayload.fromColumnId;
+                    const to = column.id;
+
+                    const allowed =
+                      (from === 'prescreened' && to === 'submitted') ||
+                      (from === 'submitted' && to === 'client-submitted') ||
+                      (from === 'client-submitted' && to === 'interviews') ||
+                      (from === 'interviews' && to === 'offer');
+
+                    if (allowed) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!dragPayload) return;
+                    const from = dragPayload.fromColumnId;
+                    const to = column.id;
+
+                    if (from === 'prescreened' && to === 'submitted') {
+                      e.preventDefault();
+                      const source = dragPayload.candidate as PrescreenedCandidate;
+                      openSubmissionModalFor(source);
+                      setDragPayload(null);
+                      return;
+                    }
+
+                    const candidate = dragPayload.candidate as Candidate;
+
+                    if (from === 'submitted' && to === 'client-submitted') {
+                      e.preventDefault();
+                      openClientSubmissionModalFromBoard(candidate);
+                      setDragPayload(null);
+                      return;
+                    }
+
+                    if (from === 'client-submitted' && to === 'interviews') {
+                      e.preventDefault();
+                      goToInterviewPlannerFromBoard(candidate);
+                      setDragPayload(null);
+                      return;
+                    }
+
+                    if (from === 'interviews' && to === 'offer') {
+                      e.preventDefault();
+                      void extendOfferFromBoard(candidate);
+                      setDragPayload(null);
+                    }
+                  }}
+                >
+                  {column.isPrescreenedColumn ? (
+                    (column.candidates as PrescreenedCandidate[]).length === 0 && !anyLoading ? (
+                      <p className="text-slate-500 text-sm py-4 text-center">
+                        No candidates prescreened by you in the last 30 days.
+                      </p>
+                    ) : (
+                      (column.candidates as PrescreenedCandidate[]).map(renderPrescreenedCard)
+                    )
+                  ) : (() => {
+                    const candidateList = column.candidates as Candidate[];
+                    if (candidateList.length === 0 && !anyLoading) {
+                      if (column.id === 'submitted') {
+                        return (
+                          <p className="text-slate-400 text-sm py-4 text-center">
+                            No candidates submitted yet.
+                          </p>
+                        );
+                      }
                       return (
                         <p className="text-slate-400 text-sm py-4 text-center">
-                          No candidates submitted yet.
+                          No records yet.
                         </p>
                       );
                     }
-                    return (
-                      <p className="text-slate-400 text-sm py-4 text-center">
-                        No records yet.
-                      </p>
-                    );
-                  }
-                  return candidateList.map((c) => renderStageCard(c, column.id));
-                })()}
+                    return candidateList.map((c) => renderStageCard(c, column.id));
+                  })()}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
           </div>
         </div>
       </div>
@@ -1572,6 +1572,12 @@ export default function CandidateFlowDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  className='px-5 py-1 rounded-full bg-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-300'
+                  onClick={() => router.push(`/dashboard/jobs/view?id=${selectedJobId}`)}
+                >
+                  Open full Record
+                </button>
+                <button
                   type="button"
                   onClick={() => setJobProfileRefreshTick((v) => v + 1)}
                   className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
@@ -1683,23 +1689,6 @@ export default function CandidateFlowDashboard() {
                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="flex justify-between px-3 py-3 border-t border-slate-300 bg-white">
-              <button
-                type="button"
-                onClick={() => openAddAppointmentForJob(selectedJobId)}
-                className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
-              >
-                Add Appt
-              </button>
-              <button
-                type="button"
-                onClick={() => openAddTaskForJob(selectedJobId)}
-                className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-1.5 px-6"
-              >
-                Add Task
-              </button>
             </div>
           </div>
         </div>
