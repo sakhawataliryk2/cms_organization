@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -57,9 +58,12 @@ export default function AddPlacement() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("placements-direct-hire", {
     applyAutoCurrentDefaults: !placementId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
 
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -423,8 +427,13 @@ export default function AddPlacement() {
         return;
       }
 
-      const id = isEditMode ? placementId : data.placement?.id;
-      router.push(`/dashboard/placements/view?id=${id}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        window.scrollTo(0, 0);
+      } else {
+        const id = isEditMode ? placementId : data.placement?.id;
+        router.push(`/dashboard/placements/view?id=${id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {

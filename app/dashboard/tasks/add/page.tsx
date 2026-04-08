@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
@@ -48,16 +49,16 @@ export default function AddTask() {
   const relatedEntityId = searchParams.get("relatedEntityId");
   const relatedEntityIds = searchParams.get("relatedEntityIds"); // Comma-separated IDs for bulk creation
   const organizationNameFromUrl = searchParams.get("organizationName");
-  
+
   // Parse multiple entity IDs if present
-  const entityIdsArray = relatedEntityIds 
+  const entityIdsArray = relatedEntityIds
     ? relatedEntityIds.split(',').map(id => id.trim()).filter(id => id)
-    : relatedEntityId 
+    : relatedEntityId
       ? [relatedEntityId]
       : [];
-  
+
   const isBulkMode = entityIdsArray.length > 1;
-  
+
   // Debug logging for bulk mode detection
   useEffect(() => {
     if (relatedEntityIds || relatedEntityId) {
@@ -71,7 +72,7 @@ export default function AddTask() {
       });
     }
   }, [relatedEntity, relatedEntityId, relatedEntityIds, entityIdsArray, isBulkMode]);
-  
+
   // Debug logging
   if (relatedEntity === 'hiring_manager') {
     console.log('📋 Hiring Manager Task Creation:', {
@@ -93,8 +94,8 @@ export default function AddTask() {
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
   const hasPrefilledOrgFromUrlRef = useRef(false); // Prefill Organization from relatedEntityId once
   const hasPrefilledRelatedFromUrlRef = useRef<Set<string>>(new Set()); // Prefill Job / Job Seeker / Hiring Manager once per entity type
-  
-  
+
+
   // Field_8 reminder now accepts only numeric minutes.
   const parseReminderToMinutes = (reminderValue: string | number | null | undefined): number | null => {
     if (!reminderValue) return null;
@@ -148,11 +149,14 @@ export default function AddTask() {
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
+    resetCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("tasks", { 
+  } = useCustomFields("tasks", {
     applyAutoCurrentDefaults: !taskId,
-    skipRequiredForLabels: ["Related Entity ID"] 
+    skipRequiredForLabels: ["Related Entity ID"]
   });
+  
+  const { isMultipleAddMode } = useMultipleAdd();
 
   // Initialize and load users
   useEffect(() => {
@@ -278,20 +282,20 @@ export default function AddTask() {
   useEffect(() => {
     if (isEditMode) return;
     if (!relatedEntity) return;
-    
+
     // Check if we have IDs (either single or multiple)
-    const hasEntityIds = (relatedEntityId && relatedEntityId.trim() !== "") || 
-                         (relatedEntityIds && relatedEntityIds.trim() !== "");
+    const hasEntityIds = (relatedEntityId && relatedEntityId.trim() !== "") ||
+      (relatedEntityIds && relatedEntityIds.trim() !== "");
     if (!hasEntityIds) return;
-    
+
     // Normalize and check against supported entity types
     const entityRaw = relatedEntity.toLowerCase();
     const entity = entityRaw.replace("-", "_");
-    
+
     if (!["job", "job_seeker", "hiring_manager", "lead", "placement", "organization"].includes(entity)) {
       return;
     }
-    
+
     if (customFieldsLoading || customFields.length === 0) return;
 
     // Map entity types to Field_4 labels and Field_5 sub-field names
@@ -308,14 +312,14 @@ export default function AddTask() {
     if (!field4Type) return;
 
     const subFieldName = `Field_5_${field4Type}`;
-    
+
     // Check if we've already successfully pre-filled this specific entity for this session
     // AND if the value is actually in the state now (to avoid overwrites by defaults)
     const currentField4Value = customFieldValues["Field_4"];
-    const field4Array = Array.isArray(currentField4Value) 
-      ? currentField4Value 
+    const field4Array = Array.isArray(currentField4Value)
+      ? currentField4Value
       : (typeof currentField4Value === "string" ? currentField4Value.split(",").map(v => v.trim()).filter(Boolean) : []);
-    
+
     const isAlreadyPreFilled = field4Array.includes(field4Type) && customFieldValues[subFieldName];
 
     if (isAlreadyPreFilled || hasPrefilledRelatedFromUrlRef.current.has(entity)) {
@@ -341,7 +345,7 @@ export default function AddTask() {
       } else if (field4Val && typeof field4Val === "string") {
         arr = field4Val.split(",").map(v => v.trim()).filter(Boolean);
       }
-      
+
       const nextField4 = arr.includes(field4Type) ? arr : [...arr, field4Type];
 
       return {
@@ -904,7 +908,7 @@ export default function AddTask() {
 
         // Get entity IDs from form if multiselect was used, otherwise use entityIdsArray from URL
         let entityIdsToProcess = finalEntityIds;
-        
+
         // Map entity types to their lookup_type values (match ONLY by lookup_type)
         const entityLookupTypeMap: Record<string, string[]> = {
           "job": ["jobs", "job"],
@@ -914,20 +918,20 @@ export default function AddTask() {
           "placement": ["placements", "placement"],
           "organization": ["organizations", "organization"]
         };
-        
+
         // Find the related entity field in the form - match ONLY by lookup_type
         const expectedLookupTypes = relatedEntity ? (entityLookupTypeMap[relatedEntity.toLowerCase()] || []) : [];
         const relatedEntityField = expectedLookupTypes.length > 0 ? customFields.find((f: any) => {
           const fieldType = String(f.field_type || "").toLowerCase();
           const fieldLookupType = String(f.lookup_type || "").toLowerCase();
-          
+
           const isLookupField = fieldType === "lookup" || fieldType === "multiselect_lookup";
           if (!isLookupField) return false;
-          
+
           // Match ONLY by lookup_type
           return expectedLookupTypes.some(expected => fieldLookupType === expected);
         }) : null;
-        
+
         if (relatedEntityField) {
           const formValue = customFieldValues[relatedEntityField.field_name];
           if (formValue) {
@@ -1039,11 +1043,16 @@ export default function AddTask() {
         );
 
         const resultId = isEditMode ? taskId : data.task ? data.task.id : null;
-        
-        if (resultId) {
-          router.push("/dashboard/tasks/view?id=" + resultId);
+
+        if (isMultipleAddMode && !isEditMode) {
+          resetCustomFields();
+          window.scrollTo(0, 0);
         } else {
-          router.push("/dashboard/tasks");
+          if (resultId) {
+            router.push("/dashboard/tasks/view?id=" + resultId);
+          } else {
+            router.push("/dashboard/tasks");
+          }
         }
       }
     } catch (error) {
@@ -1061,7 +1070,7 @@ export default function AddTask() {
   // Synchronize dynamic Field_5_* sub-fields with the main Field_5 state
   useEffect(() => {
     const field5SubKeys = Object.keys(customFieldValues).filter(k => k.startsWith("Field_5_"));
-    
+
     const allIds: string[] = [];
     field5SubKeys.forEach(k => {
       const val = customFieldValues[k];
@@ -1071,10 +1080,10 @@ export default function AddTask() {
         allIds.push(String(val));
       }
     });
-    
+
     const uniqueIds = Array.from(new Set(allIds)).filter(Boolean);
     const field5Value = uniqueIds.join(",");
-    
+
     if (customFieldValues["Field_5"] !== field5Value) {
       setCustomFieldValues(prev => ({
         ...prev,
@@ -1091,20 +1100,20 @@ export default function AddTask() {
     const field5 = customFields.find(f => f.field_name === "Field_5");
     if (field5?.is_required && !field5.is_hidden) {
       const selectedTypes = customFieldValues["Field_4"] || [];
-      const typesArray = Array.isArray(selectedTypes) 
-        ? selectedTypes 
+      const typesArray = Array.isArray(selectedTypes)
+        ? selectedTypes
         : String(selectedTypes).split(",").map(v => v.trim()).filter(v => v);
-      
+
       if (typesArray.length > 0) {
         for (const type of typesArray) {
           const subFieldName = `Field_5_${type}`;
           const subValue = customFieldValues[subFieldName];
           const hasValue = Array.isArray(subValue) ? subValue.length > 0 : !!subValue;
-          
+
           if (!hasValue) {
-            return { 
-              isValid: false, 
-              message: `Please select at least one ${type}` 
+            return {
+              isValid: false,
+              message: `Please select at least one ${type}`
             };
           }
         }
@@ -1113,7 +1122,7 @@ export default function AddTask() {
         return { isValid: false, message: "Please select a Related Entity Type first" };
       }
     }
-    
+
     return res;
   }, [customFields, customFieldValues, validateCustomFields]);
 
@@ -1298,11 +1307,11 @@ export default function AddTask() {
                     const fieldType = String(field.field_type || "").toLowerCase();
                     const fieldLookupType = String(field.lookup_type || "").toLowerCase();
                     const entity = relatedEntity.toLowerCase();
-                    
+
                     // Check if field type is a lookup
                     const isLookupField = fieldType === "lookup" || fieldType === "multiselect_lookup";
                     if (!isLookupField) return false;
-                    
+
                     // Map entity types to their lookup_type values
                     const entityLookupTypeMap: Record<string, string[]> = {
                       "job": ["jobs", "job"],
@@ -1312,9 +1321,9 @@ export default function AddTask() {
                       "placement": ["placements", "placement"],
                       "organization": ["organizations", "organization"]
                     };
-                    
+
                     const expectedLookupTypes = entityLookupTypeMap[entity] || [];
-                    
+
                     // Match ONLY by lookup_type
                     return expectedLookupTypes.some(expected => fieldLookupType === expected);
                   })();
@@ -1345,7 +1354,7 @@ export default function AddTask() {
 
                   // Get field value - will be array for multiselect in bulk mode, string for single select
                   let fieldValue = customFieldValues[field.field_name];
-                  
+
                   // Special handling for Field_4 (Related Entity Type) mapping to dynamic ID fields
                   const selectedRelatedEntityTypes = (() => {
                     const val = customFieldValues["Field_4"];
@@ -1416,7 +1425,7 @@ export default function AddTask() {
                   }
 
                   // Note: fieldToRender and Field_4 forcing logic already handled above
-                  
+
                   // Ensure proper format: array for multiselect, string for single select
                   // Handle bulk mode for ALL related entity fields, not just hiring_manager
                   if (isBulkMode && isRelatedEntityField) {
@@ -1428,9 +1437,9 @@ export default function AddTask() {
                     if (fieldValue.length === 0 && entityIdsArray.length > 0) {
                       fieldValue = [...entityIdsArray]; // Create a copy
                       // Update state if needed
-                      if (!customFieldValues[field.field_name] || 
-                          (Array.isArray(customFieldValues[field.field_name]) && 
-                           customFieldValues[field.field_name].length === 0)) {
+                      if (!customFieldValues[field.field_name] ||
+                        (Array.isArray(customFieldValues[field.field_name]) &&
+                          customFieldValues[field.field_name].length === 0)) {
                         handleCustomFieldChange(field.field_name, fieldValue);
                       }
                     }
@@ -1516,8 +1525,8 @@ export default function AddTask() {
                 type="submit"
                 disabled={isSubmitting || !isFormValid}
                 className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                    : "bg-blue-500 text-white hover:bg-blue-600"
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
                   }`}
               >
                 {isEditMode ? "Update" : "Save"}

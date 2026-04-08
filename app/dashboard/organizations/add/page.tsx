@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { getCookie } from "cookies-next";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -140,9 +141,12 @@ export default function AddOrganization() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("organizations", {
     applyAutoCurrentDefaults: !organizationId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
             const addressFields = useMemo(
     () => getAddressFields(customFields as any, "organizations"),
     [customFields]
@@ -1112,8 +1116,17 @@ export default function AddOrganization() {
         );
       }
 
-      const id = isEditMode ? organizationId : data.organization.id;
-      router.push(`/dashboard/organizations/view?id=${id}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        setHasConfirmedPhoneDupSave(false);
+        setHasConfirmedWebsiteDupSave(false);
+        setPhoneDupMatches([]);
+        setWebsiteDupMatches([]);
+        window.scrollTo(0, 0);
+      } else {
+        const id = isEditMode ? organizationId : data.organization.id;
+        router.push(`/dashboard/organizations/view?id=${id}`);
+      }
     } catch (err) {
       console.error(
         `Error ${isEditMode ? "updating" : "creating"} organization:`,

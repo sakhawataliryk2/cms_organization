@@ -2169,14 +2169,34 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
     fetchCustomFields();
   }, [fetchCustomFields]);
 
+  const resetCustomFields = React.useCallback(() => {
+    const applyAuto = options?.applyAutoCurrentDefaults !== false;
+    setCustomFieldValues(() => {
+      const next: Record<string, any> = {};
+      customFields.forEach((fld: CustomFieldDefinition) => {
+        next[fld.field_name] = resolveInitialValueFromDefinition(
+          {
+            field_type: fld.field_type,
+            field_name: fld.field_name,
+            default_value: fld.default_value,
+            lookup_type: (fld as any).lookup_type ?? null,
+          },
+          applyAuto
+        );
+      });
+      return next;
+    });
+  }, [customFields, options?.applyAutoCurrentDefaults]);
+
   return {
     customFields,
     customFieldValues,
-    setCustomFieldValues, // ✅ yeh line zaroor add karo
+    setCustomFieldValues,
     isLoading,
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
     refetch: fetchCustomFields,
   };
 }

@@ -1,15 +1,6 @@
 'use client'
 
-import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-
-interface ManagementModule {
-    id: string;
-    name: string;
-    icon: React.ReactNode;
-    path: string;
-}
 
 export default function UserManagement() {
     const router = useRouter();
@@ -41,8 +32,8 @@ export default function UserManagement() {
             ),
             path: '/dashboard/admin/user-management/add-office'
         },
-       
-        
+
+
         {
             id: 'add-team',
             name: 'Add Team',

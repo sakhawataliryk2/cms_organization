@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { getCookie } from "cookies-next";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
@@ -383,9 +384,12 @@ export default function AddExecutiveSearchJob() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("jobs-executive-search", {
     applyAutoCurrentDefaults: !jobId,
   });
+
+  const { isMultipleAddMode } = useMultipleAdd();
 
   const hiringManagerCustomField = useMemo(() => {
     return customFields.find((f) => {
@@ -1163,14 +1167,20 @@ export default function AddExecutiveSearchJob() {
         throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} Executive Search job`);
       }
 
-      const resultId = isEditMode ? jobId : data.job?.id;
-      // After add/edit: go to the job view page (so "Add Job" from org summary lands on the new job)
-      if (resultId) {
-        router.push(`/dashboard/jobs/view?id=${resultId}`);
-      } else if (organizationIdFromUrl && !isEditMode) {
-        router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        setFormFields((prev) => prev.map((f) => ({ ...f, value: "" })));
+        window.scrollTo(0, 0);
       } else {
-        router.push("/dashboard/jobs");
+        const resultId = isEditMode ? jobId : data.job?.id;
+        // After add/edit: go to the job view page (so "Add Job" from org summary lands on the new job)
+        if (resultId) {
+          router.push(`/dashboard/jobs/view?id=${resultId}`);
+        } else if (organizationIdFromUrl && !isEditMode) {
+          router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
+        } else {
+          router.push("/dashboard/jobs");
+        }
       }
     } catch (err) {
       console.error(`Error ${isEditMode ? "updating" : "creating"} Executive Search job:`, err);

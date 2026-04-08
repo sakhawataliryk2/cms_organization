@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
@@ -82,7 +83,10 @@ export default function AddLead() {
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
+    resetCustomFields,
   } = useCustomFields("leads", { applyAutoCurrentDefaults: !leadId });
+
+  const { isMultipleAddMode } = useMultipleAdd();
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -540,9 +544,33 @@ export default function AddLead() {
         );
       }
 
-      // Navigate to the lead view page
-      const id = isEditMode ? leadId : data.lead.id;
-      router.push(`/dashboard/leads/view?id=${id}`);
+      if (isMultipleAddMode && !isEditMode) {
+        resetCustomFields();
+        setFormData({
+          firstName: "",
+          lastName: "",
+          status: "New Lead",
+          nickname: "",
+          title: "",
+          organizationId: "",
+          department: "Accounting",
+          reportsTo: "",
+          owner: "",
+          secondaryOwners: "",
+          email: "",
+          email2: "",
+          phone: "",
+          mobilePhone: "",
+          directLine: "",
+          linkedinUrl: "",
+          address: "",
+        });
+        window.scrollTo(0, 0);
+      } else {
+        // Navigate to the lead view page
+        const id = isEditMode ? leadId : data.lead.id;
+        router.push(`/dashboard/leads/view?id=${id}`);
+      }
     } catch (err) {
       console.error(`Error ${isEditMode ? "updating" : "creating"} lead:`, err);
       setError(
