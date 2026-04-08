@@ -1846,7 +1846,15 @@ export default function CandidateFlowDashboard() {
                             {HIRING_MANAGER_CONTACT_FIELD_NAMES.map((fieldName) => {
                           const label = getHiringManagerFieldLabel(fieldName);
                           const value = getHiringManagerFieldValueByFieldName(fieldName);
-                          const isStatus = fieldName === 'Field_7';
+                          const normalizedLabel = String(label || '').toLowerCase().trim();
+                          const isEmailLikeLabel =
+                            normalizedLabel.includes('email') ||
+                            normalizedLabel.includes('e-mail');
+                          const isEmailLikeValue =
+                            typeof value === 'string' &&
+                            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+                          const isPrimaryEmail = fieldName === 'Field_16' || isEmailLikeLabel || isEmailLikeValue;
+                          const isStatus = fieldName === 'Field_7' && !isPrimaryEmail;
                           const isOrganizationLookup = fieldName === 'Field_3';
                           const rawValue = getHiringManagerFieldRawValueByFieldName(fieldName);
                           return (
@@ -1862,12 +1870,22 @@ export default function CandidateFlowDashboard() {
                                   />
                                 ) : (
                                   isOrganizationLookup ? renderDetailCellValue(rawValue, value, 'organization') : (
-                                    <FieldValueRenderer
-                                      value={value || '-'}
-                                      fieldInfo={{ name: fieldName, label }}
-                                      entityType="hiring-managers"
-                                      recordId={selectedHiringManagerProfile?.id}
-                                    />
+                                    isPrimaryEmail && value ? (
+                                      <a
+                                        href={`mailto:${String(value).trim()}`}
+                                        className="text-blue-600 hover:underline break-all"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {value}
+                                      </a>
+                                    ) : (
+                                      <FieldValueRenderer
+                                        value={value || '-'}
+                                        fieldInfo={{ name: fieldName, label }}
+                                        entityType="hiring-managers"
+                                        recordId={selectedHiringManagerProfile?.id}
+                                      />
+                                    )
                                   )
                                 )}
                               </div>

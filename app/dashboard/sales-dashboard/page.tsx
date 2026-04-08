@@ -9,11 +9,11 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 import { getCustomFieldLabel } from '@/lib/getCustomFieldLabel';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import { getRecordNumberFromId } from '@/lib/getRecordNumberFromId';
-import { BsFillBinocularsFill } from 'react-icons/bs';
 import { Binoculars } from 'lucide-react';
 import AddNoteModal from '@/components/AddNoteModal';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
 import { useAuth } from '@/lib/auth';
+import { Building2 } from 'lucide-react';
 
 interface ApplicationTile {
   id: number;
@@ -45,6 +45,11 @@ interface JobCard {
 
 interface ModalContext {
   columnId: string;
+  jobId: number;
+}
+
+interface DragCardPayload {
+  fromColumnId: string;
   jobId: number;
 }
 
@@ -81,6 +86,35 @@ const COLUMN_RANK: Record<string, number> = {
   'offer-extended': 4,
   placement: 5,
 };
+
+const STATUS_BY_COLUMN_ID: Record<string, string> = {
+  submission: 'Submitted',
+  'client-submitted': 'Client Submission',
+  interview: 'Interview',
+  'offer-extended': 'Offer Extended',
+  placement: 'Placed',
+};
+
+function isAllowedCardTransition(fromColumnId: string, toColumnId: string) {
+  return (
+    (fromColumnId === 'submission' && toColumnId === 'client-submitted') ||
+    (fromColumnId === 'client-submitted' && toColumnId === 'interview') ||
+    (fromColumnId === 'interview' && toColumnId === 'offer-extended')
+  );
+}
+
+const ORGANIZATION_MODAL_FIELD_NAMES = [
+  'Field_1',
+  'Field_3',
+  'Field_5',
+  'Field_6',
+  'Field_8',
+  'Field_9',
+  'Field_10',
+  'Field_11',
+  'Field_12',
+  'Field_17',
+] as const;
 
 function appIdentityKey(app: ApplicationTile): string {
   const hasCandidateAndJob = app.jobSeekerId != null && app.jobId != null;
@@ -172,20 +206,41 @@ function normalizeBoardByStatus(
 
 function normalizePayload(data: any) {
   if (!data || typeof data !== 'object') return null;
-  return data.job || data.jobSeeker || data.data || data;
+  return (
+    data.job ||
+    data.organization ||
+    data.hiringManager ||
+    data.jobSeeker ||
+    data.data ||
+    data
+  );
 }
 
 function extractCustomFieldsRecord(payload: any): Record<string, any> {
   if (!payload || typeof payload !== 'object') return {};
+  const parseCustomFields = (value: any): Record<string, any> => {
+    if (!value) return {};
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, any>;
+        }
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+
   const direct = payload.customFields || payload.custom_fields;
-  if (direct && typeof direct === 'object') return direct;
+  const directParsed = parseCustomFields(direct);
+  if (Object.keys(directParsed).length > 0) return directParsed;
   const nested = payload.data;
   if (nested && typeof nested === 'object') {
-    return (
-      nested.customFields ||
-      nested.custom_fields ||
-      {}
-    );
+    const nestedParsed = parseCustomFields(nested.customFields || nested.custom_fields);
+    if (Object.keys(nestedParsed).length > 0) return nestedParsed;
   }
   return {};
 }
@@ -213,6 +268,7 @@ const JobStatusCard = memo(function JobStatusCard({
   onOpenApplications,
   onOpenJob,
   onOpenOrganization,
+  onDragStartCard,
   jobRecordNumber,
 }: {
   card: JobCard;
@@ -220,14 +276,36 @@ const JobStatusCard = memo(function JobStatusCard({
   onOpenApplications: (card: JobCard, columnId: string) => void;
   onOpenJob: (jobId: number) => void;
   onOpenOrganization: (organizationId: string) => void;
+  onDragStartCard: (payload: DragCardPayload) => void;
   jobRecordNumber?: number | null;
 }) {
   return (
-    <div className="rounded-2xl px-5 py-4 border border-slate-200 bg-white shadow-sm hover:bg-slate-50 transition-colors w-full min-h-[160px] flex flex-col justify-between items-center text-center">
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStartCard({ fromColumnId: columnId, jobId: card.jobId });
+      }}
+      className="rounded-2xl px-5 py-4 border border-slate-200 bg-white shadow-sm hover:bg-slate-50 transition-colors w-full min-h-[160px] flex flex-col justify-between items-center text-center cursor-move"
+    >
 
       {/* Company Name */}
       <div>
-        <RecordNameResolver id={card.companyRefValue} type="organization" clickable />
+        <button
+          type="button"
+          className="text-blue-600 hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenOrganization(card.companyRefValue);
+          }}
+        >
+          <RecordNameResolver
+            id={card.companyRefValue}
+            type="organization"
+            // clickable={false}
+            fallback={card.companyDisplay || 'Organization'}
+          />
+        </button>
       </div>
 
       {/* Job ID */}
@@ -268,12 +346,18 @@ const DroppableColumn = memo(function DroppableColumn({
   onOpenApplications,
   onOpenJob,
   onOpenOrganization,
+  onDropCardToColumn,
+  onDragStartCard,
+  activeDrag,
   jobRecordNumbers,
 }: {
   column: Omit<Column, 'applications'> & { jobs: JobCard[] };
   onOpenApplications: (card: JobCard, columnId: string) => void;
   onOpenJob: (jobId: number) => void;
   onOpenOrganization: (organizationId: string) => void;
+  onDropCardToColumn: (toColumnId: string) => void;
+  onDragStartCard: (payload: DragCardPayload) => void;
+  activeDrag: DragCardPayload | null;
   jobRecordNumbers: Record<number, number | null>;
 }) {
   return (
@@ -285,7 +369,21 @@ const DroppableColumn = memo(function DroppableColumn({
           {column.title} ({column.jobs.length})
         </h2>
       </div>
-      <div className={`flex-1 bg-slate-50/50 p-3 overflow-y-auto space-y-3 min-h-[120px] ${column.color}`}>
+      <div
+        className={`flex-1 bg-slate-50/50 p-3 overflow-y-auto space-y-3 min-h-[120px] ${column.color} ${activeDrag && isAllowedCardTransition(activeDrag.fromColumnId, column.id) ? 'ring-2 ring-sky-200' : ''}`}
+        onDragOver={(e) => {
+          if (!activeDrag) return;
+          if (!isAllowedCardTransition(activeDrag.fromColumnId, column.id)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(e) => {
+          if (!activeDrag) return;
+          if (!isAllowedCardTransition(activeDrag.fromColumnId, column.id)) return;
+          e.preventDefault();
+          onDropCardToColumn(column.id);
+        }}
+      >
         {column.jobs.map((card) => (
           <JobStatusCard
             key={`${column.id}-${card.jobId}`}
@@ -294,6 +392,7 @@ const DroppableColumn = memo(function DroppableColumn({
             onOpenApplications={onOpenApplications}
             onOpenJob={onOpenJob}
             onOpenOrganization={onOpenOrganization}
+            onDragStartCard={onDragStartCard}
             jobRecordNumber={jobRecordNumbers[card.jobId]}
           />
         ))}
@@ -329,12 +428,21 @@ export default function SalesDashboard() {
   const [jobRecordNumbers, setJobRecordNumbers] = useState<Record<number, number | null>>({});
   const [jobSeekerStatusById, setJobSeekerStatusById] = useState<Record<number, string>>({});
   const [loadingModalStatuses, setLoadingModalStatuses] = useState(false);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
+  const [organizationRecordNumber, setOrganizationRecordNumber] = useState<number | null>(null);
+  const [organizationProfile, setOrganizationProfile] = useState<Record<string, any> | null>(null);
+  const [organizationFieldLabelsByName, setOrganizationFieldLabelsByName] = useState<Record<string, string>>({});
+  const [loadingOrganizationProfile, setLoadingOrganizationProfile] = useState(false);
+  const [loadingOrganizationFieldLabels, setLoadingOrganizationFieldLabels] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     candidateId: number | string;
     applicationId: number | string;
     newStatus: string;
   } | null>(null);
+  const [pendingBulkStatusChange, setPendingBulkStatusChange] = useState<
+    Array<{ candidateId: number | string; applicationId: number | string; newStatus: string }>
+  >([]);
   const [noteModalDefaults, setNoteModalDefaults] = useState<{
     action?: string;
     aboutReferences?: {
@@ -346,7 +454,25 @@ export default function SalesDashboard() {
   } | null>(null);
   const [showClientSubmissionModal, setShowClientSubmissionModal] = useState(false);
   const [clientSubmissionCandidate, setClientSubmissionCandidate] = useState<any | null>(null);
+  const [clientSubmissionCandidates, setClientSubmissionCandidates] = useState<any[]>([]);
   const [clientSubmissionJob, setClientSubmissionJob] = useState<any | null>(null);
+  const [activeDrag, setActiveDrag] = useState<DragCardPayload | null>(null);
+  const [isBulkDraggingUpdate, setIsBulkDraggingUpdate] = useState(false);
+
+  const getOrganizationFieldLabel = useCallback(
+    (fieldName: string) => organizationFieldLabelsByName[fieldName] || fieldName,
+    [organizationFieldLabelsByName]
+  );
+
+  const getOrganizationFieldValueByFieldName = useCallback(
+    (fieldName: string) => {
+      const label = getOrganizationFieldLabel(fieldName);
+      const customFields =
+        (organizationProfile?.customFields as Record<string, any> | undefined) || {};
+      return getCustomFieldValueByLabel(customFields, label, fieldName);
+    },
+    [getOrganizationFieldLabel, organizationProfile]
+  );
 
   const buildJobBoard = useCallback(
     (
@@ -439,6 +565,72 @@ export default function SalesDashboard() {
   }, [fetchBoard]);
 
   useEffect(() => {
+    if (selectedOrganizationId == null) {
+      setOrganizationFieldLabelsByName({});
+      setLoadingOrganizationFieldLabels(false);
+      return;
+    }
+    let cancelled = false;
+    const loadOrganizationFieldLabels = async () => {
+      setLoadingOrganizationFieldLabels(true);
+      try {
+        const entries = await Promise.all(
+          ORGANIZATION_MODAL_FIELD_NAMES.map(async (fieldName) => {
+            const label = await getCustomFieldLabel('organizations', fieldName);
+            return [fieldName, label || fieldName] as const;
+          })
+        );
+        if (cancelled) return;
+        setOrganizationFieldLabelsByName(Object.fromEntries(entries));
+      } finally {
+        if (!cancelled) setLoadingOrganizationFieldLabels(false);
+      }
+    };
+    void loadOrganizationFieldLabels();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrganizationId]);
+
+  useEffect(() => {
+    if (selectedOrganizationId == null) {
+      setOrganizationProfile(null);
+      setOrganizationRecordNumber(null);
+      setLoadingOrganizationProfile(false);
+      return;
+    }
+    let cancelled = false;
+    const loadOrganizationProfile = async () => {
+      setLoadingOrganizationProfile(true);
+      try {
+        const [recordNumber, res] = await Promise.all([
+          getRecordNumberFromId(selectedOrganizationId, 'organization'),
+          fetch(`/api/organizations/${selectedOrganizationId}`, { credentials: 'include' }),
+        ]);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setOrganizationRecordNumber(recordNumber);
+        if (!res.ok) {
+          setOrganizationProfile(null);
+          return;
+        }
+        const payload = normalizePayload(data);
+        const customFields = extractCustomFieldsRecord(payload);
+        setOrganizationProfile({
+          ...(payload || {}),
+          customFields,
+        });
+      } finally {
+        if (!cancelled) setLoadingOrganizationProfile(false);
+      }
+    };
+    void loadOrganizationProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrganizationId]);
+
+  useEffect(() => {
     setBoard(buildJobBoard(rawBoard, jobCompanyByJobId));
   }, [rawBoard, jobCompanyByJobId, buildJobBoard]);
 
@@ -471,7 +663,6 @@ export default function SalesDashboard() {
               ref: fieldValue || '',
             };
           } catch {
-            // Ignore per-item fetch errors.
           }
         })
       );
@@ -522,6 +713,19 @@ export default function SalesDashboard() {
     [board]
   );
 
+  const organizationFullAddress = useMemo(() => {
+    const parts = [
+      getOrganizationFieldValueByFieldName('Field_8'),
+      getOrganizationFieldValueByFieldName('Field_9'),
+      getOrganizationFieldValueByFieldName('Field_10'),
+      getOrganizationFieldValueByFieldName('Field_11'),
+      getOrganizationFieldValueByFieldName('Field_12'),
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    return parts.join(', ');
+  }, [getOrganizationFieldValueByFieldName]);
+
   const handleClose = () => router.push('/home');
   const handlePrevious = () => router.push('/dashboard/candidate-flow');
   const handleOpenJob = useCallback(
@@ -534,9 +738,11 @@ export default function SalesDashboard() {
   const handleOpenOrganization = useCallback(
     (organizationId: string) => {
       if (!organizationId) return;
-      router.push(`/dashboard/organizations/view?id=${encodeURIComponent(organizationId)}`);
+      const parsedId = Number(String(organizationId).trim());
+      if (!Number.isFinite(parsedId) || parsedId < 1) return;
+      setSelectedOrganizationId(parsedId);
     },
-    [router]
+    []
   );
 
   const handleOpenApplications = useCallback((card: JobCard, columnId: string) => {
@@ -627,6 +833,127 @@ export default function SalesDashboard() {
     [fetchBoard]
   );
 
+  const bulkUpdateCardStatus = useCallback(
+    async (card: JobCard, toColumnId: string) => {
+      const nextStatus = STATUS_BY_COLUMN_ID[toColumnId];
+      if (!nextStatus) return;
+      const updates = card.applicationsInStatus
+        .filter((app) => app?.jobSeekerId != null && app?.id != null)
+        .map(async (app) => {
+          const res = await fetch(`/api/job-seekers/${app.jobSeekerId}/applications/${app.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: nextStatus }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data?.message || `Failed update for application ${app.id}`);
+          }
+        });
+
+      const results = await Promise.allSettled(updates);
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        throw new Error(`${failed} application update(s) failed`);
+      }
+    },
+    []
+  );
+
+  const handleDropCardToColumn = useCallback(
+    async (toColumnId: string) => {
+      const drag = activeDrag;
+      setActiveDrag(null);
+      if (!drag || drag.fromColumnId === toColumnId) return;
+      if (!isAllowedCardTransition(drag.fromColumnId, toColumnId)) return;
+      const sourceCards = board[drag.fromColumnId] || [];
+      const card = sourceCards.find((c) => c.jobId === drag.jobId);
+      if (!card) return;
+
+      if (drag.fromColumnId === 'submission' && toColumnId === 'client-submitted') {
+        const candidates = Array.from(
+          new Map(
+            card.applicationsInStatus.map((app) => [
+              String(app.jobSeekerId),
+              { id: app.jobSeekerId, name: `Job Seeker #${app.jobSeekerId}` },
+            ])
+          ).values()
+        );
+        setClientSubmissionCandidates(candidates);
+        setClientSubmissionCandidate(null);
+        try {
+          const jobRes = await fetch(`/api/jobs/${card.jobId}`);
+          const jobData = await jobRes.json().catch(() => ({}));
+          setClientSubmissionJob(jobRes.ok ? (jobData?.job ?? jobData?.data ?? jobData) : null);
+        } catch {
+          setClientSubmissionJob(null);
+        }
+        setPreviewContext({ columnId: drag.fromColumnId, jobId: card.jobId });
+        setShowClientSubmissionModal(true);
+        return;
+      }
+
+      if (drag.fromColumnId === 'client-submitted' && toColumnId === 'interview') {
+        const candidateIds = Array.from(
+          new Set(card.applicationsInStatus.map((app) => String(app.jobSeekerId)))
+        );
+        const applicationPairs = card.applicationsInStatus
+          .filter((app) => app.jobSeekerId != null && app.id != null)
+          .map((app) => `${app.jobSeekerId}:${app.id}`);
+        const params = new URLSearchParams();
+        params.set('addAppointment', '1');
+        params.set('participantType', 'job_seeker');
+        params.set('participantIds', candidateIds.join(','));
+        params.set('jobId', String(card.jobId));
+        params.set('appointmentType', 'Interview');
+        if (applicationPairs.length > 0) {
+          params.set('applicationPairs', applicationPairs.join(','));
+        }
+        router.push(`/dashboard/planner?${params.toString()}`);
+        return;
+      }
+
+      if (drag.fromColumnId === 'interview' && toColumnId === 'offer-extended') {
+        const refs: { id: string; type: string; display: string; value: string }[] = [];
+        const jobRecord = jobRecordNumbers[card.jobId] ?? card.jobId;
+        const jobDisplay = `${formatRecordId(jobRecord, 'job')} ${card.jobTitle || ''}`.trim();
+        refs.push({ id: String(card.jobId), type: 'Job', display: jobDisplay, value: jobDisplay });
+
+        const uniqueCandidates = Array.from(
+          new Map(
+            card.applicationsInStatus.map((app) => [
+              String(app.jobSeekerId),
+              { candidateId: app.jobSeekerId, applicationId: app.id },
+            ])
+          ).values()
+        );
+        uniqueCandidates.forEach((entry) => {
+          const jsDisplay = `${formatRecordId(entry.candidateId, 'jobSeeker')} Job Seeker #${entry.candidateId}`;
+          refs.push({
+            id: String(entry.candidateId),
+            type: 'Job Seeker',
+            display: jsDisplay,
+            value: jsDisplay,
+          });
+        });
+
+        setPendingBulkStatusChange(
+          uniqueCandidates
+            .filter((e) => e.applicationId != null)
+            .map((e) => ({
+              candidateId: e.candidateId,
+              applicationId: e.applicationId,
+              newStatus: 'Offer Extended',
+            }))
+        );
+        setNoteModalDefaults({ action: 'Offer Extended', aboutReferences: refs });
+        setShowAddNote(true);
+        return;
+      }
+    },
+    [activeDrag, board, router, jobRecordNumbers]
+  );
+
   const handleApplicationStatusChange = useCallback(
     async (app: ApplicationTile, newStatus: string) => {
       const applicationId = app.id;
@@ -634,6 +961,13 @@ export default function SalesDashboard() {
       const effectiveJobId = app.jobId ?? previewCard?.jobId;
 
       if (newStatus === 'Client Submission') {
+        setClientSubmissionCandidates([
+          {
+            id: jobSeekerId,
+            name: `Job Seeker #${jobSeekerId}`,
+            rawApplication: app,
+          },
+        ]);
         setClientSubmissionCandidate({
           id: jobSeekerId,
           name: `Job Seeker #${jobSeekerId}`,
@@ -743,6 +1077,7 @@ export default function SalesDashboard() {
           Applications by stage grouped as job cards.
         </p>
         {error && <p className="text-red-600 text-sm mt-1">{error}</p>}
+        {isBulkDraggingUpdate && <p className="text-sky-700 text-xs mt-1">Updating statuses...</p>}
       </div>
 
       <div className="grow overflow-x-auto overflow-y-hidden p-4">
@@ -759,6 +1094,9 @@ export default function SalesDashboard() {
                 onOpenApplications={handleOpenApplications}
                 onOpenJob={handleOpenJob}
                 onOpenOrganization={handleOpenOrganization}
+                onDropCardToColumn={handleDropCardToColumn}
+                onDragStartCard={setActiveDrag}
+                activeDrag={activeDrag}
                 jobRecordNumbers={jobRecordNumbers}
               />
             ))}
@@ -817,6 +1155,151 @@ export default function SalesDashboard() {
                 <FiEye size={16} />
                 Open Job Order
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedOrganizationId != null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+          <div className="bg-white w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col border border-slate-400">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-400 bg-slate-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <Building2 className="text-slate-700 shrink-0" size={16} />
+                <div className="text-sm font-semibold text-slate-800 truncate">
+                  {formatRecordId(organizationRecordNumber ?? selectedOrganizationId, 'organization')} {getOrganizationFieldValueByFieldName('Field_1') || 'Organization'}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = selectedOrganizationId;
+                    setSelectedOrganizationId(null);
+                    router.push(`/dashboard/organizations/view?id=${id}`);
+                  }}
+                  className="px-3 py-1 rounded bg-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-300"
+                >
+                  Open Record
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrganizationId(null)}
+                  className="p-1 rounded-full hover:bg-slate-200 text-slate-600"
+                  aria-label="Close organization preview"
+                >
+                  <FiX size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-3 py-2 border-b border-slate-300 text-xs bg-white grid grid-cols-2 gap-4">
+              <div>
+                <span className="font-semibold text-slate-700">{getOrganizationFieldLabel('Field_6')}: </span>
+                <span className="text-slate-800">
+                  <FieldValueRenderer
+                    value={getOrganizationFieldValueByFieldName('Field_6') || '-'}
+                    fieldInfo={{ name: 'Field_6', label: getOrganizationFieldLabel('Field_6') }}
+                    entityType="organizations"
+                    recordId={selectedOrganizationId}
+                  />
+                </span>
+              </div>
+              <div>
+                <span className="font-semibold text-slate-700">{getOrganizationFieldLabel('Field_5')}: </span>
+                <span className="text-slate-800">
+                  <FieldValueRenderer
+                    value={getOrganizationFieldValueByFieldName('Field_5') || '-'}
+                    fieldInfo={{ name: 'Field_5', label: getOrganizationFieldLabel('Field_5') }}
+                    entityType="organizations"
+                    recordId={selectedOrganizationId}
+                  />
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-slate-100 p-3 space-y-4">
+              {(loadingOrganizationProfile || loadingOrganizationFieldLabels) ? (
+                <div className="text-sm text-slate-600">Loading organization details...</div>
+              ) : (
+                <>
+                  <div className="border border-slate-300 rounded bg-white">
+                    <div className="px-3 py-2 text-base font-bold text-slate-800 border-b border-slate-300">
+                      Organization Contact Info:
+                    </div>
+                    <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-300">
+                      <div className="px-3 py-2 font-semibold text-slate-700 bg-slate-50">{getOrganizationFieldLabel('Field_1')}:</div>
+                      <div className="px-3 py-2 text-slate-800">
+                        <FieldValueRenderer
+                          value={getOrganizationFieldValueByFieldName('Field_1') || '-'}
+                          fieldInfo={{ name: 'Field_1', label: getOrganizationFieldLabel('Field_1') }}
+                          entityType="organizations"
+                          recordId={selectedOrganizationId}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-300">
+                      <div className="px-3 py-2 font-semibold text-slate-700 bg-slate-50">{getOrganizationFieldLabel('Field_3')}:</div>
+                      <div className="px-3 py-2 text-slate-800">
+                        <FieldValueRenderer
+                          value={getOrganizationFieldValueByFieldName('Field_3') || '-'}
+                          fieldInfo={{ name: 'Field_3', label: getOrganizationFieldLabel('Field_3') }}
+                          entityType="organizations"
+                          recordId={selectedOrganizationId}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-300">
+                      <div className="px-3 py-2 font-semibold text-slate-700 bg-slate-50">{getOrganizationFieldLabel('Field_6')}:</div>
+                      <div className="px-3 py-2 text-slate-800">
+                        <FieldValueRenderer
+                          value={getOrganizationFieldValueByFieldName('Field_6') || '-'}
+                          fieldInfo={{ name: 'Field_6', label: getOrganizationFieldLabel('Field_6') }}
+                          entityType="organizations"
+                          recordId={selectedOrganizationId}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-300">
+                      <div className="px-3 py-2 font-semibold text-slate-700 bg-slate-50">
+                        {[
+                          getOrganizationFieldLabel('Field_8'),
+                          getOrganizationFieldLabel('Field_9'),
+                          getOrganizationFieldLabel('Field_10'),
+                          getOrganizationFieldLabel('Field_11'),
+                          getOrganizationFieldLabel('Field_12'),
+                        ].join(', ')}:
+                      </div>
+                      <div className="px-3 py-2 text-slate-800">{organizationFullAddress || '-'}</div>
+                    </div>
+                    <div className="grid grid-cols-[220px_1fr] text-xs">
+                      <div className="px-3 py-2 font-semibold text-slate-700 bg-slate-50">{getOrganizationFieldLabel('Field_5')}:</div>
+                      <div className="px-3 py-2 text-slate-800">
+                        <FieldValueRenderer
+                          value={getOrganizationFieldValueByFieldName('Field_5') || '-'}
+                          fieldInfo={{ name: 'Field_5', label: getOrganizationFieldLabel('Field_5') }}
+                          entityType="organizations"
+                          recordId={selectedOrganizationId}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-300 rounded bg-white">
+                    <div className="px-3 py-2 text-base font-bold text-slate-800 border-b border-slate-300">
+                      About the Organization:
+                    </div>
+                    <div className="px-3 py-3 text-sm text-slate-700 whitespace-pre-wrap">
+                      <FieldValueRenderer
+                        value={getOrganizationFieldValueByFieldName('Field_17') || '-'}
+                        fieldInfo={{ name: 'Field_17', label: getOrganizationFieldLabel('Field_17') }}
+                        entityType="organizations"
+                        recordId={selectedOrganizationId}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -913,12 +1396,13 @@ export default function SalesDashboard() {
           onClose={() => {
             setShowClientSubmissionModal(false);
             setClientSubmissionCandidate(null);
+            setClientSubmissionCandidates([]);
             setClientSubmissionJob(null);
           }}
           jobId={previewCard?.jobId ?? clientSubmissionJob?.id ?? null}
           job={clientSubmissionJob ?? null}
           jobHiringManager={null}
-          candidates={candidatesForClientSubmission}
+          candidates={clientSubmissionCandidates.length > 0 ? clientSubmissionCandidates : candidatesForClientSubmission}
           initialCandidate={clientSubmissionCandidate}
           currentUserName={user?.name || ''}
           currentUserEmail={user?.email || ''}
@@ -935,6 +1419,8 @@ export default function SalesDashboard() {
           onClose={() => {
             setShowAddNote(false);
             setNoteModalDefaults(null);
+            setPendingBulkStatusChange([]);
+            setPendingStatusChange(null);
           }}
           entityType="job"
           entityId={String(previewCard?.jobId ?? '')}
@@ -942,7 +1428,19 @@ export default function SalesDashboard() {
           defaultAction={noteModalDefaults?.action}
           defaultAboutReferences={noteModalDefaults?.aboutReferences}
           onSuccess={() => {
-            if (pendingStatusChange?.applicationId != null) {
+            if (pendingBulkStatusChange.length > 0) {
+              void Promise.all(
+                pendingBulkStatusChange.map((item) =>
+                  updateApplicationStatus(
+                    item.candidateId,
+                    item.applicationId,
+                    item.newStatus
+                  )
+                )
+              ).then(() => {
+                setPendingBulkStatusChange([]);
+              });
+            } else if (pendingStatusChange?.applicationId != null) {
               void updateApplicationStatus(
                 pendingStatusChange.candidateId,
                 pendingStatusChange.applicationId,

@@ -569,6 +569,11 @@ const Planners = () => {
     candidateId: string;
     applicationId: string;
   } | null>(null);
+  const pendingBulkApplicationStatusUpdates = useRef<
+    Array<{ candidateId: string; applicationId: string }>
+  >([]);
+  const [isBulkInterviewMode, setIsBulkInterviewMode] = useState(false);
+  const [bulkJobSeekerIds, setBulkJobSeekerIds] = useState<number[]>([]);
   useEffect(() => {
     if (hasInitializedFromUrl.current) return;
     const addParam = searchParams?.get("addAppointment");
@@ -579,16 +584,37 @@ const Planners = () => {
 
     const participantTypeParam = searchParams?.get("participantType") || "";
     const participantIdParam = searchParams?.get("participantId") || "";
+    const participantIdsParam = searchParams?.get("participantIds") || "";
     const jobIdParam = searchParams?.get("jobId") || "";
     const appointmentTypeParam =
       searchParams?.get("appointmentType") || "Interview";
     const applicationIdParam = searchParams?.get("applicationId") || "";
     const candidateIdParam = searchParams?.get("candidateId") || "";
+    const applicationPairsParam = searchParams?.get("applicationPairs") || "";
     if (applicationIdParam && candidateIdParam) {
       pendingApplicationStatusUpdate.current = {
         candidateId: candidateIdParam,
         applicationId: applicationIdParam,
       };
+    }
+    if (applicationPairsParam) {
+      pendingBulkApplicationStatusUpdates.current = applicationPairsParam
+        .split(",")
+        .map((pair) => pair.trim())
+        .filter(Boolean)
+        .map((pair) => {
+          const [candidateId, applicationId] = pair.split(":");
+          return { candidateId: candidateId || "", applicationId: applicationId || "" };
+        })
+        .filter((item) => item.candidateId && item.applicationId);
+    }
+    const parsedBulkIds = participantIdsParam
+      .split(",")
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => !Number.isNaN(id) && id > 0);
+    if (participantTypeParam === "job_seeker" && parsedBulkIds.length > 0) {
+      setIsBulkInterviewMode(true);
+      setBulkJobSeekerIds(parsedBulkIds);
     }
 
     const today = new Date();
@@ -600,7 +626,8 @@ const Planners = () => {
       time: prev.time || "",
       type: prev.type || appointmentTypeParam,
       participant_type: participantTypeParam || prev.participant_type,
-      participant_id: participantIdParam || prev.participant_id,
+      participant_id:
+        participantIdParam || String(parsedBulkIds[0] || "") || prev.participant_id,
       job_id: jobIdParam || prev.job_id,
     }));
     setInvitees([]);
@@ -1282,6 +1309,8 @@ const Planners = () => {
       sendInvites: true,
     });
     setInvitees([]);
+    setIsBulkInterviewMode(false);
+    setBulkJobSeekerIds([]);
     setAppointmentDocuments([]);
     setShowAddModal(true);
   };
@@ -1291,6 +1320,8 @@ const Planners = () => {
     // That ref is intentionally cleared after any follow-up status PATCH logic
     // in handleSaveAppointment's finally block.
     setShowAddModal(false);
+    setIsBulkInterviewMode(false);
+    setBulkJobSeekerIds([]);
   };
 
   // Handle Save Appointment
@@ -1372,6 +1403,10 @@ const Planners = () => {
         return undefined;
       };
       const inviteeEmailsForBackend: string[] = [];
+      const selectedParticipantIdsForBulkInvite =
+        isBulkInterviewMode && appointmentForm.participant_type === "job_seeker"
+          ? bulkJobSeekerIds
+          : [];
       if (appointmentForm.sendInvites) {
         const seen = new Set<string>();
         const add = (email: string | undefined) => {
@@ -1392,7 +1427,12 @@ const Planners = () => {
             add(u?.email);
           }
         }
-        if (participantId && appointmentForm.participant_type) {
+        if (appointmentForm.participant_type === "job_seeker" && selectedParticipantIdsForBulkInvite.length > 0) {
+          for (const selectedId of selectedParticipantIdsForBulkInvite) {
+            const js = byId(jobSeekers, selectedId);
+            add(js?.email ?? (await fetchEmailForInvitee("job_seeker", selectedId)));
+          }
+        } else if (participantId && appointmentForm.participant_type) {
           if (appointmentForm.participant_type === "job_seeker") {
             const js = byId(jobSeekers, participantId);
             add(
@@ -1409,6 +1449,45 @@ const Planners = () => {
         }
       }
 
+      if (
+        isBulkInterviewMode &&
+        appointmentForm.participant_type === "job_seeker" &&
+        bulkJobSeekerIds.length === 0
+      ) {
+        toast.error("Select at least one job seeker for bulk interview scheduling");
+        setIsSavingAppointment(false);
+        return;
+      }
+
+      // Match organizations flow: send documents as base64 JSON (no multipart/multer path)
+      let documentsPayload:
+        | Array<{ name: string; type: string; data: string }>
+        | undefined;
+      if (appointmentDocuments.length > 0) {
+        const toBase64 = (file: File) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result;
+              if (typeof result !== "string") {
+                reject(new Error("Failed to read file"));
+                return;
+              }
+              const base64 = result.split(",")[1] || "";
+              resolve(base64);
+            };
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+          });
+
+        documentsPayload = await Promise.all(
+          appointmentDocuments.map(async (file) => ({
+            name: file.name,
+            type: file.type || "application/octet-stream",
+            data: await toBase64(file),
+          })),
+        );
+      }
       const requestBody: Record<string, unknown> = {
         date: appointmentForm.date,
         time: appointmentForm.time,
@@ -1428,38 +1507,19 @@ const Planners = () => {
         duration: appointmentForm.duration || 30,
         sendInvites: appointmentForm.sendInvites ?? false,
       };
+      if (
+        isBulkInterviewMode &&
+        appointmentForm.participant_type === "job_seeker" &&
+        bulkJobSeekerIds.length > 0
+      ) {
+        requestBody.participant_ids = bulkJobSeekerIds;
+      }
       if (appointmentForm.sendInvites && inviteeEmailsForBackend.length > 0) {
         requestBody.invitee_emails = inviteeEmailsForBackend;
       }
-
-      // Match organizations flow: send documents as base64 JSON (no multipart/multer path)
-      if (appointmentDocuments.length > 0) {
-        const toBase64 = (file: File) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = reader.result;
-              if (typeof result !== "string") {
-                reject(new Error("Failed to read file"));
-                return;
-              }
-              const base64 = result.split(",")[1] || "";
-              resolve(base64);
-            };
-            reader.onerror = () => reject(new Error("Failed to read file"));
-            reader.readAsDataURL(file);
-          });
-
-        const documents = await Promise.all(
-          appointmentDocuments.map(async (file) => ({
-            name: file.name,
-            type: file.type || "application/octet-stream",
-            data: await toBase64(file),
-          })),
-        );
-        requestBody.documents = documents;
+      if (documentsPayload && documentsPayload.length > 0) {
+        requestBody.documents = documentsPayload;
       }
-
       const response = await fetch("/api/planner/appointments", {
         method: "POST",
         headers: {
@@ -1468,7 +1528,6 @@ const Planners = () => {
         },
         body: JSON.stringify(requestBody),
       });
-
       const responseText = await response.text();
       let responseData: any;
       try {
@@ -1478,7 +1537,6 @@ const Planners = () => {
         console.error("Response text:", responseText);
         throw new Error("Invalid response from server");
       }
-
       if (!response.ok) {
         throw new Error(
           responseData.message ||
@@ -1492,7 +1550,10 @@ const Planners = () => {
       // Update selected day to the appointment date so it shows immediately in Month view table
       if (appointmentForm.date) {
         const d = new Date(appointmentForm.date);
-        if (!Number.isNaN(d.getTime())) setSelectedDate(d);
+        if (!Number.isNaN(d.getTime())) {
+          setSelectedDate(d);
+          setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+        }
       }
 
       // Send Google Calendar invites to all invitees + primary participant
@@ -1645,6 +1706,29 @@ const Planners = () => {
           pendingApplicationStatusUpdate.current = null;
         }
       }
+      if (pendingBulkApplicationStatusUpdates.current.length > 0) {
+        const updates = [...pendingBulkApplicationStatusUpdates.current];
+        pendingBulkApplicationStatusUpdates.current = [];
+        await Promise.all(
+          updates.map(async (pendingItem) => {
+            try {
+              await fetch(
+                `/api/job-seekers/${pendingItem.candidateId}/applications/${pendingItem.applicationId}`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ status: "Interview" }),
+                },
+              );
+            } catch (patchErr) {
+              console.error("Error updating status in bulk interview flow:", patchErr);
+            }
+          }),
+        );
+      }
 
       // Reset form
       setAppointmentForm({
@@ -1659,6 +1743,8 @@ const Planners = () => {
         sendInvites: true,
       });
       setInvitees([]);
+      setIsBulkInterviewMode(false);
+      setBulkJobSeekerIds([]);
       setAppointmentDocuments([]);
 
       fetchAppointments();
@@ -3192,36 +3278,10 @@ const Planners = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Participant (optional)
                   </label>
-                  <select
-                    value={
-                      appointmentForm.participant_type &&
-                      appointmentForm.participant_id
-                        ? `${appointmentForm.participant_type}:${appointmentForm.participant_id}`
-                        : ""
-                    }
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (!v) {
-                        setAppointmentForm((prev) => ({
-                          ...prev,
-                          participant_type: "",
-                          participant_id: "",
-                        }));
-                        return;
-                      }
-                      const [type, id] = v.split(":");
-                      setAppointmentForm((prev) => ({
-                        ...prev,
-                        participant_type: type,
-                        participant_id: id,
-                      }));
-                    }}
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={isLoadingLookups}
-                  >
-                    <option value="">Select participant (optional)</option>
-                    <optgroup label="Job Seekers">
-                      {jobSeekers.map((js: any) => {
+                  {isBulkInterviewMode ? (
+                    <StyledReactSelect
+                      isMulti
+                      options={jobSeekers.map((js: any) => {
                         const name =
                           js.full_name ||
                           [js.first_name, js.last_name]
@@ -3233,40 +3293,123 @@ const Planners = () => {
                           js.record_number,
                           js.id,
                         );
-                        return (
-                          <option
-                            key={`js-${js.id}`}
-                            value={`job_seeker:${js.id}`}
-                          >
-                            {recNum} - {name}
-                          </option>
-                        );
+                        return {
+                          label: `${recNum} - ${name}`,
+                          value: String(js.id),
+                        };
                       })}
-                    </optgroup>
-                    <optgroup label="Hiring Managers">
-                      {hiringManagers.map((hm: any) => {
-                        const name =
-                          hm.full_name ||
-                          [hm.first_name, hm.last_name]
-                            .filter(Boolean)
-                            .join(" ") ||
-                          `#${hm.id}`;
-                        const recNum = formatDisplayRecordNumber(
-                          "hiringManager",
-                          hm.record_number,
-                          hm.id,
+                      value={jobSeekers
+                        .filter((js: any) =>
+                          bulkJobSeekerIds.includes(Number(js.id)),
+                        )
+                        .map((js: any) => {
+                          const name =
+                            js.full_name ||
+                            [js.first_name, js.last_name]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            `#${js.id}`;
+                          const recNum = formatDisplayRecordNumber(
+                            "jobSeeker",
+                            js.record_number,
+                            js.id,
+                          );
+                          return { label: `${recNum} - ${name}`, value: String(js.id) };
+                        })}
+                      onChange={(selected) => {
+                        const vals = (selected as StyledSelectOption[]).map((opt) =>
+                          parseInt(String(opt.value), 10),
                         );
-                        return (
-                          <option
-                            key={`hm-${hm.id}`}
-                            value={`hiring_manager:${hm.id}`}
-                          >
-                            {recNum} - {name}
-                          </option>
+                        const normalized = vals.filter(
+                          (id) => !Number.isNaN(id) && id > 0,
                         );
-                      })}
-                    </optgroup>
-                  </select>
+                        setBulkJobSeekerIds(normalized);
+                        setAppointmentForm((prev) => ({
+                          ...prev,
+                          participant_type: "job_seeker",
+                          participant_id: normalized[0] ? String(normalized[0]) : "",
+                        }));
+                      }}
+                      placeholder="Select participant(s)..."
+                      isDisabled={isLoadingLookups}
+                    />
+                  ) : (
+                    <select
+                      value={
+                        appointmentForm.participant_type &&
+                        appointmentForm.participant_id
+                          ? `${appointmentForm.participant_type}:${appointmentForm.participant_id}`
+                          : ""
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) {
+                          setAppointmentForm((prev) => ({
+                            ...prev,
+                            participant_type: "",
+                            participant_id: "",
+                          }));
+                          return;
+                        }
+                        const [type, id] = v.split(":");
+                        setAppointmentForm((prev) => ({
+                          ...prev,
+                          participant_type: type,
+                          participant_id: id,
+                        }));
+                      }}
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isLoadingLookups}
+                    >
+                      <option value="">Select participant (optional)</option>
+                      <optgroup label="Job Seekers">
+                        {jobSeekers.map((js: any) => {
+                          const name =
+                            js.full_name ||
+                            [js.first_name, js.last_name]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            `#${js.id}`;
+                          const recNum = formatDisplayRecordNumber(
+                            "jobSeeker",
+                            js.record_number,
+                            js.id,
+                          );
+                          return (
+                            <option
+                              key={`js-${js.id}`}
+                              value={`job_seeker:${js.id}`}
+                            >
+                              {recNum} - {name}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                      <optgroup label="Hiring Managers">
+                        {hiringManagers.map((hm: any) => {
+                          const name =
+                            hm.full_name ||
+                            [hm.first_name, hm.last_name]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            `#${hm.id}`;
+                          const recNum = formatDisplayRecordNumber(
+                            "hiringManager",
+                            hm.record_number,
+                            hm.id,
+                          );
+                          return (
+                            <option
+                              key={`hm-${hm.id}`}
+                              value={`hiring_manager:${hm.id}`}
+                            >
+                              {recNum} - {name}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    </select>
+                  )}
                 </div>
 
                 {/* Job Selector */}
