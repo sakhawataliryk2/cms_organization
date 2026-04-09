@@ -336,12 +336,10 @@ export default function AddressGroupRenderer({
           )}
           {stateField && (
             <div className="space-y-1">
-              <UnderlineField
-                withSearchIcon
+              <CustomFieldRenderer
                 field={stateField}
-                values={values}
+                value={values?.[stateField.field_name] ?? ""}
                 onChange={onChange}
-                entityType={entityType}
               />
             </div>
           )}
