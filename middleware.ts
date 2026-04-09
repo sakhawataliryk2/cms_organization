@@ -7,8 +7,8 @@ export async function middleware(request: NextRequest) {
   // Get the pathname of the request
   const path = request.nextUrl.pathname;
 
-  // Skip middleware for job seeker portal
-  if (path.startsWith("/job-seeker-portal")) {
+  // Skip middleware for dedicated external portals
+  if (path.startsWith("/job-seeker-portal") || path.startsWith("/portal")) {
     return NextResponse.next();
   }
 

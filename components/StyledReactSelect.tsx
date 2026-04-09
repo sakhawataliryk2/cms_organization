@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import Select, { type GroupBase, type Props as SelectProps } from "react-select";
 
 export type StyledSelectOption = {
@@ -20,11 +21,16 @@ type StyledReactSelectProps<IsMulti extends boolean = false> = SelectProps<
 export default function StyledReactSelect<IsMulti extends boolean = false>({
   hasError = false,
   styles,
+  instanceId: instanceIdProp,
   ...props
 }: StyledReactSelectProps<IsMulti>) {
+  const reactId = useId().replace(/:/g, "");
+  const instanceId = instanceIdProp ?? `rs-${reactId}`;
+
   return (
     <Select
       {...props}
+      instanceId={instanceId}
       styles={{
         control: (base, state) => ({
           ...base,
