@@ -310,7 +310,7 @@ export default function SubmissionFormModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto p-4">
+    <div className="fixed inset-0 z-999 flex items-center justify-center bg-black/50 overflow-y-auto p-4">
       <div className="flex flex-col max-h-[80vh] bg-white rounded-lg shadow-xl w-full max-w-2xl my-8">
         <div className="flex justify-between items-center p-4 border-b border-gray-200 shrink-0">
           <h2 className="text-lg font-semibold text-gray-900">

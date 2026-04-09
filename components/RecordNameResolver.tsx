@@ -175,7 +175,7 @@ function RecordListModal({
   if (typeof window === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+    <div className="fixed inset-0 z-999 bg-black/40 flex items-center justify-center">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-4">
         <div className="flex justify-between items-center mb-3">
           <h3 className="font-semibold text-lg">Records</h3>

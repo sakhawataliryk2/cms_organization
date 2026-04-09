@@ -376,8 +376,6 @@ export default function FieldValueRenderer({
 
   let raw = rawOriginal;
 
-  // Full Address fallback: if this is a Full Address field but its own value is empty/placeholder,
-  // try to auto-combine Address, Address 2, City, State, Zip from the full values record.
   let autoCombinedAddress: string | null = null;
 
   // We intentionally use the original (non-lowercased) label so the matcher can normalize itself.
@@ -552,7 +550,7 @@ export default function FieldValueRenderer({
     return <span className={className}>{str}</span>;
   }
 
-  
+
   // URL / link
   const isUrl =
     fieldType === "url" ||
@@ -697,7 +695,9 @@ export default function FieldValueRenderer({
   }
 
   // Email: mailto + optional domain badge + optional copy (copy only when value is real email)
-  const isEmail = fieldType === "email" || str.includes("@");
+  // Replace line 580 with a more strict check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isEmail = fieldType === "email" || emailRegex.test(str.trim());
   if (isEmail) {
     const hasRealEmail = str !== emptyPlaceholder && str.includes("@");
     const domain = hasRealEmail && showEmailDomain ? extractEmailDomain(str) : "";
