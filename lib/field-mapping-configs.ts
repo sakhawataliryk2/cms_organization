@@ -305,6 +305,13 @@ export const jobSeekerBaseFields: FieldLockConfig[] = [
         is_read_only_locked: true,
     },
     {
+        name: "Field_21", // Current Salary
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
         name: "Field_69", // Owner
         is_label_locked: true,
         is_field_type_locked: true,
