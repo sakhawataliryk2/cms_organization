@@ -3858,7 +3858,7 @@ export default function LeadView() {
 
             {/* Document Viewer Modal */}
             {selectedDocument && (
-              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
                 <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
                   <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
                     <div>
@@ -3974,7 +3974,7 @@ export default function LeadView() {
         />
       )}
       {editingPanel && editingPanel !== "contactInfo" && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">

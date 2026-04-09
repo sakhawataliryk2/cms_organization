@@ -774,7 +774,7 @@ function AddUserModal({
 
     if (createdPassword) {
         return (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
                 <div className="bg-white rounded-md shadow-lg max-w-md w-full mx-4 p-6">
                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Password generated</h3>
                     <p className="text-sm text-gray-600 mb-3">Show this password once. Copy it now; it will not be shown again.</p>
@@ -803,7 +803,7 @@ function AddUserModal({
     }
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
             <div className="bg-white rounded-md shadow-lg w-full max-w-4xl overflow-hidden">
                 <div className="flex justify-between items-center bg-gray-100 p-4 border-b">
                     <h2 className="text-lg font-semibold">Add User</h2>

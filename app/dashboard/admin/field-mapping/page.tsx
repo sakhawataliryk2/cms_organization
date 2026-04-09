@@ -864,7 +864,7 @@ const FieldMapping = () => {
     if (!isOpen) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
         <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
           <div className="bg-gray-200 p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold">Field Column Definitions</h2>
@@ -921,7 +921,7 @@ const FieldMapping = () => {
     if (!showHistoryModal || !selectedField) return null;
 
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
         <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
           <div className="bg-gray-200 p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold">
@@ -1580,7 +1580,7 @@ const FieldMapping = () => {
 
       {/* Edit/Add Form Modal */}
       {(showEditForm || showAddForm) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
@@ -1686,7 +1686,6 @@ const FieldMapping = () => {
                     ))}
                   </select>
                 </div>
-
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

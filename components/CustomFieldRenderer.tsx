@@ -730,9 +730,39 @@ export default function CustomFieldRenderer({
           validationIndicator
         );
       }
+      if (normalizedOptions.length > 10) {
+        const currentValue = String(value ?? "").trim();
+        const selectOptions: StyledSelectOption[] = normalizedOptions.map((option) => ({
+          label: option,
+          value: option,
+        }));
+        const selectedOption =
+          selectOptions.find((opt) => opt.value.trim() === currentValue) ?? null;
+
+        return withValidationWrapper(
+          <StyledReactSelect
+            inputId={field.field_name}
+            isSearchable
+            isClearable
+            isDisabled={readOnly || isDisabledByDependency}
+            className="w-full"
+            options={selectOptions}
+            value={selectedOption}
+            placeholder="Select an option"
+            noOptionsMessage={() => "No options"}
+            onChange={(selected) => {
+              if (readOnly || isDisabledByDependency) return;
+              const next = selected && !Array.isArray(selected) ? String(selected.value) : "";
+              onChange(field.field_name, next);
+            }}
+          />,
+          validationIndicator
+        );
+      }
       return withValidationWrapper(
         <select
           {...fieldProps}
+          disabled={readOnly || isDisabledByDependency}
           value={
             normalizedOptions.find(
               (o) => o.trim() === String(fieldProps.value ?? "").trim()

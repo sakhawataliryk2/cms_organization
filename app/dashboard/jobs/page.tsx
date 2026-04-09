@@ -2028,7 +2028,7 @@ export default function JobList() {
       )}
       {/* Save Favorite Modal */}
       {showSaveFavoriteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>
@@ -2100,7 +2100,7 @@ export default function JobList() {
 
       {/* XML Feed In — Step 1: Paste or select XML */}
       {showXmlFeedModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
               <h3 className="font-semibold text-gray-800">XML Feed In</h3>
@@ -2145,7 +2145,7 @@ export default function JobList() {
 
       {/* XML Feed In — Step 2: Map XML fields to system fields */}
       {showXmlMappingModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
               <h3 className="font-semibold text-gray-800">Map XML fields to system fields</h3>

@@ -70,6 +70,30 @@ export async function getCustomFieldLabel(
     return pending;
 }
 
+/**
+ * Resolve multiple field labels in one call-site.
+ * Uses the same cache/inflight maps as getCustomFieldLabel.
+ */
+export async function getCustomFieldLabels(
+    entityType: string,
+    fieldNames: string[]
+): Promise<Record<string, string | null>> {
+    const unique = Array.from(
+        new Set(
+            (fieldNames || [])
+                .map((f) => String(f || "").trim())
+                .filter(Boolean)
+        )
+    );
+    const entries = await Promise.all(
+        unique.map(async (fieldName) => {
+            const label = await getCustomFieldLabel(entityType, fieldName);
+            return [fieldName, label] as const;
+        })
+    );
+    return Object.fromEntries(entries);
+}
+
 /** Drop cached entries (e.g. after admin renames a field in the same session). */
 export function clearCustomFieldLabelCache(entityType?: string, fieldName?: string) {
     if (entityType !== undefined && fieldName !== undefined) {
