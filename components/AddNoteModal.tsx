@@ -735,6 +735,7 @@ export default function AddNoteModal({
                 ...(noteForm.aboutReferences || []),
                 ...(noteForm.additionalReferences || []),
             ];
+            const failedPropagations: string[] = [];
             if (allRefs.length > 0) {
                 const typeToApiPath: Record<string, string> = {
                     'Job': 'jobs',
@@ -793,15 +794,22 @@ export default function AddNoteModal({
                         
                         if (!propResponse.ok) {
                             const errorData = await propResponse.json().catch(() => ({}));
-                            console.warn(`Note propagation failed for ${ref.type} ${ref.id}:`, errorData.message || propResponse.statusText);
+                            const errMsg = errorData.message || propResponse.statusText;
+                            console.warn(`Note propagation failed for ${ref.type} ${ref.id}:`, errMsg);
+                            failedPropagations.push(`${ref.type} ${ref.display || ref.id}`);
                         }
                     } catch (propErr) {
                         console.error('Error propagating note to reference:', propErr);
+                        failedPropagations.push(`${ref.type} ${ref.display || ref.id}`);
                     }
                 }
             }
 
-            toast.success('Note added successfully');
+            if (failedPropagations.length > 0) {
+                toast.warning(`Note added to primary record, but failed to propagate to: ${failedPropagations.join(', ')}`);
+            } else {
+                toast.success('Note added and propagated successfully');
+            }
             onSuccess?.();
             onClose();
         } catch (err) {
@@ -830,7 +838,7 @@ export default function AddNoteModal({
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
             <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
                 {/* Header */}
                 <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
