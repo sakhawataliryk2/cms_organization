@@ -1013,6 +1013,27 @@ export default function CandidateFlowDashboard() {
       if (typeof value.label === 'string' || typeof value.label === 'number') {
         return String(value.label);
       }
+      if (typeof value.name === 'string' || typeof value.name === 'number') {
+        return String(value.name);
+      }
+      if (typeof value.title === 'string' || typeof value.title === 'number') {
+        return String(value.title);
+      }
+      if (
+        (typeof value.record_number === 'string' || typeof value.record_number === 'number') &&
+        (typeof value.job_title === 'string' || typeof value.job_title === 'number')
+      ) {
+        return `${value.record_number} ${value.job_title}`.trim();
+      }
+      if (typeof value.job_title === 'string' || typeof value.job_title === 'number') {
+        return String(value.job_title);
+      }
+      if (typeof value.record_number === 'string' || typeof value.record_number === 'number') {
+        return String(value.record_number);
+      }
+      if (typeof value.id === 'string' || typeof value.id === 'number') {
+        return String(value.id);
+      }
       return '';
     }
     return String(value);
@@ -1135,7 +1156,7 @@ export default function CandidateFlowDashboard() {
     if (!selectedJobSeekerProfile) return '';
     const customFields = selectedJobSeekerProfile.customFields as Record<string, any> | undefined;
     if (!customFields || typeof customFields !== 'object') return '';
-    const value = customFields[label];
+    const value = customFields[label] ?? customFields[fieldName];
     return formatPreviewValue(value);
   };
 
