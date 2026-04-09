@@ -14,7 +14,8 @@ import {
     FiX,
     FiMail,
     FiActivity,
-    FiFilter
+    FiFilter,
+    FiCheckSquare
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -629,6 +630,12 @@ export default function AdminCenter() {
             name: 'Activity Tracker',
             icon: <FiActivity size={50} color="white" />,
             path: '/dashboard/admin/activity-tracker'
+        },
+        {
+            id: 'onboarding-approvals',
+            name: 'Onboarding Approvals',
+            icon: <FiCheckSquare size={50} color="white" />,
+            path: '/dashboard/admin/onboarding-approvals'
         }
     ];
 
@@ -703,7 +710,7 @@ export default function AdminCenter() {
 
             {/* Download Modal */}
             {showDownloadModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
                     <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                         {/* Modal Header */}
                         <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0">
@@ -954,7 +961,7 @@ export default function AdminCenter() {
 
             {/* Jobs XML Feed Modal */}
             {showJobsXmlModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
                     <div className="bg-white rounded-lg shadow-xl max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                         {/* Modal Header */}
                         <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0">

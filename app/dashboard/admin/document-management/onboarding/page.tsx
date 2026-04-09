@@ -75,10 +75,11 @@ export default function DocumentManagementOnboardingPage() {
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [formData, setFormData] = useState({
     document_name: "",
-    category: "",
+    category: "Onboarding",
     description: "",
-    approvalRequired: "No" as YesNo,
-    additionalDocsRequired: "No" as YesNo,
+    admin_approval_required: false,
+    additional_documents_required: false,
+    completed_email_notification: false,
     notification_user_ids: [] as number[],
     file: null as File | null,
   });
@@ -237,10 +238,11 @@ export default function DocumentManagementOnboardingPage() {
     setEditingDoc(null);
     setFormData({
       document_name: "",
-      category: "",
+      category: "Onboarding",
       description: "",
-      approvalRequired: "No",
-      additionalDocsRequired: "No",
+      admin_approval_required: false,
+      additional_documents_required: false,
+      completed_email_notification: false,
       notification_user_ids: [],
       file: null,
     });
@@ -252,10 +254,11 @@ export default function DocumentManagementOnboardingPage() {
     setEditingDoc(null);
     setFormData({
       document_name: "",
-      category: "",
+      category: "Onboarding",
       description: "",
-      approvalRequired: "No",
-      additionalDocsRequired: "No",
+      admin_approval_required: false,
+      additional_documents_required: false,
+      completed_email_notification: false,
       notification_user_ids: [],
       file: null,
     });
@@ -274,10 +277,11 @@ export default function DocumentManagementOnboardingPage() {
       const d = data.document || data.data || data;
       setFormData({
         document_name: d.document_name ?? "",
-        category: d.category ?? "",
+        category: d.category ?? "Onboarding",
         description: d.description ?? "",
-        approvalRequired: (d.approvalRequired ?? d.approval_required ?? "No") as YesNo,
-        additionalDocsRequired: (d.additionalDocsRequired ?? d.additional_docs_required ?? "No") as YesNo,
+        admin_approval_required: !!(d.admin_approval_required ?? d.approval_required),
+        additional_documents_required: !!(d.additional_documents_required ?? d.additional_docs_required),
+        completed_email_notification: !!d.completed_email_notification,
         notification_user_ids: (d.notification_user_ids ?? d.notificationUserIds ?? []) as number[],
         file: null,
       });
@@ -295,8 +299,9 @@ export default function DocumentManagementOnboardingPage() {
       document_name: doc.document_name,
       category: doc.category,
       description: "",
-      approvalRequired: "No",
-      additionalDocsRequired: "No",
+      admin_approval_required: false,
+      additional_documents_required: false,
+      completed_email_notification: false,
       notification_user_ids: [],
       file: null,
     });
@@ -318,8 +323,9 @@ export default function DocumentManagementOnboardingPage() {
       fd.append("document_name", formData.document_name);
       fd.append("category", formData.category);
       fd.append("description", formData.description);
-      fd.append("approvalRequired", formData.approvalRequired);
-      fd.append("additionalDocsRequired", formData.additionalDocsRequired);
+      fd.append("admin_approval_required", String(formData.admin_approval_required));
+      fd.append("additional_documents_required", String(formData.additional_documents_required));
+      fd.append("completed_email_notification", String(formData.completed_email_notification));
       fd.append(
         "notification_user_ids",
         JSON.stringify(formData.notification_user_ids)
@@ -784,7 +790,7 @@ export default function DocumentManagementOnboardingPage() {
       </div>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/40">
+        <div className="fixed inset-0 z-999 bg-black/40">
           <div className="min-h-screen w-full flex items-start justify-center p-6 sm:p-10">
             <div className="w-full max-w-4xl bg-white border border-gray-300 shadow-lg max-h-[calc(100vh-80px)] flex flex-col">
               <div className="bg-[#111] text-white px-4 py-2 flex items-center justify-between shrink-0">
@@ -855,41 +861,53 @@ export default function DocumentManagementOnboardingPage() {
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Approval Required:
-                      </label>
-                      <select
-                        value={formData.approvalRequired}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="admin_approval_required"
+                        checked={formData.admin_approval_required}
                         onChange={(e) =>
                           setFormData((p) => ({
                             ...p,
-                            approvalRequired: e.target.value as YesNo,
+                            admin_approval_required: e.target.checked,
                           }))
                         }
-                        className="w-full h-9 px-3 border border-gray-400 text-sm bg-white"
-                      >
-                        <option value="Yes">Yes</option>
-                        <option value="No">No</option>
-                      </select>
+                      />
+                      <label htmlFor="admin_approval_required" className="text-xs font-semibold text-gray-700">
+                        Admin Approval Required
+                      </label>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Additional documents required:
-                      </label>
-                      <select
-                        value={formData.additionalDocsRequired}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="additional_documents_required"
+                        checked={formData.additional_documents_required}
                         onChange={(e) =>
                           setFormData((p) => ({
                             ...p,
-                            additionalDocsRequired: e.target.value as YesNo,
+                            additional_documents_required: e.target.checked,
                           }))
                         }
-                        className="w-full h-9 px-3 border border-gray-400 text-sm bg-white"
-                      >
-                        <option value="Yes">Yes</option>
-                        <option value="No">No</option>
-                      </select>
+                      />
+                      <label htmlFor="additional_documents_required" className="text-xs font-semibold text-gray-700">
+                        Additional documents required
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="completed_email_notification"
+                        checked={formData.completed_email_notification}
+                        onChange={(e) =>
+                          setFormData((p) => ({
+                            ...p,
+                            completed_email_notification: e.target.checked,
+                          }))
+                        }
+                      />
+                      <label htmlFor="completed_email_notification" className="text-xs font-semibold text-gray-700">
+                        Completed Email Notification
+                      </label>
                     </div>
                   </div>
                   <div>

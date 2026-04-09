@@ -63,6 +63,7 @@ import FieldValueRenderer from '@/components/FieldValueRenderer';
 import AddTearsheetModal from '@/components/AddTearsheetModal';
 import SortableFieldsEditModal from '@/components/SortableFieldsEditModal';
 import AddNoteModal from '@/components/AddNoteModal';
+import { getCustomFieldLabels } from '@/lib/getCustomFieldLabel';
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -379,6 +380,7 @@ export default function JobView() {
   const [activeQuickTab, setActiveQuickTab] = useState("applied");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState<string>("");
   const [appliedTabTitle, setAppliedTabTitle] = useState<string>("Applied");
+  const [placementCandidates, setPlacementCandidates] = useState<any[]>([]);
   const [quickTabCounts, setQuickTabCounts] = useState({
     applied: 0,
     clientSubmissions: 0,
@@ -1943,6 +1945,8 @@ export default function JobView() {
   const [submittedCandidates, setSubmittedCandidates] = useState<any[]>([]);
   const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
   const [isLoadingSubmittedCandidates, setIsLoadingSubmittedCandidates] =
+    useState(false);
+  const [isLoadingPlacementCandidates, setIsLoadingPlacementCandidates] =
     useState(false);
   const [isAiMatching, setIsAiMatching] = useState(false);
   const [isSavingPlacement, setIsSavingPlacement] = useState(false);
@@ -3732,6 +3736,102 @@ export default function JobView() {
     }
   };
 
+  const normalizeCustomFieldObject = (raw: any): Record<string, any> => {
+    if (!raw) return {};
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return typeof raw === "object" ? raw : {};
+  };
+
+  const getValueByLabel = (obj: Record<string, any>, label?: string | null): any => {
+    if (!label) return undefined;
+    if (obj[label] !== undefined) return obj[label];
+    const target = String(label).trim().toLowerCase();
+    const matchedKey = Object.keys(obj).find((k) => String(k).trim().toLowerCase() === target);
+    return matchedKey ? obj[matchedKey] : undefined;
+  };
+
+  const fetchPlacementQuickTabData = async () => {
+    if (!jobId) return;
+    setIsLoadingPlacementCandidates(true);
+    try {
+      const response = await fetch("/api/placements", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        setPlacementCandidates([]);
+        return;
+      }
+
+      const data = await response.json().catch(() => ({}));
+      const placements = Array.isArray(data?.placements) ? data.placements : [];
+      const forJob = placements.filter(
+        (p: any) => String(p?.job_id ?? p?.jobId ?? "") === String(jobId)
+      );
+
+      const labels = await getCustomFieldLabels("placements", [
+        "Field_1",
+        "Field_2",
+        "Field_6",
+        "Field_22",
+      ]);
+
+      const mapped = forJob.map((p: any) => {
+        const cf = normalizeCustomFieldObject(p?.custom_fields ?? p?.customFields);
+        const candidateIdRaw = getValueByLabel(cf, labels["Field_1"]);
+        const dateRaw = getValueByLabel(cf, labels["Field_2"]);
+        const addedByRaw = getValueByLabel(cf, labels["Field_6"]);
+        const statusRaw = getValueByLabel(cf, labels["Field_22"]);
+
+        const candidateId =
+          candidateIdRaw !== undefined && candidateIdRaw !== null && String(candidateIdRaw).trim() !== ""
+            ? String(candidateIdRaw)
+            : String(p?.job_seeker_id ?? p?.jobSeekerId ?? "");
+        const appliedAt = dateRaw ? String(dateRaw) : (p?.start_date ?? p?.created_at ?? null);
+        const status = statusRaw ? String(statusRaw) : String(p?.status || "Placed");
+
+        return {
+          id: candidateId || String(p?.job_seeker_id ?? p?.id),
+          name: p?.jobSeekerName || "",
+          email: "",
+          appliedAt,
+          updatedAt: p?.updated_at ?? p?.updatedAt ?? p?.created_at ?? null,
+          status,
+          addedBy: addedByRaw ? String(addedByRaw) : (p?.created_by_name ?? "System"),
+          isPlacement: true,
+          placementId: p?.id,
+          rawPlacement: p,
+          record_number: p?.record_number,
+        };
+      });
+
+      setPlacementCandidates(mapped);
+    } catch (err) {
+      console.error("Error fetching placement quick-tab data:", err);
+      setPlacementCandidates([]);
+    } finally {
+      setIsLoadingPlacementCandidates(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeQuickTab === "placements" && jobId) {
+      fetchPlacementQuickTabData();
+    }
+  }, [activeQuickTab, jobId]);
+
   const APPLICATION_STATUS_OPTIONS = [
     "Submitted",
     "Client Submission",
@@ -4592,10 +4692,60 @@ export default function JobView() {
                       // Create a list of changes
                       const changes: React.ReactNode[] = [];
 
+                      const normalizeForCompare = (val: any): any => {
+                        if (val === null || val === undefined) return null;
+                        if (typeof val === "string") {
+                          const t = val.trim();
+                          if (!t) return "";
+                          if (
+                            (t.startsWith("[") && t.endsWith("]")) ||
+                            (t.startsWith("{") && t.endsWith("}"))
+                          ) {
+                            try {
+                              return normalizeForCompare(JSON.parse(t));
+                            } catch {
+                              return t;
+                            }
+                          }
+                          return t;
+                        }
+                        if (Array.isArray(val)) {
+                          return val.map((v) => normalizeForCompare(v)).sort((a, b) =>
+                            String(a).localeCompare(String(b))
+                          );
+                        }
+                        if (typeof val === "object") {
+                          const out: Record<string, any> = {};
+                          Object.keys(val)
+                            .sort()
+                            .forEach((k) => {
+                              out[k] = normalizeForCompare(val[k]);
+                            });
+                          return out;
+                        }
+                        return val;
+                      };
+
                       // Helper function to format values (treat null/undefined/empty string as "Empty")
                       const formatValue = (val: any): string => {
                         if (val === null || val === undefined) return "Empty";
                         if (typeof val === "string" && val.trim() === "") return "Empty";
+                        if (typeof val === "string") {
+                          const t = val.trim();
+                          if (
+                            (t.startsWith("[") && t.endsWith("]")) ||
+                            (t.startsWith("{") && t.endsWith("}"))
+                          ) {
+                            try {
+                              const parsed = JSON.parse(t);
+                              if (Array.isArray(parsed)) return parsed.map((x) => String(x)).join(", ");
+                              return JSON.stringify(parsed);
+                            } catch {
+                              return val;
+                            }
+                          }
+                        }
+                        if (Array.isArray(val)) return val.map((x) => String(x)).join(", ");
                         if (typeof val === "object") return JSON.stringify(val);
                         return String(val);
                       };
@@ -4640,7 +4790,10 @@ export default function JobView() {
                                 const beforeCfVal = beforeObj[cfKey];
                                 const afterCfVal = afterObj[cfKey];
 
-                                if (beforeCfVal !== afterCfVal) {
+                                if (
+                                  JSON.stringify(normalizeForCompare(beforeCfVal)) !==
+                                  JSON.stringify(normalizeForCompare(afterCfVal))
+                                ) {
                                   changes.push(
                                     <div
                                       key={`cf-${cfKey}`}
@@ -4726,13 +4879,15 @@ export default function JobView() {
 
   // Applied tab content – static XML-style applications + live submissions
   const renderAppliedTab = () => {
+    const sourceCandidates =
+      activeQuickTab === "placements" ? placementCandidates : submittedCandidates;
     const filteredSubmittedCandidates = appliedStatusFilter
-      ? submittedCandidates.filter((c: any) => {
+      ? sourceCandidates.filter((c: any) => {
         const statusNorm = String(c?.status || "").trim().toLowerCase();
         const filterNorm = appliedStatusFilter.trim().toLowerCase();
         return statusNorm === filterNorm;
       })
-      : submittedCandidates;
+      : sourceCandidates;
     const totalApplied = filteredSubmittedCandidates.length;
 
     return (
@@ -4787,8 +4942,17 @@ export default function JobView() {
                 const appliedDate = c.appliedAt
                   ? new Date(c.appliedAt)
                   : null;
+                const modifiedDate = c.updatedAt
+                  ? new Date(c.updatedAt)
+                  : appliedDate;
                 const formattedDate = appliedDate
                   ? `${appliedDate.toLocaleDateString()} ${appliedDate.toLocaleTimeString(
+                    [],
+                    { hour: "2-digit", minute: "2-digit" }
+                  )}`
+                  : "—";
+                const formattedModifiedDate = modifiedDate
+                  ? `${modifiedDate.toLocaleDateString()} ${modifiedDate.toLocaleTimeString(
                     [],
                     { hour: "2-digit", minute: "2-digit" }
                   )}`
@@ -4808,10 +4972,10 @@ export default function JobView() {
                       {formattedDate}
                     </td>
                     <td className="px-3 py-2 text-gray-700">
-                      {formattedDate}
+                      {formattedModifiedDate}
                     </td>
                     <td className="px-3 py-2">
-                      {c.applicationId != null || c.rawApplication?.id != null ? (
+                      {!c.isPlacement && (c.applicationId != null || c.rawApplication?.id != null) ? (
                         <select
                           value={c.status || "Submitted"}
                           onChange={(e) => handleApplicationStatusChange(c, e.target.value)}
@@ -4841,9 +5005,13 @@ export default function JobView() {
                     colSpan={6}
                     className="px-3 py-6 text-center text-sm text-gray-500"
                   >
-                    {appliedStatusFilter
+                    {(activeQuickTab === "placements" && isLoadingPlacementCandidates) || isLoadingSubmittedCandidates
+                      ? "Loading..."
+                      : appliedStatusFilter
                       ? `No applications found with status "${appliedStatusFilter}".`
-                      : "No applications have been received yet."}
+                      : activeQuickTab === "placements"
+                        ? "No placements found for this job."
+                        : "No applications have been received yet."}
                   </td>
                 </tr>
               )}
@@ -5594,7 +5762,15 @@ export default function JobView() {
                     return;
                   }
 
-                  // Keep existing behavior for other quick tabs for now
+                  if (action.id === "placements") {
+                    setActiveQuickTab("placements");
+                    setAppliedStatusFilter("");
+                    setAppliedTabTitle("Placements");
+                    setActiveTab("applied");
+                    fetchPlacementQuickTabData();
+                    return;
+                  }
+
                   setActiveQuickTab(action.id);
                 }}
               >
@@ -6273,7 +6449,7 @@ export default function JobView() {
 
       {/* Add Appointment Modal (opens after SAVE & Schedule Appointment from Add Note) */}
       {showAppointmentModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 overflow-y-auto">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
@@ -6519,7 +6695,7 @@ export default function JobView() {
 
       {/* Distribute job modal (LinkedIn, Job Board) — works without credentials; completes when credentials are added */}
       {showPublishModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Distribute job</h2>

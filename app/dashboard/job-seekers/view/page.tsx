@@ -7087,7 +7087,7 @@ Best regards`;
 
       {/* Delete Request Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold">Request Delete (Job Seeker)</h2>
@@ -7154,7 +7154,7 @@ Best regards`;
 
       {/* Password Reset Modal */}
       {showPasswordResetModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold">Reset Job Seeker Password</h2>
@@ -7215,7 +7215,7 @@ Best regards`;
 
       {/* Transfer Modal */}
       {showTransferModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold">Transfer Job Seeker</h2>

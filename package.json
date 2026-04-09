@@ -33,6 +33,7 @@
     "mammoth": "^1.11.0",
     "next": "15.0.5",
     "nextjs-toploader": "^3.9.17",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "4.4.168",
     "react": "^19.1.0",
     "react-confirm-lite": "^1.4.4",

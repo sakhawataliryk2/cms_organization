@@ -10,8 +10,6 @@ import "react-pdf/dist/Page/TextLayer.css";
 // Use CDN worker to avoid Next.js ESM bundling issues with pdf.worker.min.mjs
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
-type YesNo = "Yes" | "No";
-
 type AvailableField = {
   id: number;
   entity_type: string;
@@ -20,37 +18,20 @@ type AvailableField = {
   is_hidden?: boolean;
 };
 
-type FieldTypeUI =
-  | "Text Input"
-  | "Text Area"
-  | "Number"
-  | "Email"
-  | "Phone"
-  | "Date"
-  | "Checkbox"
-  | "Signature"
-  | "Blank";
-
-type FieldFormat = "None" | "Phone Number" | "SSN";
-
 type MappedField = {
   id: string;
-  source_field_name: string;
-  source_field_label: string;
-
-  // stored in "PDF coordinate space" (unscaled)
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  required: boolean;
+  who_fills: "admin" | "job_seeker";
+  is_auto_populated: boolean;
+  source: "system" | "custom_field" | "external";
   x: number;
   y: number;
+  page: number;
   w: number;
   h: number;
-
-  whoFills: "Admin" | "Candidate";
-  required: YesNo;
-  fieldType: FieldTypeUI;
-  maxChars: number | "";
-  format: FieldFormat;
-  populateWithData: YesNo;
-  dataFlowBack: YesNo;
 };
 
 function getTokenFromCookie() {
@@ -98,10 +79,7 @@ export default function TemplateDocEditorPage() {
     () => mappedFields.find((f) => f.id === selectedId) || null,
     [mappedFields, selectedId]
   );
-    const isSignatureBox = draftField?.source_field_name === "signature_box";
-    const isBlankBox = draftField?.source_field_name === "blank_box";
-    const hideExtraOptions = isSignatureBox || isBlankBox;
-  
+
 
   const extraFields: AvailableField[] = useMemo(
     () => [
@@ -173,21 +151,18 @@ export default function TemplateDocEditorPage() {
       const rows = data.fields || [];
       const mapped: MappedField[] = rows.map((r: any) => ({
         id: String(r.client_id || r.id || crypto.randomUUID()),
-        source_field_name: r.field_name,
-        source_field_label: r.field_label || r.field_name,
-
+        field_name: r.field_name,
+        field_label: r.field_label || r.field_name,
+        field_type: r.field_type || "text",
+        required: !!r.required,
+        who_fills: r.who_fills === "admin" ? "admin" : "job_seeker",
+        is_auto_populated: !!r.is_auto_populated,
+        source: (r.source as any) || "system",
+        page: Number(r.page || 1),
         x: Number(r.x ?? 20),
         y: Number(r.y ?? 20),
         w: Number(r.w ?? 220),
         h: Number(r.h ?? 44),
-
-        whoFills: r.who_fills === "Admin" ? "Admin" : "Candidate",
-        required: r.is_required ? "Yes" : "No",
-        fieldType: (r.field_type as FieldTypeUI) || "Text Input",
-        maxChars: r.max_characters ?? 255,
-        format: (r.format as FieldFormat) || "None",
-        populateWithData: r.populate_with_data ? "Yes" : "No",
-        dataFlowBack: r.data_flow_back ? "Yes" : "No",
       }));
 
       setMappedFields(mapped);
@@ -237,17 +212,15 @@ export default function TemplateDocEditorPage() {
     setSelectedId(id);
     const next = { ...f };
 
-    if (next.source_field_name === "signature_box") {
-      next.fieldType = "Signature";
+    if (next.field_name === "signature_box") {
+      next.field_type = "e_signature";
     }
 
-    if (next.source_field_name === "blank_box") {
-      if (next.fieldType !== "Text Area") next.fieldType = "Text Input";
+    if (next.field_name === "blank_box") {
+      if (next.field_type !== "textarea") next.field_type = "text";
     }
 
     setDraftField(next);
-
-    setDraftField({ ...f });
     setIsModalOpen(true);
   };
 
@@ -304,41 +277,32 @@ export default function TemplateDocEditorPage() {
 
     let w = 220;
     let h = 44;
+    let field_type = "text";
 
-   const inferredType: FieldTypeUI =
-     src.field_name === "signature_box"
-       ? "Signature"
-       : src.field_name === "blank_box"
-       ? "Text Input"
-       : "Text Input";
-
-   if (inferredType === "Signature") {
-     w = 260;
-     h = 80;
-   }
-
-   if (src.field_name === "blank_box") {
-     w = 260;
-     h = 44;
-   }
-
+    if (src.field_name === "signature_box") {
+      field_type = "e_signature";
+      w = 260;
+      h = 80;
+    } else if (src.field_name === "blank_box") {
+      field_type = "text";
+      w = 260;
+      h = 44;
+    }
 
     const newField: MappedField = {
       id: crypto.randomUUID(),
-      source_field_name: src.field_name,
-      source_field_label: src.field_label || src.field_name,
+      field_name: src.field_name,
+      field_label: src.field_label || src.field_name,
+      field_type,
+      required: false,
+      who_fills: "job_seeker",
+      is_auto_populated: false,
+      source: src.entity_type === "system" ? "external" : "custom_field",
+      page: page,
       x,
       y,
       w,
       h,
-
-      whoFills: "Candidate",
-      required: "No",
-      fieldType: inferredType,
-      maxChars: 255,
-      format: "None",
-      populateWithData: "No",
-      dataFlowBack: "No",
     };
 
     setMappedFields((p) => [...p, newField]);
@@ -438,15 +402,14 @@ export default function TemplateDocEditorPage() {
       const payload = {
         fields: mappedFields.map((f, i) => ({
           field_id: null,
-          field_name: f.source_field_name,
-          field_label: f.source_field_label,
-          field_type: f.fieldType,
-          who_fills: f.whoFills,
-          is_required: f.required === "Yes",
-          max_characters: f.maxChars === "" ? null : Number(f.maxChars),
-          format: f.format,
-          populate_with_data: f.populateWithData === "Yes",
-          data_flow_back: f.dataFlowBack === "Yes",
+          field_name: f.field_name,
+          field_label: f.field_label,
+          field_type: f.field_type,
+          who_fills: f.who_fills,
+          required: !!f.required,
+          is_auto_populated: !!f.is_auto_populated,
+          source: f.source,
+          page: f.page || 1,
           sort_order: i,
           x: Math.round(f.x),
           y: Math.round(f.y),
@@ -687,10 +650,10 @@ export default function TemplateDocEditorPage() {
                               }}
                             >
                               <div className="text-xs font-semibold truncate">
-                                {f.source_field_label}
+                                {f.field_label}
                               </div>
                               <div className="text-[10px] text-gray-500 truncate">
-                                {f.source_field_name} • {f.fieldType}
+                                {f.field_name} • {f.field_type}
                               </div>
                             </button>
 
@@ -740,7 +703,7 @@ export default function TemplateDocEditorPage() {
       {/* MODAL */}
       {isModalOpen && draftField && (
         <div
-          className="fixed inset-0 z-50"
+          className="fixed inset-0 z-999"
           aria-modal="true"
           role="dialog"
           onMouseDown={(e) => {
@@ -753,7 +716,7 @@ export default function TemplateDocEditorPage() {
             <div className="w-full max-w-3xl bg-white rounded-md shadow-xl border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-800 text-white">
                 <div className="text-sm font-semibold truncate">
-                  Edit Field: {draftField.source_field_label}
+                  Edit Field: {draftField.field_label}
                 </div>
                 <button
                   type="button"
@@ -771,50 +734,42 @@ export default function TemplateDocEditorPage() {
                   <div className="space-y-4">
                     <div className="text-xs text-gray-500">
                       <div className="font-semibold text-gray-800">
-                        {draftField.source_field_label}
+                        {draftField.field_label}
                       </div>
-                      <div>{draftField.source_field_name}</div>
+                      <div>{draftField.field_name}</div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Who will fill field
-                      </label>
-                      <div className="flex items-center gap-4 text-sm">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            checked={draftField.whoFills === "Admin"}
-                            onChange={() => updateDraft({ whoFills: "Admin" })}
-                          />
-                          Admin
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            checked={draftField.whoFills === "Candidate"}
-                            onChange={() =>
-                              updateDraft({ whoFills: "Candidate" })
-                            }
-                          />
-                          Candidate
-                        </label>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Required
+                        Who Fills?
                       </label>
                       <div className="flex gap-2">
                         <ToggleBtn
-                          active={draftField.required === "No"}
-                          onClick={() => updateDraft({ required: "No" })}
+                          active={draftField.who_fills === "job_seeker"}
+                          onClick={() => updateDraft({ who_fills: "job_seeker" })}
+                          label="Job Seeker"
+                        />
+                        <ToggleBtn
+                          active={draftField.who_fills === "admin"}
+                          onClick={() => updateDraft({ who_fills: "admin" })}
+                          label="Admin"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Required?
+                      </label>
+                      <div className="flex gap-2">
+                        <ToggleBtn
+                          active={!draftField.required}
+                          onClick={() => updateDraft({ required: false })}
                           label="No"
                         />
                         <ToggleBtn
-                          active={draftField.required === "Yes"}
-                          onClick={() => updateDraft({ required: "Yes" })}
+                          active={!!draftField.required}
+                          onClick={() => updateDraft({ required: true })}
                           label="Yes"
                         />
                       </div>
@@ -822,163 +777,72 @@ export default function TemplateDocEditorPage() {
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Auto Populated?
+                      </label>
+                      <div className="flex gap-2">
+                        <ToggleBtn
+                          active={!draftField.is_auto_populated}
+                          onClick={() => updateDraft({ is_auto_populated: false })}
+                          label="No"
+                        />
+                        <ToggleBtn
+                          active={!!draftField.is_auto_populated}
+                          onClick={() => updateDraft({ is_auto_populated: true })}
+                          label="Yes"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Source
+                      </label>
+                      <select
+                        value={draftField.source}
+                        onChange={(e) =>
+                          updateDraft({
+                            source: e.target.value as any,
+                          })
+                        }
+                        className="w-full h-9 px-3 border rounded text-sm bg-white"
+                      >
+                        <option value="system">System</option>
+                        <option value="custom_field">Custom Field</option>
+                        <option value="external">External</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Field Type
                       </label>
-
-                      {isSignatureBox ? (
-                        <div className="w-full h-9 px-3 border rounded text-sm bg-gray-50 flex items-center">
-                          Signature
-                        </div>
-                      ) : isBlankBox ? (
-                        <div className="flex items-center gap-4 text-sm">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              checked={draftField.fieldType === "Text Input"}
-                              onChange={() =>
-                                updateDraft({ fieldType: "Text Input" })
-                              }
-                            />
-                            Text Input
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              checked={draftField.fieldType === "Text Area"}
-                              onChange={() =>
-                                updateDraft({ fieldType: "Text Area" })
-                              }
-                            />
-                            Text Area
-                          </label>
-                        </div>
-                      ) : (
-                        <select
-                          value={draftField.fieldType}
-                          onChange={(e) =>
-                            updateDraft({
-                              fieldType: e.target.value as FieldTypeUI,
-                            })
-                          }
-                          className="w-full h-9 px-3 border rounded text-sm bg-white"
-                        >
-                          {[
-                            "Text Input",
-                            "Text Area",
-                            "Number",
-                            "Email",
-                            "Phone",
-                            "Date",
-                            "Checkbox",
-                            "Signature",
-                          ].map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <select
+                        value={draftField.field_type}
+                        onChange={(e) =>
+                          updateDraft({
+                            field_type: e.target.value,
+                          })
+                        }
+                        className="w-full h-9 px-3 border rounded text-sm bg-white"
+                      >
+                        <option value="text">Text Input</option>
+                        <option value="textarea">Text Area</option>
+                        <option value="e_signature">E-Signature</option>
+                        <option value="optional_note">Optional Note</option>
+                      </select>
                     </div>
                   </div>
 
                   {/* RIGHT */}
                   <div className="space-y-4">
-                    {!hideExtraOptions ? (
-                      <>
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Max Characters
-                          </label>
-                          <input
-                            value={draftField.maxChars}
-                            onChange={(e) =>
-                              updateDraft({
-                                maxChars:
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value),
-                              })
-                            }
-                            type="number"
-                            min={1}
-                            className="w-full h-9 px-3 border rounded text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Format
-                          </label>
-                          <select
-                            value={draftField.format}
-                            onChange={(e) =>
-                              updateDraft({
-                                format: e.target.value as FieldFormat,
-                              })
-                            }
-                            className="w-full h-9 px-3 border rounded text-sm bg-white"
-                          >
-                            {["None", "Phone Number", "SSN"].map((t) => (
-                              <option key={t} value={t as FieldFormat}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Populate with Data?
-                          </label>
-                          <div className="flex gap-2">
-                            <ToggleBtn
-                              active={draftField.populateWithData === "No"}
-                              onClick={() =>
-                                updateDraft({ populateWithData: "No" })
-                              }
-                              label="No"
-                            />
-                            <ToggleBtn
-                              active={draftField.populateWithData === "Yes"}
-                              onClick={() =>
-                                updateDraft({ populateWithData: "Yes" })
-                              }
-                              label="Yes"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-700 mb-1">
-                            Data Flow back?
-                          </label>
-                          <div className="flex gap-2">
-                            <ToggleBtn
-                              active={draftField.dataFlowBack === "No"}
-                              onClick={() =>
-                                updateDraft({ dataFlowBack: "No" })
-                              }
-                              label="No"
-                            />
-                            <ToggleBtn
-                              active={draftField.dataFlowBack === "Yes"}
-                              onClick={() =>
-                                updateDraft({ dataFlowBack: "Yes" })
-                              }
-                              label="Yes"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-[11px] text-gray-500">
-                        {/* Extra options are not needed for this field. */}
-                      </div>
-                    )}
-
                     <div className="text-[11px] text-gray-500">
-                      {/* Size is controlled by drag-to-resize handle on the field
-                      itself. */}
+                      Page: {draftField.page}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Position: X={Math.round(draftField.x)}, Y={Math.round(draftField.y)}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      Size: W={Math.round(draftField.w)}, H={Math.round(draftField.h)}
                     </div>
                   </div>
                 </div>

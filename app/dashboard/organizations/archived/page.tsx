@@ -1428,7 +1428,7 @@ export default function ArchivedOrganizationsList() {
 
       {/* Save Favorite Modal */}
       {showSaveFavoriteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>

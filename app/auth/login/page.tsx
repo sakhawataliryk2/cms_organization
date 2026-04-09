@@ -464,7 +464,7 @@ export default function Login() {
       </div>
 
       {showOtpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="fixed inset-0 z-999 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 shadow-xl p-6 relative">
             <button
               type="button"

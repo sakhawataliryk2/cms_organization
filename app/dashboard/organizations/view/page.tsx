@@ -4987,7 +4987,14 @@ export default function OrganizationView() {
               className="p-2 border border-gray-300 rounded text-sm"
             >
               <option value="">All Actions</option>
-              {[...actionFields].map((af) => (
+              {Array.from(
+                new Map(
+                  [...actionFields].map((af) => [
+                    String(af.field_name || af.field_label || "").trim().toLowerCase(),
+                    af,
+                  ])
+                ).values()
+              ).map((af) => (
                 <option
                   key={af.id || af.field_name || af.field_label}
                   value={af.field_name || af.field_label}
@@ -4995,7 +5002,12 @@ export default function OrganizationView() {
                   {af.field_label || af.field_name}
                 </option>
               ))}
-              <option value={CLIENT_VISIT_FILTER_KEY}>{CLIENT_VISIT_FILTER_KEY}</option>
+              {!actionFields.some((af) => {
+                const v = String(af.field_label || af.field_name || "").trim().toLowerCase();
+                return v === "client visits" || v === "client visit";
+              }) && (
+                <option value={CLIENT_VISIT_FILTER_KEY}>{CLIENT_VISIT_FILTER_KEY}</option>
+              )}
             </select>
           </div>
 
@@ -7408,7 +7420,7 @@ export default function OrganizationView() {
 
       {/* Edit Website URL Modal for "Open Jobs from Website" panel */}
       {isEditingWebsiteUrl && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold">Set Jobs Page URL</h2>
