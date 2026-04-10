@@ -53,8 +53,10 @@ const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
 export default function DataUploader() {
     const router = useRouter();
     const [currentStep, setCurrentStep] = useState(1);
+    const [maxVisitedStep, setMaxVisitedStep] = useState(1);
     const [recordType, setRecordType] = useState('Job Seeker');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [isDragOver, setIsDragOver] = useState(false);
     const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
     const [csvRows, setCsvRows] = useState<CSVRow[]>([]);
     const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({});
@@ -71,7 +73,6 @@ export default function DataUploader() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const recordTypes = [
-        'Contact',
         'Organization',
         'Job Seeker',
         'Job',
@@ -276,14 +277,18 @@ export default function DataUploader() {
         // Parse headers
         const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
 
-        // Parse rows
+        // Parse rows — skip completely empty rows (ghost rows)
         const rows: CSVRow[] = [];
         for (let i = 1; i < lines.length; i++) {
             const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
+            // Skip if every cell is empty
+            if (values.every(v => v.trim() === '')) continue;
             const row: CSVRow = {};
             headers.forEach((header, index) => {
                 row[header] = values[index] || '';
             });
+            // Skip if every value in the mapped row is empty
+            if (Object.values(row).every(v => String(v).trim() === '')) continue;
             rows.push(row);
         }
 
@@ -365,6 +370,40 @@ export default function DataUploader() {
         fileInputRef.current?.click();
     };
 
+    const handleDropZoneDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(true);
+    };
+
+    const handleDropZoneDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+    };
+
+    const handleDropZoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+
+        const lowerCaseName = file.name.toLowerCase();
+        const isCSV = lowerCaseName.endsWith('.csv');
+        const isExcel = lowerCaseName.endsWith('.xlsx') || lowerCaseName.endsWith('.xls');
+
+        if (!isCSV && !isExcel) {
+            toast.error('Please drop a CSV or Excel file');
+            return;
+        }
+
+        // Reuse the same parsing logic as handleFileChange
+        const syntheticEvent = { target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
+        await handleFileChange(syntheticEvent);
+    };
+
     const skipDefectiveRows = () => {
         if (validationErrors.length === 0) return;
 
@@ -386,6 +425,7 @@ export default function DataUploader() {
         if (currentStep === 1) {
             // Step 1: Record type selection - no file required yet
             setCurrentStep(2);
+            setMaxVisitedStep((prev) => Math.max(prev, 2));
             return;
         }
         if (currentStep === 2) {
@@ -398,6 +438,7 @@ export default function DataUploader() {
                 return;
             }
             setCurrentStep(3);
+            setMaxVisitedStep((prev) => Math.max(prev, 3));
             return;
         }
         if (currentStep === 3) {
@@ -405,6 +446,7 @@ export default function DataUploader() {
             validateData();
             // Move to next step after validation
             setCurrentStep(4);
+            setMaxVisitedStep((prev) => Math.max(prev, 4));
             return;
         }
         if (currentStep === 4) {
@@ -415,6 +457,7 @@ export default function DataUploader() {
         }
         if (currentStep < totalSteps) {
             setCurrentStep(currentStep + 1);
+            setMaxVisitedStep((prev) => Math.max(prev, currentStep + 1));
         }
     };
 
@@ -613,41 +656,70 @@ export default function DataUploader() {
                 >
                     <FiX className="w-6 h-6" />
                 </button>
-                <h1 className="text-2xl font-semibold mb-6 pr-10">CSV Data Upload</h1>
+                <div className="flex items-center justify-between mb-6 border-b pb-4">
+                    {/* Left Section */}
+                    <div className="flex items-center gap-4">
+                        <h1 className="text-2xl font-semibold text-gray-800">
+                            CSV Data Upload
+                        </h1>
+
+                        {recordType && currentStep !== 1 && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full font-medium bg-green-100 text-green-700 border border-green-500">
+                                {recordType}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Right Section (Optional Step Indicator) */}
+                    <div className="text-sm text-gray-400 pr-10">
+                        Step {currentStep} of 6
+                    </div>
+                </div>
 
                 {/* Step Indicator */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between">
-                        {[1, 2, 3, 4, 5, 6].map((step) => (
-                            <div key={step} className="flex items-center flex-1">
-                                <div className="flex flex-col items-center flex-1">
-                                    <div
-                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${currentStep === step
-                                            ? 'bg-blue-500 text-white'
-                                            : currentStep > step
-                                                ? 'bg-green-500 text-white'
-                                                : 'bg-gray-300 text-gray-600'
-                                            }`}
-                                    >
-                                        {currentStep > step ? '✓' : step}
+                        {[1, 2, 3, 4, 5, 6].map((step) => {
+                            const isCompleted = currentStep > step;
+                            const isCurrent = currentStep === step;
+                            const isVisited = step <= maxVisitedStep;
+                            const isClickable = isVisited && !isCurrent;
+
+                            return (
+                                <div key={step} className="flex items-center flex-1">
+                                    <div className="flex flex-col items-center flex-1">
+                                        <div
+                                            onClick={() => isClickable && setCurrentStep(step)}
+                                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-opacity ${isCurrent
+                                                    ? 'bg-blue-500 text-white'
+                                                    : isCompleted
+                                                        ? 'bg-green-500 text-white'
+                                                        : isVisited
+                                                            ? 'bg-green-500 text-white'
+                                                            : 'bg-gray-300 text-gray-600'
+                                                } ${isClickable ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                                        >
+                                            {isCompleted ? '✓' : step}
+                                        </div>
+                                        <div className={`mt-2 text-xs text-center whitespace-nowrap ${isClickable ? 'text-blue-600 cursor-pointer hover:underline' : 'text-gray-600'}`}
+                                            onClick={() => isClickable && setCurrentStep(step)}
+                                        >
+                                            {step === 1 && 'Record Type'}
+                                            {step === 2 && 'CSV Upload'}
+                                            {step === 3 && 'Field Mapping'}
+                                            {step === 4 && 'Validation'}
+                                            {step === 5 && 'Import Options'}
+                                            {step === 6 && 'Summary'}
+                                        </div>
                                     </div>
-                                    <div className="mt-2 text-xs text-center text-gray-600">
-                                        {step === 1 && 'Record Type'}
-                                        {step === 2 && 'CSV Upload'}
-                                        {step === 3 && 'Field Mapping'}
-                                        {step === 4 && 'Validation'}
-                                        {step === 5 && 'Import Options'}
-                                        {step === 6 && 'Summary'}
-                                    </div>
+                                    {step < totalSteps && (
+                                        <div
+                                            className={`h-1 flex-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'}`}
+                                        />
+                                    )}
                                 </div>
-                                {step < totalSteps && (
-                                    <div
-                                        className={`h-1 flex-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'
-                                            }`}
-                                    />
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -695,11 +767,21 @@ export default function DataUploader() {
                     {currentStep === 2 && (
                         <div className="space-y-6">
                             <div>
-                                <h2 className="text-xl font-semibold mb-4">Step 2: Upload CSV File</h2>
+                                <h2 className="text-xl font-semibold mb-4">Step 2: Upload CSV File
+                                </h2>
                                 <p className="text-gray-600 mb-4">
                                     Select a .csv, .xlsx, or .xls file containing the data you would like to import.
                                 </p>
-                                <div className="flex items-center space-x-2">
+                                <div
+                                    onDragOver={handleDropZoneDragOver}
+                                    onDragLeave={handleDropZoneDragLeave}
+                                    onDrop={handleDropZoneDrop}
+                                    onClick={handleChooseFile}
+                                    className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-lg p-10 cursor-pointer transition-colors ${isDragOver
+                                        ? 'border-blue-500 bg-blue-50'
+                                        : 'border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50/40'
+                                        }`}
+                                >
                                     <input
                                         ref={fileInputRef}
                                         type="file"
@@ -707,15 +789,24 @@ export default function DataUploader() {
                                         onChange={handleFileChange}
                                         className="hidden"
                                     />
-                                    <button
-                                        onClick={handleChooseFile}
-                                        className="bg-gray-100 border border-gray-300 rounded px-4 py-2 hover:bg-gray-200"
-                                    >
-                                        Choose File
-                                    </button>
-                                    <span className="text-sm text-gray-600">
-                                        {selectedFile ? selectedFile.name : 'No file chosen'}
-                                    </span>
+                                    <svg className={`w-10 h-10 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    <div className="text-center">
+                                        <p className={`text-sm font-medium ${isDragOver ? 'text-blue-600' : 'text-gray-700'}`}>
+                                            {isDragOver ? 'Drop your file here' : 'Drag & drop your file here'}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">or click to browse</p>
+                                    </div>
+                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls</p>
+                                    {selectedFile && (
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 shadow-sm">
+                                            <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {selectedFile.name}
+                                        </div>
+                                    )}
                                 </div>
                                 {csvHeaders.length > 0 && (
                                     <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
@@ -1076,7 +1167,7 @@ export default function DataUploader() {
                 </div>
 
                 {/* Navigation Buttons */}
-                <div className="flex justify-between mt-8 pt-6 border-t">
+                <div className="flex w-full sticky bottom-0 p-4 justify-between bg-white mt-8 border-t border-gray-300">
                     <div>
                         {currentStep > 1 && (
                             <button

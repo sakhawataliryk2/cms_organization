@@ -493,7 +493,6 @@ export default function AdminCenter() {
                 }
             });
 
-            // Pass full field definitions so the export API can resolve lookup type IDs → record numbers
             const fieldDefinitions = availableFields.map((f: CustomFieldDefinition) => ({
                 field_name: f.field_name,
                 field_label: f.field_label,

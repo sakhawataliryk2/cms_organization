@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { AiOutlineLoading3Quarters } from "react-icons/ai";
 
 export type RecordType =
   | "organization"
@@ -217,6 +218,8 @@ interface RecordNameResolverProps {
   className?: string;
   fallback?: string;
   loadingText?: string;
+  /** When true, displays only "prefix record_number" (e.g. "J 5") without the name */
+  onlyRecordNumber?: boolean;
 }
 
 export default function RecordNameResolver({
@@ -225,7 +228,7 @@ export default function RecordNameResolver({
   clickable = false,
   className = "",
   fallback = "—",
-  loadingText = "…",
+  onlyRecordNumber = false,
 }: RecordNameResolverProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -283,11 +286,23 @@ export default function RecordNameResolver({
     ? `${recordNumber} - ${name}`
     : recordNumber || name || null;
 
-  const displayName = isDirectStringValue
-    ? singleId || fallback
-    : !isValidId
+  // onlyRecordNumber mode: show just "prefix record_number" (e.g. "J 5"), no name
+  const displayName = onlyRecordNumber
+    ? (recordNumber ?? resolvedLabel ?? (error ? "N/A" : fallback))
+    : isDirectStringValue
       ? singleId || fallback
-      : resolvedLabel ?? (isLoading ? loadingText : (error ? "N/A" : "N/A"));
+      : !isValidId
+        ? singleId || fallback
+        : resolvedLabel ?? (error ? "N/A" : null);
+
+  // Show spinner while loading
+  if (isLoading && !isDirectStringValue && isValidId && !resolvedLabel) {
+    return (
+      <span className={`inline-flex items-center gap-1 text-gray-400 ${className}`}>
+        <AiOutlineLoading3Quarters className="animate-spin h-3 w-3" />
+      </span>
+    );
+  }
 
   const isOwnerType = normalizedType === "owner";
   const hasResolvedName = Boolean(resolvedLabel && String(resolvedLabel).trim());
