@@ -9,11 +9,11 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 import { getCustomFieldLabel } from '@/lib/getCustomFieldLabel';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import { getRecordNumberFromId } from '@/lib/getRecordNumberFromId';
-import { Binoculars } from 'lucide-react';
 import AddNoteModal from '@/components/AddNoteModal';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
 import { useAuth } from '@/lib/auth';
 import { Building2 } from 'lucide-react';
+import { TbBinoculars } from 'react-icons/tb';
 
 interface ApplicationTile {
   id: number;
@@ -334,7 +334,7 @@ const JobStatusCard = memo(function JobStatusCard({
           className="p-2 rounded-full hover:bg-slate-100 transition"
           aria-label="Open applications in this status"
         >
-          <Binoculars className="text-slate-600" size={18} />
+          <TbBinoculars className="text-slate-600" size={18} />
         </button>
       </div>
     </div>
@@ -343,6 +343,7 @@ const JobStatusCard = memo(function JobStatusCard({
 
 const DroppableColumn = memo(function DroppableColumn({
   column,
+  isLoading,
   onOpenApplications,
   onOpenJob,
   onOpenOrganization,
@@ -352,6 +353,7 @@ const DroppableColumn = memo(function DroppableColumn({
   jobRecordNumbers,
 }: {
   column: Omit<Column, 'applications'> & { jobs: JobCard[] };
+  isLoading: boolean;
   onOpenApplications: (card: JobCard, columnId: string) => void;
   onOpenJob: (jobId: number) => void;
   onOpenOrganization: (organizationId: string) => void;
@@ -384,18 +386,24 @@ const DroppableColumn = memo(function DroppableColumn({
           onDropCardToColumn(column.id);
         }}
       >
-        {column.jobs.map((card) => (
-          <JobStatusCard
-            key={`${column.id}-${card.jobId}`}
-            card={card}
-            columnId={column.id}
-            onOpenApplications={onOpenApplications}
-            onOpenJob={onOpenJob}
-            onOpenOrganization={onOpenOrganization}
-            onDragStartCard={onDragStartCard}
-            jobRecordNumber={jobRecordNumbers[card.jobId]}
-          />
-        ))}
+        {isLoading ? (
+          <div className="py-6 text-center text-sm text-slate-500">Loading...</div>
+        ) : column.jobs.length === 0 ? (
+          <div className="py-6 text-center text-sm text-slate-400">No records yet.</div>
+        ) : (
+          column.jobs.map((card) => (
+            <JobStatusCard
+              key={`${column.id}-${card.jobId}`}
+              card={card}
+              columnId={column.id}
+              onOpenApplications={onOpenApplications}
+              onOpenJob={onOpenJob}
+              onOpenOrganization={onOpenOrganization}
+              onDragStartCard={onDragStartCard}
+              jobRecordNumber={jobRecordNumbers[card.jobId]}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -435,6 +443,8 @@ export default function SalesDashboard() {
   const [loadingOrganizationProfile, setLoadingOrganizationProfile] = useState(false);
   const [loadingOrganizationFieldLabels, setLoadingOrganizationFieldLabels] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+  const [noteEntityId, setNoteEntityId] = useState<string>('');
+  const [noteEntityDisplay, setNoteEntityDisplay] = useState<string>('');
   const [pendingStatusChange, setPendingStatusChange] = useState<{
     candidateId: number | string;
     applicationId: number | string;
@@ -946,6 +956,8 @@ export default function SalesDashboard() {
               newStatus: 'Offer Extended',
             }))
         );
+        setNoteEntityId(String(card.jobId));
+        setNoteEntityDisplay(`${formatRecordId(jobRecordNumbers[card.jobId] ?? card.jobId, 'job')} ${card.jobTitle || ''}`.trim());
         setNoteModalDefaults({ action: 'Offer Extended', aboutReferences: refs });
         setShowAddNote(true);
         return;
@@ -1052,6 +1064,12 @@ export default function SalesDashboard() {
           action: newStatus,
           aboutReferences: refs,
         });
+        setNoteEntityId(String(effectiveJobId ?? jobSeekerId));
+        setNoteEntityDisplay(
+          effectiveJobId
+            ? `${formatRecordId(jobRecordNumbers[effectiveJobId] ?? effectiveJobId, 'job')} ${previewCard?.jobTitle || ''}`.trim()
+            : `Job Seeker #${jobSeekerId}`
+        );
         setShowAddNote(true);
         return;
       }
@@ -1081,27 +1099,22 @@ export default function SalesDashboard() {
       </div>
 
       <div className="grow overflow-x-auto overflow-y-hidden p-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-slate-600">
-            Loading...
-          </div>
-        ) : (
-          <div className="flex gap-4 h-full min-w-max pb-4">
-            {columns.map((column) => (
-              <DroppableColumn
-                key={column.id}
-                column={column}
-                onOpenApplications={handleOpenApplications}
-                onOpenJob={handleOpenJob}
-                onOpenOrganization={handleOpenOrganization}
-                onDropCardToColumn={handleDropCardToColumn}
-                onDragStartCard={setActiveDrag}
-                activeDrag={activeDrag}
-                jobRecordNumbers={jobRecordNumbers}
-              />
-            ))}
-          </div>
-        )}
+        <div className="flex gap-4 h-full min-w-max pb-4">
+          {columns.map((column) => (
+            <DroppableColumn
+              key={column.id}
+              column={column}
+              isLoading={loading}
+              onOpenApplications={handleOpenApplications}
+              onOpenJob={handleOpenJob}
+              onOpenOrganization={handleOpenOrganization}
+              onDropCardToColumn={handleDropCardToColumn}
+              onDragStartCard={setActiveDrag}
+              activeDrag={activeDrag}
+              jobRecordNumbers={jobRecordNumbers}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="flex justify-between items-center p-4 border-t border-slate-200 bg-white/90">
@@ -1418,13 +1431,15 @@ export default function SalesDashboard() {
           open={showAddNote}
           onClose={() => {
             setShowAddNote(false);
+            setNoteEntityId('');
+            setNoteEntityDisplay('');
             setNoteModalDefaults(null);
             setPendingBulkStatusChange([]);
             setPendingStatusChange(null);
           }}
           entityType="job"
-          entityId={String(previewCard?.jobId ?? '')}
-          entityDisplay={previewCard?.jobTitle || `Job #${previewCard?.jobId ?? ''}`}
+          entityId={noteEntityId}
+          entityDisplay={noteEntityDisplay || `Job #${noteEntityId}`}
           defaultAction={noteModalDefaults?.action}
           defaultAboutReferences={noteModalDefaults?.aboutReferences}
           onSuccess={() => {
@@ -1449,6 +1464,8 @@ export default function SalesDashboard() {
               setPendingStatusChange(null);
             }
             setShowAddNote(false);
+            setNoteEntityId('');
+            setNoteEntityDisplay('');
             setNoteModalDefaults(null);
           }}
         />

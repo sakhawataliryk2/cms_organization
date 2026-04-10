@@ -276,6 +276,12 @@ export async function POST(request: NextRequest) {
             const record = records[i];
             const rowNumber = i + 1;
 
+            // Always skip completely empty rows regardless of import options
+            if (!record || Object.values(record).every(v => v === null || v === undefined || String(v).trim() === '')) {
+                summary.totalRows--;
+                continue;
+            }
+
             try {
                 // Build payload the same way individual add pages do
                 const payload = buildPayload(entityType, record, fieldNameToLabel);

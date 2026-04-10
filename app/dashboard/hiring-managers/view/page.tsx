@@ -6,7 +6,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
-import { FiUserCheck, FiSearch } from 'react-icons/fi';
+import { FiUserCheck, FiSearch, FiPhone } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
@@ -149,6 +149,24 @@ interface NoteFormState {
   scheduleNextAction: string;
   emailNotification: string[];
 }
+
+// Zoom Phone integration — Field_10 is the primary phone field for Hiring Managers
+const HM_PRIMARY_PHONE_FIELD_IDENTIFIER = "field_10";
+
+const normalizeHMFieldIdentifier = (identifier: unknown) => {
+  if (identifier === undefined || identifier === null) return "";
+  return String(identifier).trim().toLowerCase().replace(/^custom:/, "");
+};
+
+const isHMPrimaryPhoneField = (key: string, field?: any) => {
+  const identifiers = [key, field?.field_name, field?.field_key, field?.api_name]
+    .map(normalizeHMFieldIdentifier)
+    .filter(Boolean);
+  return identifiers.includes(HM_PRIMARY_PHONE_FIELD_IDENTIFIER);
+};
+
+const shouldShowHMPhoneCallButton = (key: string, field: any, value: string) =>
+  isHMPrimaryPhoneField(key, field) && value && value !== "-";
 
 export default function HiringManagerView() {
   const router = useRouter();
@@ -784,20 +802,35 @@ export default function HiringManagerView() {
         multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
       };
 
+      const shouldShowCallButton = shouldShowHMPhoneCallButton(row.key, def, value);
+
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">
-            <FieldValueRenderer
-              value={value}
-              fieldInfo={fieldInfo}
-              allFields={customFieldDefs as any}
-              valuesRecord={customObj as any}
-              emptyPlaceholder="-"
-              clickable
-              entityType="hiring-managers"
-              recordId={hiringManagerId ?? hiringManager.id}
-            />
+          <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <FieldValueRenderer
+                value={value}
+                fieldInfo={fieldInfo}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
+                emptyPlaceholder="-"
+                clickable
+                entityType="hiring-managers"
+                recordId={hiringManagerId ?? hiringManager.id}
+              />
+            </div>
+            {shouldShowCallButton && (
+              <button
+                type="button"
+                onClick={() => handleStartZoomCall(value)}
+                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                title="Call via Zoom Phone"
+              >
+                <FiPhone className="mr-1 h-3 w-3" />
+                Call
+              </button>
+            )}
           </div>
         </div>
       );
@@ -1479,7 +1512,7 @@ export default function HiringManagerView() {
         record_number: hm.record_number,
         firstName: hm.first_name || "",
         lastName: hm.last_name || "",
-        fullName:`${hm.first_name || ""}, ${hm.last_name || ""}`,
+        fullName: `${hm.first_name || ""}, ${hm.last_name || ""}`,
         title: hm.title || "Not specified",
         phone: hm.phone || "(Not provided)",
         mobilePhone: hm.mobile_phone || "(Not provided)",
@@ -3098,6 +3131,72 @@ export default function HiringManagerView() {
   const handleEdit = () => {
     if (hiringManagerId) {
       router.push(`/dashboard/hiring-managers/add?id=${hiringManagerId}`);
+    }
+  };
+
+  // Zoom Phone call — mirrors job seeker implementation, uses Field_10 as primary phone
+  const handleStartZoomCall = async (phoneNumber?: string) => {
+    if (!hiringManagerId || !hiringManager) {
+      toast.error("Hiring manager not loaded");
+      return;
+    }
+
+    const rawNumber =
+      phoneNumber && phoneNumber !== "-"
+        ? phoneNumber
+        : null;
+
+    if (!rawNumber) {
+      toast.error("No phone number available for this hiring manager");
+      return;
+    }
+
+    const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+    let normalizedNumber = digitsOnly;
+
+    if (digitsOnly.length === 10) {
+      normalizedNumber = `+1${digitsOnly}`;
+    } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
+      normalizedNumber = `+${digitsOnly}`;
+    }
+
+    if (!normalizedNumber) {
+      toast.error("Phone number format is invalid for Zoom Phone");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/calls/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId: hiringManagerId,
+          phoneNumber: normalizedNumber,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data?.message ||
+          (response.status === 401
+            ? "Session expired. Please sign in again."
+            : "Failed to start Zoom call");
+        toast.error(message);
+        return;
+      }
+
+      const dialUrl = data?.dialUrl;
+      if (dialUrl && typeof window !== "undefined") {
+        window.location.href = dialUrl;
+        toast.success("Opening Zoom Phone...");
+      } else {
+        toast.error("No dial URL received. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error starting Zoom Phone call:", error);
+      toast.error("Unable to start Zoom call. Please try again.");
     }
   };
 
@@ -5320,7 +5419,7 @@ export default function HiringManagerView() {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
               .map(f => `custom:${f.field_name || f.field_key || f.api_name || f.id}`);
-           
+
             const defaults = Array.from(new Set([...HIRING_MANAGER_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
