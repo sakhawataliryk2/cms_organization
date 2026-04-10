@@ -4,10 +4,6 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
-/* ---------------------------------------------
-   Types
---------------------------------------------- */
-
 export type RecordType =
   | "organization"
   | "organizations"
@@ -33,6 +29,7 @@ export type RecordType =
 
 type CacheEntry = {
   name: string | null;
+  recordNumber: string | null; // e.g. "O 5", "JS 12"
   error: boolean;
 };
 
@@ -62,6 +59,7 @@ export function useRecordName(
   type: RecordType | string
 ) {
   const [name, setName] = useState<string | null>(null);
+  const [recordNumber, setRecordNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
 
@@ -79,6 +77,7 @@ export function useRecordName(
     const cached = recordNameCache.get(cacheKey);
     if (cached) {
       setName(cached.name);
+      setRecordNumber(cached.recordNumber);
       setError(cached.error);
       return;
     }
@@ -100,13 +99,20 @@ export function useRecordName(
 
           const entry: CacheEntry =
             res.ok && data?.success
-              ? { name: data.name ?? null, error: false }
-              : { name: null, error: true };
+              ? {
+                name: data.name ?? null,
+                recordNumber:
+                  data.record_number != null && data.prefix
+                    ? `${data.prefix} ${data.record_number}`
+                    : null,
+                error: false,
+              }
+              : { name: null, recordNumber: null, error: true };
 
           recordNameCache.set(cacheKey, entry);
           return entry;
         } catch {
-          const entry = { name: null, error: true };
+          const entry = { name: null, recordNumber: null, error: true };
           recordNameCache.set(cacheKey, entry);
           return entry;
         } finally {
@@ -119,6 +125,7 @@ export function useRecordName(
     request.then((entry) => {
       if (!cancelled) {
         setName(entry.name);
+        setRecordNumber(entry.recordNumber);
         setError(entry.error);
         setIsLoading(false);
       }
@@ -129,7 +136,7 @@ export function useRecordName(
     };
   }, [cacheKey, normalizedType, idStr]);
 
-  return { name, isLoading, error };
+  return { name, recordNumber, isLoading, error };
 }
 
 /* ---------------------------------------------
@@ -263,7 +270,7 @@ export default function RecordNameResolver({
   const isRawString = typeof id === "string";
   const isDirectStringValue = isRawString && !isValidId;
 
-  const { name, isLoading, error } = useRecordName(
+  const { name, recordNumber, isLoading, error } = useRecordName(
     isDirectStringValue ? null : isValidId ? singleId : null,
     type
   );
@@ -271,15 +278,19 @@ export default function RecordNameResolver({
   const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
 
-  // ✅ Final display logic
+  // Build display: "prefix record_number - name" when record_number is available
+  const resolvedLabel = recordNumber && name
+    ? `${recordNumber} - ${name}`
+    : recordNumber || name || null;
+
   const displayName = isDirectStringValue
     ? singleId || fallback
     : !isValidId
       ? singleId || fallback
-      : name ?? (isLoading ? loadingText : (error ? "N/A" : "N/A"));
+      : resolvedLabel ?? (isLoading ? loadingText : (error ? "N/A" : "N/A"));
 
   const isOwnerType = normalizedType === "owner";
-  const hasResolvedName = Boolean(name && String(name).trim());
+  const hasResolvedName = Boolean(resolvedLabel && String(resolvedLabel).trim());
   const shouldBeClickable =
     clickable &&
     isValidId &&

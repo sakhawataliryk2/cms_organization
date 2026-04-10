@@ -1,7 +1,8 @@
 "use client";
 
-import PortalLayoutShell from "@/components/portal/PortalLayoutShell";
+import PortalNavbar from "@/components/portal/PortalNavbar";
 import PortalRoleGuard from "@/components/portal/PortalRoleGuard";
+import { useEffect, useState } from "react";
 
 const tabs = [
   { label: "Home", href: "/portal/jobseeker/home" },
@@ -11,18 +12,36 @@ const tabs = [
   { label: "Profile", href: "/portal/jobseeker/profile" },
 ];
 
-export default function JobSeekerPortalLayout({ children }: { children: React.ReactNode }) {
+function LayoutInner({ children }: { children: React.ReactNode }) {
+  const [userName, setUserName] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/portal/jobseeker/auth/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        const js = d?.job_seeker || d?.jobSeeker || d?.user || {};
+        const name = [js.first_name, js.last_name].filter(Boolean).join(" ");
+        if (name) setUserName(name);
+      })
+      .catch(() => null);
+  }, []);
+
   return (
-    <PortalRoleGuard role="JOB_SEEKER" mePath="/api/portal/jobseeker/auth/me">
-      <PortalLayoutShell
-        title="Job Seeker Portal"
-        subtitle="Manage tasks, documents, and timecards."
+    <div className="min-h-screen bg-slate-50">
+      <PortalNavbar
         tabs={tabs}
         logoutPath="/api/portal/jobseeker/auth/logout"
-      >
-        {children}
-      </PortalLayoutShell>
-    </PortalRoleGuard>
+        userName={userName}
+      />
+      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+    </div>
   );
 }
 
+export default function JobSeekerPortalLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <PortalRoleGuard role="JOB_SEEKER" mePath="/api/portal/jobseeker/auth/me">
+      <LayoutInner>{children}</LayoutInner>
+    </PortalRoleGuard>
+  );
+}

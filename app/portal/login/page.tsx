@@ -46,7 +46,7 @@ export default function PortalLoginPage() {
               { label: "Hiring Manager", value: "HIRING_MANAGER" },
             ]}
             value={{ label: role === "JOB_SEEKER" ? "Job Seeker" : "Hiring Manager", value: role }}
-            onChange={(v) => setRole((v?.value as Role) || "JOB_SEEKER")}
+            onChange={(v) => setRole(((v as { value: Role } | null)?.value) || "JOB_SEEKER")}
             isSearchable={false}
           />
           <input

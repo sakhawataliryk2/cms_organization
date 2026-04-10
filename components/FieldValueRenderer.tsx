@@ -523,7 +523,12 @@ export default function FieldValueRenderer({
     }
   }
 
-  const isEmpty = raw === "";
+  const isEmpty =
+    raw == null ||
+    (typeof raw === "string" &&
+      ["", "n/a", "na", "-", "null", "undefined"].includes(
+        raw.trim().toLowerCase()
+      ));
   const str = isEmpty ? emptyPlaceholder : raw;
   const rawTextLength = String(rawOriginal ?? "").trim().length;
 
@@ -665,7 +670,6 @@ export default function FieldValueRenderer({
       </a>
     );
   }
-
 
   if (isUrl) {
     const href = str.startsWith("http") ? str : `https://${str}`;

@@ -316,6 +316,13 @@ export async function POST(request: NextRequest) {
                 // Ensure custom_fields is always a plain serialisable object
                 payload.custom_fields = JSON.parse(JSON.stringify(payload.custom_fields ?? {}));
 
+                // ── Hiring manager model uses camelCase "customFields" not "custom_fields" ──
+                // Rename the key so the model picks it up correctly
+                if (entityType === 'hiring-managers' && payload.custom_fields) {
+                    payload.customFields = payload.custom_fields;
+                    delete payload.custom_fields;
+                }
+
                 // ── Entity-specific defaults / fallbacks ──────────────────────────────
 
                 if (entityType === 'organizations') {
@@ -335,11 +342,6 @@ export async function POST(request: NextRequest) {
                             if (!payload.firstName) payload.firstName = parts[0] ?? '';
                             if (!payload.lastName) payload.lastName = parts.slice(1).join(' ') || '';
                         }
-                    }
-                    if (!payload.firstName || !payload.lastName) {
-                        summary.failed++;
-                        summary.errors.push({ row: rowNumber, errors: ['First name and last name are required for job seekers'] });
-                        continue;
                     }
                     if (!payload.status) payload.status = 'Active';
                 }
