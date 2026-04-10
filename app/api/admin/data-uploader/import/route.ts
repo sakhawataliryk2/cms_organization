@@ -237,6 +237,34 @@ export async function POST(request: NextRequest) {
         // Per-request cache: lookup_type → Map<record_number, id>
         const lookupCache = new Map<string, Map<number, string>>();
 
+        // Pre-fetch all existing records once for duplicate checking (avoids N queries per row)
+        type ExistingRecord = { id: string;[key: string]: any };
+        let existingRecordsCache: ExistingRecord[] | null = null;
+
+        const getExistingRecords = async (): Promise<ExistingRecord[]> => {
+            if (existingRecordsCache !== null) return existingRecordsCache;
+            try {
+                const res = await fetch(`${apiUrl}/api/${endpoint}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) { existingRecordsCache = []; return []; }
+                const data = await res.json();
+                const listKeyMap: Record<string, string> = {
+                    'job-seekers': 'jobSeekers',
+                    'hiring-managers': 'hiringManagers',
+                    'organizations': 'organizations',
+                    'jobs': 'jobs',
+                    'leads': 'leads',
+                    'placements': 'placements',
+                };
+                const listKey = listKeyMap[endpoint] ?? endpoint;
+                existingRecordsCache = data[listKey] ?? data.data ?? [];
+            } catch {
+                existingRecordsCache = [];
+            }
+            return existingRecordsCache!;
+        };
+
         const summary = {
             totalRows: records.length,
             successful: 0,
@@ -347,62 +375,43 @@ export async function POST(request: NextRequest) {
                 let foundDuplicate = false;
 
                 if (needsDupCheck) {
+                    const allExisting = await getExistingRecords();
+
                     for (const check of uniqueChecks) {
                         if (!check.value) continue;
-                        try {
-                            const searchRes = await fetch(
-                                `${apiUrl}/api/${endpoint}?${check.field}=${encodeURIComponent(check.value)}`,
-                                { headers: { Authorization: `Bearer ${token}` } }
-                            );
-                            if (!searchRes.ok) continue;
 
-                            const searchData = await searchRes.json();
-                            const listKeyMap: Record<string, string> = {
-                                'job-seekers': 'jobSeekers',
-                                'hiring-managers': 'hiringManagers',
-                                'organizations': 'organizations',
-                                'jobs': 'jobs',
-                                'leads': 'leads',
-                                'placements': 'placements',
-                            };
-                            const listKey = listKeyMap[endpoint] ?? endpoint;
-                            const existingList: any[] = searchData[listKey] ?? searchData.data ?? [];
+                        const match = allExisting.find((r: any) => {
+                            const v = r[check.field];
+                            return v != null && String(v).toLowerCase().trim() === check.value.toLowerCase().trim();
+                        });
 
-                            const match = existingList.find((r: any) => {
-                                const v = r[check.field];
-                                return v != null && String(v).toLowerCase().trim() === check.value.toLowerCase().trim();
-                            });
+                        if (match) {
+                            foundDuplicate = true;
 
-                            if (match) {
-                                foundDuplicate = true;
-
-                                if (opts.skipDuplicates || opts.importNewOnly) {
-                                    summary.failed++;
-                                    summary.errors.push({
-                                        row: rowNumber,
-                                        errors: [`Record already exists (${check.field}: ${check.value})`],
-                                    });
-                                    break;
-                                }
-
-                                if (opts.updateExisting) {
-                                    const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
-                                        method: 'PUT',
-                                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                        body: JSON.stringify(payload),
-                                    });
-                                    const updateData = await updateRes.json();
-                                    if (!updateRes.ok) {
-                                        summary.failed++;
-                                        summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
-                                    } else {
-                                        summary.successful++;
-                                    }
-                                    break;
-                                }
+                            if (opts.skipDuplicates || opts.importNewOnly) {
+                                summary.failed++;
+                                summary.errors.push({
+                                    row: rowNumber,
+                                    errors: [`Record already exists (${check.field}: ${check.value})`],
+                                });
+                                break;
                             }
-                        } catch (e) {
-                            console.warn(`Duplicate check failed for ${check.field}:`, e);
+
+                            if (opts.updateExisting) {
+                                const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                    body: JSON.stringify(payload),
+                                });
+                                const updateData = await updateRes.json();
+                                if (!updateRes.ok) {
+                                    summary.failed++;
+                                    summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
+                                } else {
+                                    summary.successful++;
+                                }
+                                break;
+                            }
                         }
                     }
                 }
