@@ -839,8 +839,8 @@ export default function ArchivedTasksList() {
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
                 className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
               >
                 <IoFilterSharp /> Filter
@@ -860,26 +860,28 @@ export default function ArchivedTasksList() {
           </div>
         </div>
 
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0 overflow-x-auto">
           {selectedTasks.length > 0 && (
-            <button
-              onClick={deleteSelectedTasks}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
+            <div className="shrink-0">
+              <button
+                onClick={deleteSelectedTasks}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center whitespace-nowrap"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Delete Selected ({selectedTasks.length})
-            </button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 mr-1"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                Delete Selected ({selectedTasks.length})
+              </button>
+            </div>
           )}
           <div className="relative">
             <button
@@ -935,7 +937,7 @@ export default function ArchivedTasksList() {
           </div>
           <button
             onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Columns
           </button>
@@ -1054,8 +1056,8 @@ export default function ArchivedTasksList() {
               type="button"
               onClick={() => setShowAdvancedSearch((v) => !v)}
               className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 }`}
             >
               Filters

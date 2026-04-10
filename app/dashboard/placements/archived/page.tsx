@@ -825,7 +825,7 @@ export default function PlacementList() {
   const handleEmailCandidates = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -845,24 +845,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobSeekerId = placement?.jobSeekerId || placement?.job_seeker_id;
-      
+
       if (jobSeekerId) {
         const jsResponse = await fetch(`/api/job-seekers/${jobSeekerId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jsData = await jsResponse.json();
         const jobSeeker = jsData?.jobSeeker || jsData;
-        
+
         if (jobSeeker?.email) extractEmailsFromValue(jobSeeker.email);
         if (jobSeeker?.email_address) extractEmailsFromValue(jobSeeker.email_address);
         if (jobSeeker?.contact_email) extractEmailsFromValue(jobSeeker.contact_email);
@@ -877,12 +877,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Candidate email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -892,7 +892,7 @@ export default function PlacementList() {
   const handleEmailBillingContacts = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -912,24 +912,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
-      
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
-        
+
         if (job?.billing_contact_email) extractEmailsFromValue(job.billing_contact_email);
         if (job?.billing_contacts) extractEmailsFromValue(job.billing_contacts);
         if (job?.billingContacts) extractEmailsFromValue(job.billingContacts);
@@ -945,12 +945,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Billing contact email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -960,7 +960,7 @@ export default function PlacementList() {
   const handleEmailApprovers = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-    
+
     const extractEmailsFromValue = (value: any): void => {
       if (!value) return;
       if (typeof value === "string") {
@@ -980,24 +980,24 @@ export default function PlacementList() {
         Object.values(value).forEach(extractEmailsFromValue);
       }
     };
-    
+
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      
+
       const response = await fetch(`/api/placements/${placementId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
-      
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
-        
+
         if (job?.approver_email) extractEmailsFromValue(job.approver_email);
         if (job?.approverEmail) extractEmailsFromValue(job.approverEmail);
         if (job?.approvers) extractEmailsFromValue(job.approvers);
@@ -1021,12 +1021,12 @@ export default function PlacementList() {
           });
         }
       }
-      
+
       if (emailSet.size === 0) {
         toast.error("Approver email(s) not available for this placement");
         return;
       }
-      
+
       window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
     } catch (err) {
       toast.error("Failed to open email compose");
@@ -1192,11 +1192,10 @@ export default function PlacementList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                  showAdvancedSearch || advancedSearchCriteria.length > 0
-                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
               >
                 <IoFilterSharp /> Filter
               </button>
@@ -1204,32 +1203,34 @@ export default function PlacementList() {
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  >
+                    <FiX />
+                    Clear All
+                  </button>
+                )}
             </div>
           </div>
         </div>
 
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0 overflow-x-auto">
           {selectedPlacements.length > 0 && (
-            <BulkActionsButton
-              selectedCount={selectedPlacements.length}
-              entityType="placement"
-              entityIds={selectedPlacements}
-              availableFields={availableFields}
-              onSuccess={() => {
-                fetchPlacements();
-                setSelectedPlacements([]);
-                setSelectAll(false);
-              }}
-              onCSVExport={handleCSVExport}
-            />
+            <div className="shrink-0">
+              <BulkActionsButton
+                selectedCount={selectedPlacements.length}
+                entityType="placement"
+                entityIds={selectedPlacements}
+                availableFields={availableFields}
+                onSuccess={() => {
+                  fetchPlacements();
+                  setSelectedPlacements([]);
+                  setSelectAll(false);
+                }}
+                onCSVExport={handleCSVExport}
+              />
+            </div>
           )}
 
           <div className="relative">
@@ -1294,7 +1295,7 @@ export default function PlacementList() {
 
           <button
             onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Columns
           </button>
@@ -1415,11 +1416,10 @@ export default function PlacementList() {
               ref={advancedSearchButtonRef}
               type="button"
               onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
-                showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
+                ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
             >
               Advanced
             </button>
@@ -1427,14 +1427,14 @@ export default function PlacementList() {
               Object.keys(columnFilters).length > 0 ||
               Object.keys(columnSorts).length > 0 ||
               advancedSearchCriteria.length > 0) && (
-              <button
-                onClick={handleClearAllFilters}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-              >
-                <FiX />
-                Clear All
-              </button>
-            )}
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
           </div>
         </div>
       </div>
@@ -1459,152 +1459,152 @@ export default function PlacementList() {
       <div className="w-full max-w-full overflow-x-hidden">
         <div className="overflow-x-auto">
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {/* Fixed checkbox */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </th>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  {/* Fixed checkbox */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
 
 
-                {/* Fixed Actions */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                  {/* Fixed Actions */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
 
-                {/* Draggable Dynamic headers (includes Record #) */}
-                <SortableContext
-                  items={columnFields}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {columnFields.map((key) => {
-                    const columnInfo = getColumnInfo(key);
-                    if (!columnInfo) return null;
-
-                    return (
-                      <SortableColumnHeader
-                        key={key}
-                        id={key}
-                        columnKey={key}
-                        label={getColumnLabel(key)}
-                        sortState={columnSorts[key] || null}
-                        filterValue={columnFilters[key] || null}
-                        onSort={() => handleColumnSort(key)}
-                        onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo.filterType}
-                        filterOptions={
-                          key === "status"
-                            ? statusOptions
-                            : key === "archive_reason"
-                              ? archiveReasonOptions
-                              : key === "placement_type"
-                                ? placementTypeOptions
-                                : undefined
-                        }
-                      />
-                    );
-                  })}
-                </SortableContext>
-              </tr>
-            </thead>
-
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedPlacements.length > 0 ? (
-                filteredAndSortedPlacements.map((placement) => (
-                  <tr
-                    key={placement.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => {
-                      router.push(`/dashboard/placements/view?id=${placement.id}`);
-                    }}
+                  {/* Draggable Dynamic headers (includes Record #) */}
+                  <SortableContext
+                    items={columnFields}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {/* Fixed checkbox */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedPlacements.includes(placement.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectPlacement(placement.id, e)}
-                      />
-                    </td>
-
-                    {/* Fixed Actions */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ActionDropdown
-                        label="Actions"
-                        disabled
-                        options={[
-                          { label: "View", action: () => handleViewPlacement(placement.id) },
-                          {
-                            label: "Delete",
-                            action: () => handleDeletePlacement(placement.id),
-                          },
-                        ]}
-                      />
-                    </td>
-
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 text-black whitespace-nowrap">
-                      <div className="flex flex-col gap-1">
-                        <span>P {placement.record_number ?? placement.id}</span>
-                        {placement.archived_at && (
-                          <CountdownTimer archivedAt={placement.archived_at} />
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Dynamic cells */}
                     {columnFields.map((key) => {
-                      const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
-                      const fieldInfo = colInfo
-                        ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
-                        : { key, label: getColumnLabel(key) };
+                      const columnInfo = getColumnInfo(key);
+                      if (!columnInfo) return null;
 
                       return (
-                        <td
+                        <SortableColumnHeader
                           key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        // onClick={(e) => e.stopPropagation()}
-                        >
-                          <FieldValueRenderer
-                            value={getColumnValue(placement, key)}
-                            fieldInfo={fieldInfo}
-                            emptyPlaceholder="—"
-                            clickable
-                            stopPropagation
-                          />
-                        </td>
+                          id={key}
+                          columnKey={key}
+                          label={getColumnLabel(key)}
+                          sortState={columnSorts[key] || null}
+                          filterValue={columnFilters[key] || null}
+                          onSort={() => handleColumnSort(key)}
+                          onFilterChange={(value) => handleColumnFilter(key, value)}
+                          filterType={columnInfo.filterType}
+                          filterOptions={
+                            key === "status"
+                              ? statusOptions
+                              : key === "archive_reason"
+                                ? archiveReasonOptions
+                                : key === "placement_type"
+                                  ? placementTypeOptions
+                                  : undefined
+                          }
+                        />
                       );
                     })}
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={3 + columnFields.length}
-                    className="px-6 py-4 text-center text-gray-500"
-                  >
-                    {searchTerm
-                      ? "No archived placements match your search."
-                      : "No archived placements found."}
-                  </td>
+                  </SortableContext>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedPlacements.length > 0 ? (
+                  filteredAndSortedPlacements.map((placement) => (
+                    <tr
+                      key={placement.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => {
+                        router.push(`/dashboard/placements/view?id=${placement.id}`);
+                      }}
+                    >
+                      {/* Fixed checkbox */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          checked={selectedPlacements.includes(placement.id)}
+                          onChange={() => { }}
+                          onClick={(e) => handleSelectPlacement(placement.id, e)}
+                        />
+                      </td>
+
+                      {/* Fixed Actions */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ActionDropdown
+                          label="Actions"
+                          disabled
+                          options={[
+                            { label: "View", action: () => handleViewPlacement(placement.id) },
+                            {
+                              label: "Delete",
+                              action: () => handleDeletePlacement(placement.id),
+                            },
+                          ]}
+                        />
+                      </td>
+
+                      {/* Fixed ID */}
+                      <td className="px-6 py-4 text-black whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          <span>P {placement.record_number ?? placement.id}</span>
+                          {placement.archived_at && (
+                            <CountdownTimer archivedAt={placement.archived_at} />
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Dynamic cells */}
+                      {columnFields.map((key) => {
+                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                        const fieldInfo = colInfo
+                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                          : { key, label: getColumnLabel(key) };
+
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          // onClick={(e) => e.stopPropagation()}
+                          >
+                            <FieldValueRenderer
+                              value={getColumnValue(placement, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="—"
+                              clickable
+                              stopPropagation
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={3 + columnFields.length}
+                      className="px-6 py-4 text-center text-gray-500"
+                    >
+                      {searchTerm
+                        ? "No archived placements match your search."
+                        : "No archived placements found."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </DndContext>
         </div>
       </div>

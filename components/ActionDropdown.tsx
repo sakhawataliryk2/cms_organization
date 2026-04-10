@@ -132,11 +132,10 @@ export default function ActionDropdown({
                 {options.map((option, index) => (
                     <li
                         key={index}
-                        className={`${optionClassName} ${
-                            option.disabled
+                        className={`whitespace-nowrap flex-nowrap shrink-0 overflow-x-auto ${optionClassName} ${option.disabled
                                 ? 'opacity-50 cursor-not-allowed text-gray-400'
                                 : ''
-                        }`}
+                            }`}
                         onClick={() => handleOptionClick(option)}
                     >
                         {option.label}

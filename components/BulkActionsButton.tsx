@@ -46,12 +46,12 @@ export default function BulkActionsButton({
 
     const ownerField = findFieldByLabel('Owner');
     const statusField = findFieldByLabel('Status');
-    const openCloseField = findFieldByLabel('Open/Close') || 
-                          availableFields.find(f => {
-                              const label = (f.field_label || '').toLowerCase();
-                              return (label.includes('open') && label.includes('close')) ||
-                                     label === 'open/close' || label === 'open close';
-                          });
+    const openCloseField = findFieldByLabel('Open/Close') ||
+        availableFields.find(f => {
+            const label = (f.field_label || '').toLowerCase();
+            return (label.includes('open') && label.includes('close')) ||
+                label === 'open/close' || label === 'open close';
+        });
 
     // For placements, allow ownership bulk action even if the Owner field
     // is not explicitly returned from field-management. We fallback to a
@@ -81,10 +81,10 @@ export default function BulkActionsButton({
             'job': 'job',
             'placement': 'placement'
         };
-        
+
         const mappedEntityType = entityTypeMap[entityType] || entityType;
         const entityIdsParam = entityIds.join(',');
-        
+
         // Navigate to tasks add page with multiple entity IDs
         router.push(`/dashboard/tasks/add?relatedEntity=${mappedEntityType}&relatedEntityIds=${entityIdsParam}`);
     };
@@ -99,23 +99,23 @@ export default function BulkActionsButton({
     // Email handlers for placements
     const handleEmailCandidates = async () => {
         if (entityType !== 'placement') return;
-        
+
         const emailSet = new Set<string>();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-        
+
         try {
             const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-            
+
             for (const placementId of entityIds) {
                 try {
                     const response = await fetch(`/api/placements/${placementId}`, {
                         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                     });
-                    
+
                     const data = await response.json();
                     const placement = data?.placement || data;
                     const jobSeekerId = placement?.jobSeekerId || placement?.job_seeker_id;
-                    
+
                     if (jobSeekerId) {
                         const jsResponse = await fetch(`/api/job-seekers/${jobSeekerId}`, {
                             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -130,12 +130,12 @@ export default function BulkActionsButton({
                     console.error(`Error fetching placement ${placementId}:`, err);
                 }
             }
-            
+
             if (emailSet.size === 0) {
                 toast.error("Candidate email(s) not available for selected placements");
                 return;
             }
-            
+
             window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
         } catch (err) {
             toast.error("Failed to open email compose");
@@ -144,10 +144,10 @@ export default function BulkActionsButton({
 
     const handleEmailBillingContacts = async () => {
         if (entityType !== 'placement') return;
-        
+
         const emailSet = new Set<string>();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-        
+
         const extractEmailsFromValue = (value: any): void => {
             if (!value) return;
             if (typeof value === "string") {
@@ -167,10 +167,10 @@ export default function BulkActionsButton({
                 Object.values(value).forEach(extractEmailsFromValue);
             }
         };
-        
+
         try {
             const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-            
+
             for (const placementId of entityIds) {
                 try {
                     const response = await fetch(`/api/placements/${placementId}`, {
@@ -179,14 +179,14 @@ export default function BulkActionsButton({
                     const data = await response.json();
                     const placement = data?.placement || data;
                     const jobId = placement?.jobId || placement?.job_id;
-                    
+
                     if (jobId) {
                         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
                             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                         });
                         const jobData = await jobResponse.json();
                         const job = jobData?.job || jobData;
-                        
+
                         if (job?.billing_contact_email) extractEmailsFromValue(job.billing_contact_email);
                         if (job?.billing_contacts) extractEmailsFromValue(job.billing_contacts);
                         if (job?.billingContacts) extractEmailsFromValue(job.billingContacts);
@@ -206,12 +206,12 @@ export default function BulkActionsButton({
                     console.error(`Error fetching placement ${placementId}:`, err);
                 }
             }
-            
+
             if (emailSet.size === 0) {
                 toast.error("Billing contact email(s) not available for selected placements");
                 return;
             }
-            
+
             window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
         } catch (err) {
             toast.error("Failed to open email compose");
@@ -220,10 +220,10 @@ export default function BulkActionsButton({
 
     const handleEmailApprovers = async () => {
         if (entityType !== 'placement') return;
-        
+
         const emailSet = new Set<string>();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-        
+
         const extractEmailsFromValue = (value: any): void => {
             if (!value) return;
             if (typeof value === "string") {
@@ -243,10 +243,10 @@ export default function BulkActionsButton({
                 Object.values(value).forEach(extractEmailsFromValue);
             }
         };
-        
+
         try {
             const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-            
+
             for (const placementId of entityIds) {
                 try {
                     const response = await fetch(`/api/placements/${placementId}`, {
@@ -255,14 +255,14 @@ export default function BulkActionsButton({
                     const data = await response.json();
                     const placement = data?.placement || data;
                     const jobId = placement?.jobId || placement?.job_id;
-                    
+
                     if (jobId) {
                         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
                             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                         });
                         const jobData = await jobResponse.json();
                         const job = jobData?.job || jobData;
-                        
+
                         if (Array.isArray(job?.contacts)) {
                             job.contacts.forEach((c: any) => {
                                 const type = (c?.type || c?.contact_type || "").toLowerCase();
@@ -279,12 +279,12 @@ export default function BulkActionsButton({
                     console.error(`Error fetching placement ${placementId}:`, err);
                 }
             }
-            
+
             if (emailSet.size === 0) {
                 toast.error("Approver email(s) not available for selected placements");
                 return;
             }
-            
+
             window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
         } catch (err) {
             toast.error("Failed to open email compose");
@@ -361,11 +361,13 @@ export default function BulkActionsButton({
 
     return (
         <>
-            <ActionDropdown
-                label={`Actions (${selectedCount})`}
-                options={actionOptions}
-                buttonClassName="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-            />
+            <div className='flex-nowrap shrink-0 whitespace-nowrap'>
+                <ActionDropdown
+                    label={`Actions (${selectedCount})`}
+                    options={actionOptions}
+                    buttonClassName="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+                />
+            </div>
 
             {showOwnershipModal && effectiveOwnerField && (
                 <BulkOwnershipModal
