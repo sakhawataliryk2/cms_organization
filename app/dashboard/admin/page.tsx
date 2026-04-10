@@ -47,6 +47,7 @@ interface CustomFieldDefinition {
     is_required: boolean;
     is_hidden: boolean;
     sort_order: number;
+    lookup_type?: string | null;
 }
 
 interface ModuleFieldConfig {
@@ -492,6 +493,14 @@ export default function AdminCenter() {
                 }
             });
 
+            // Pass full field definitions so the export API can resolve lookup type IDs → record numbers
+            const fieldDefinitions = availableFields.map((f: CustomFieldDefinition) => ({
+                field_name: f.field_name,
+                field_label: f.field_label,
+                field_type: f.field_type,
+                lookup_type: f.lookup_type ?? null,
+            }));
+
             const response = await fetch('/api/admin/data-downloader/export', {
                 method: 'POST',
                 headers: {
@@ -502,6 +511,7 @@ export default function AdminCenter() {
                     module: selectedModule,
                     selectedFields: selectedFields,
                     fieldNameToLabel: Object.keys(fieldNameToLabel).length > 0 ? fieldNameToLabel : undefined,
+                    fieldDefinitions,
                     filters: {
                         startDate: dateRange.start || null,
                         endDate: dateRange.end || null,

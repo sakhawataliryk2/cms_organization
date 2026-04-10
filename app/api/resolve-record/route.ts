@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    
+
     // Owner type uses /api/users/active endpoint and finds user by ID
     if (normalizedType === "owner") {
       const url = `${apiUrl}${basePath}`;
@@ -148,21 +148,24 @@ export async function GET(request: NextRequest) {
         normalizedType === "hiringmanager" ||
         normalizedType === "hiringmanagers"
       ) {
+        // full_name is "last, first" — always build first last directly
         name =
-          record.full_name ||
           [record.first_name, record.last_name].filter(Boolean).join(" ") ||
+          record.full_name ||
           "";
       } else if (isJobSeeker) {
+        // full_name is "last, first" — always build first last directly
         name =
-          record.full_name ||
           [record.first_name, record.last_name].filter(Boolean).join(" ") ||
+          record.full_name ||
           "";
       } else if (isJob) {
         name = record.job_title || record.title || "";
       } else if (normalizedType.includes("lead")) {
+        // full_name is "last, first" — always build first last directly
         name =
-          record.full_name ||
           [record.first_name, record.last_name].filter(Boolean).join(" ") ||
+          record.full_name ||
           record.name ||
           record.organization_name ||
           record.company_name ||
@@ -180,9 +183,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Fallback: use record_number (with type prefix) instead of raw PK id
+    const recordNumber = record?.record_number;
+    const prefixMap: Record<string, string> = {
+      organization: "O", organizations: "O",
+      "hiring-manager": "HM", "hiring-managers": "HM", hiringmanager: "HM", hiringmanagers: "HM",
+      job: "J", jobs: "J",
+      "job-seeker": "JS", "job-seekers": "JS", jobseeker: "JS", jobseekers: "JS",
+      lead: "L", leads: "L",
+      placement: "P", placements: "P",
+      task: "T", tasks: "T",
+    };
+    const prefix = prefixMap[normalizedType];
+    const recordNumberFallback = recordNumber != null ? `${prefix ?? ""}${prefix ? " " : ""}${recordNumber}` : null;
+
     return NextResponse.json({
       success: true,
-      name: (name || "").trim() || `#${id}`,
+      name: (name || "").trim() || recordNumberFallback || `#${id}`,
       id: String(id),
       type: normalizedType,
     });

@@ -22,6 +22,63 @@ import { cookies } from 'next/headers';
  *
  * Both endpoints must accept: Authorization: Bearer <token> (same token as from login).
  */
+
+// Lookup type → { endpoint, listKey, prefix }
+const LOOKUP_TYPE_CONFIG: Record<string, { endpoint: string; listKey: string; prefix: string }> = {
+    'organizations': { endpoint: 'organizations', listKey: 'organizations', prefix: 'O' },
+    'jobs': { endpoint: 'jobs', listKey: 'jobs', prefix: 'J' },
+    'job-seekers': { endpoint: 'job-seekers', listKey: 'jobSeekers', prefix: 'JS' },
+    'hiring-managers': { endpoint: 'hiring-managers', listKey: 'hiringManagers', prefix: 'HM' },
+    'leads': { endpoint: 'leads', listKey: 'leads', prefix: 'L' },
+    'placements': { endpoint: 'placements', listKey: 'placements', prefix: 'P' },
+    'tasks': { endpoint: 'tasks', listKey: 'tasks', prefix: 'T' },
+};
+
+interface FieldDefinition {
+    field_name: string;
+    field_label: string;
+    field_type: string;
+    lookup_type?: string | null;
+}
+
+/**
+ * Fetch all records for a lookup type and build a map of id → "prefix record_number".
+ * Cached per lookup_type for the lifetime of a single export request.
+ */
+async function buildIdToRecordNumberCache(
+    lookupType: string,
+    apiUrl: string,
+    token: string,
+    cache: Map<string, Map<string, string>>
+): Promise<Map<string, string>> {
+    if (cache.has(lookupType)) return cache.get(lookupType)!;
+
+    const config = LOOKUP_TYPE_CONFIG[lookupType];
+    if (!config) return new Map();
+
+    const map = new Map<string, string>();
+    try {
+        const res = await fetch(`${apiUrl}/api/${config.endpoint}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return map;
+        const data = await res.json();
+        const list: any[] = data[config.listKey] ?? data.data ?? [];
+        for (const item of list) {
+            const id = item.id;
+            const rn = item.record_number;
+            if (id != null && rn != null) {
+                map.set(String(id), `${config.prefix} ${rn}`);
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to fetch lookup cache for ${lookupType}:`, e);
+    }
+
+    cache.set(lookupType, map);
+    return map;
+}
+
 export async function POST(request: NextRequest) {
     try {
         const cookieStore = await cookies();
@@ -35,9 +92,9 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        
+
         // Support both new format (module + selectedFields) and legacy format (modules array)
-        const { module, modules, selectedFields, filters, format, debug: debugRequested, fieldNameToLabel } = body;
+        const { module, modules, selectedFields, filters, format, debug: debugRequested, fieldNameToLabel, fieldDefinitions } = body;
         const moduleId = module || (modules && modules.length > 0 ? modules[0] : null);
         const isDebug = debugRequested === true || process.env.NODE_ENV !== 'production';
 
@@ -158,11 +215,11 @@ export async function POST(request: NextRequest) {
                     moduleData = moduleData.filter((item: any) => {
                         const itemDate = item.created_at || item.updated_at || item.date_added;
                         if (!itemDate) return true;
-                        
+
                         const itemDateObj = new Date(itemDate);
                         const startDate = filters.startDate ? new Date(filters.startDate) : null;
                         const endDate = filters.endDate ? new Date(filters.endDate) : null;
-                        
+
                         if (startDate && itemDateObj < startDate) return false;
                         if (endDate && itemDateObj > endDate) return false;
                         return true;
@@ -310,6 +367,51 @@ export async function POST(request: NextRequest) {
                 }
 
                 exportData[moduleId] = moduleData;
+
+                // ── Lookup type resolution (export) ──────────────────────────────────────
+                // For fields with a lookup_type, the stored value is a PK id.
+                // Replace it with "prefix record_number" (e.g. "O 5", "JS 12") so the
+                // exported file is human-readable and round-trip importable.
+                if (fieldDefinitions && Array.isArray(fieldDefinitions) && fieldDefinitions.length > 0) {
+                    // Build field_name → lookup_type map for the selected fields only
+                    const lookupFieldsByLabel = new Map<string, string>(); // label → lookup_type
+                    const lookupFieldsByName = new Map<string, string>();  // field_name → lookup_type
+                    for (const fd of (fieldDefinitions as FieldDefinition[])) {
+                        if (fd.lookup_type && LOOKUP_TYPE_CONFIG[fd.lookup_type]) {
+                            lookupFieldsByName.set(fd.field_name, fd.lookup_type);
+                            if (fd.field_label) lookupFieldsByLabel.set(fd.field_label, fd.lookup_type);
+                        }
+                    }
+
+                    if (lookupFieldsByName.size > 0 || lookupFieldsByLabel.size > 0) {
+                        // Per-export cache: lookup_type → Map<id, "prefix record_number">
+                        const idToRnCache = new Map<string, Map<string, string>>();
+
+                        const resolvedData: any[] = [];
+                        for (const row of exportData[moduleId]) {
+                            const resolvedRow: any = { ...row };
+
+                            // Check each key in the row against our lookup field maps
+                            for (const [key, value] of Object.entries(row)) {
+                                if (!value || String(value).trim() === '') continue;
+
+                                // key may be field_name (e.g. "Field_3") or field_label (e.g. "Organization")
+                                const lookupType = lookupFieldsByName.get(key) ?? lookupFieldsByLabel.get(key);
+                                if (!lookupType) continue;
+
+                                const idToRn = await buildIdToRecordNumberCache(lookupType, apiUrl, token, idToRnCache);
+                                const resolved = idToRn.get(String(value));
+                                if (resolved) {
+                                    resolvedRow[key] = resolved;
+                                }
+                                // If not found, keep original value as fallback
+                            }
+
+                            resolvedData.push(resolvedRow);
+                        }
+                        exportData[moduleId] = resolvedData;
+                    }
+                }
             }
         } catch (err) {
             errors[moduleId] = err instanceof Error ? err.message : 'Unknown error';

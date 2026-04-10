@@ -1479,8 +1479,7 @@ export default function HiringManagerView() {
         record_number: hm.record_number,
         firstName: hm.first_name || "",
         lastName: hm.last_name || "",
-        fullName:
-          hm.full_name || `${hm.last_name || ""}, ${hm.first_name || ""}`,
+        fullName:`${hm.first_name || ""}, ${hm.last_name || ""}`,
         title: hm.title || "Not specified",
         phone: hm.phone || "(Not provided)",
         mobilePhone: hm.mobile_phone || "(Not provided)",

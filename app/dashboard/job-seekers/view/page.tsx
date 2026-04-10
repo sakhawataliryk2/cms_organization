@@ -2974,8 +2974,7 @@ Best regards`;
         firstName: jobSeekerData.first_name || "",
         lastName: jobSeekerData.last_name || "",
         fullName:
-          jobSeekerData.full_name ||
-          `${jobSeekerData.last_name}, ${jobSeekerData.first_name}`,
+          `${jobSeekerData.first_name}, ${jobSeekerData.last_name}`,
         email: jobSeekerData.email || "No email provided",
         phone: jobSeekerData.phone || "No phone provided",
         mobilePhone:

@@ -1482,7 +1482,7 @@ export default function LeadView() {
         record_number: data.lead.record_number,
         firstName: data.lead.first_name || "",
         lastName: data.lead.last_name || "",
-        fullName: data.lead.full_name || `${data.lead.last_name || ""}, ${data.lead.first_name || ""}`,
+        fullName: `${data.lead.first_name || ""}, ${data.lead.last_name || ""}`,
         status: data.lead.status || "New Lead",
         nickname: data.lead.nickname || "",
         title: data.lead.title || "",
