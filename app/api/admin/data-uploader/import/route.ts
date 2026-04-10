@@ -1,165 +1,190 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-// Map Field Management field_name (snake_case) to backend API keys per entity
-const FIELD_NAME_TO_BACKEND: Record<string, Record<string, string>> = {
-    'job-seekers': {
-        first_name: 'firstName',
-        last_name: 'lastName',
-        email: 'email',
-        phone: 'phone',
-        mobile_phone: 'mobilePhone',
-        address: 'address',
-        city: 'city',
-        state: 'state',
-        zip: 'zip',
-        zip_code: 'zip',
-        status: 'status',
-        current_organization: 'currentOrganization',
-        title: 'title',
-        resume_text: 'resumeText',
-        skills: 'skills',
-        desired_salary: 'desiredSalary',
-        owner: 'owner',
-        date_added: 'dateAdded',
-        last_contact_date: 'lastContactDate',
-        custom_fields: 'custom_fields',
-    },
-    'leads': {
-        first_name: 'firstName',
-        last_name: 'lastName',
-        email: 'email',
-        phone: 'phone',
-        mobile_phone: 'mobilePhone',
-        title: 'title',
-        status: 'status',
-        organization_id: 'organizationId',
-        organizationId: 'organizationId',
-        address: 'address',
-        department: 'department',
-        owner: 'owner',
-        custom_fields: 'custom_fields',
-    },
-    'hiring-managers': {
-        first_name: 'firstName',
-        last_name: 'lastName',
-        email: 'email',
-        phone: 'phone',
-        mobile_phone: 'mobilePhone',
-        title: 'title',
-        organization_id: 'organizationId',
-        organizationId: 'organizationId',
-        status: 'status',
-        custom_fields: 'custom_fields',
-    },
-    'jobs': {
-        job_title: 'jobTitle',
-        title: 'jobTitle',
-        organization_id: 'organizationId',
-        organizationId: 'organizationId',
-        category: 'category',
-        status: 'status',
-        custom_fields: 'custom_fields',
-    },
-    'organizations': {
-        name: 'name',
-        contact_phone: 'contact_phone',
-        website: 'website',
-        status: 'status',
-        address: 'address',
-        nicknames: 'nicknames',
-        custom_fields: 'custom_fields',
-    },
-    'placements': {
-        job_seeker_id: 'jobSeekerId',
-        job_id: 'jobId',
-        status: 'status',
-        custom_fields: 'custom_fields',
-    },
+// Mirror the exact same label→backend-column mappings used by the individual add pages.
+// Every field ALWAYS goes into custom_fields (keyed by field_label).
+// Fields whose label appears here ALSO get set at the top-level column for API compatibility.
+
+const ORG_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'Name': 'name', 'Organization Name': 'name', 'Organization': 'name', 'Company': 'name',
+    'Nicknames': 'nicknames', 'Nickname': 'nicknames',
+    'Parent Organization': 'parent_organization',
+    'Website': 'website', 'Organization Website': 'website', 'URL': 'website',
+    'Contact Phone': 'contact_phone', 'Main Phone': 'contact_phone',
+    'Address': 'address',
+    'Status': 'status',
+    'Contract Signed on File': 'contract_on_file',
+    'Contract Signed By': 'contract_signed_by',
+    'Date Contract Signed': 'date_contract_signed',
+    'Year Founded': 'year_founded',
+    'Overview': 'overview', 'Organization Overview': 'overview', 'About': 'overview',
+    'Standard Perm Fee (%)': 'perm_fee',
+    '# of Employees': 'num_employees',
+    '# of Offices': 'num_offices',
 };
 
-// Common keys that may hold org name when Field Management uses custom field_name
-const ORGANIZATION_NAME_ALTERNATIVES = [
-    'name', 'company_name', 'organization_name', 'org_name', 'company', 'organization',
-    'Company Name', 'Organization Name', 'Name', 'field_1', 'Field_1', 'field1', 'Field1',
-];
+const JS_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'First Name': 'firstName', 'First': 'firstName', 'FName': 'firstName',
+    'Last Name': 'lastName', 'Last': 'lastName', 'LName': 'lastName',
+    'Email': 'email', 'Email 1': 'email', 'Email Address': 'email', 'E-mail': 'email',
+    'Phone': 'phone', 'Phone Number': 'phone', 'Telephone': 'phone',
+    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone', 'Cell Phone': 'mobilePhone',
+    'Address': 'address', 'Street Address': 'address', 'Address 1': 'address',
+    'City': 'city',
+    'State': 'state',
+    'ZIP Code': 'zip', 'ZIP': 'zip', 'ZipCode': 'zip', 'Postal Code': 'zip',
+    'Status': 'status', 'Current Status': 'status',
+    'Current Organization': 'currentOrganization', 'Organization': 'currentOrganization',
+    'Title': 'title', 'Job Title': 'title', 'Position': 'title',
+    'Resume Text': 'resumeText', 'Resume': 'resumeText',
+    'Skills': 'skills',
+    'Desired Salary': 'desiredSalary', 'Salary': 'desiredSalary',
+    'Owner': 'owner', 'Assigned To': 'owner', 'Assigned Owner': 'owner',
+    'Date Added': 'dateAdded', 'Date Created': 'dateAdded',
+};
 
-function recordToBackendPayload(
+const LEAD_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'First Name': 'firstName', 'First': 'firstName',
+    'Last Name': 'lastName', 'Last': 'lastName',
+    'Email': 'email', 'Email Address': 'email',
+    'Phone': 'phone', 'Phone Number': 'phone',
+    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone',
+    'Title': 'title', 'Job Title': 'title',
+    'Status': 'status',
+    'Department': 'department',
+    'Owner': 'owner',
+};
+
+const HM_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'First Name': 'firstName', 'First': 'firstName',
+    'Last Name': 'lastName', 'Last': 'lastName',
+    'Email': 'email', 'Email Address': 'email',
+    'Phone': 'phone', 'Phone Number': 'phone',
+    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone',
+    'Title': 'title', 'Job Title': 'title',
+    'Status': 'status',
+};
+
+const JOB_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'Job Title': 'jobTitle', 'Title': 'jobTitle', 'Position': 'jobTitle',
+    'Category': 'category',
+    'Status': 'status',
+};
+
+const PLACEMENT_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+    'Status': 'status',
+};
+
+const LABEL_MAP_BY_ENTITY: Record<string, Record<string, string>> = {
+    'organizations': ORG_BACKEND_COLUMN_BY_LABEL,
+    'job-seekers': JS_BACKEND_COLUMN_BY_LABEL,
+    'leads': LEAD_BACKEND_COLUMN_BY_LABEL,
+    'hiring-managers': HM_BACKEND_COLUMN_BY_LABEL,
+    'jobs': JOB_BACKEND_COLUMN_BY_LABEL,
+    'placements': PLACEMENT_BACKEND_COLUMN_BY_LABEL,
+};
+
+// Maps lookup_type → { endpoint, listKey } for fetching all records of that type
+const LOOKUP_TYPE_CONFIG: Record<string, { endpoint: string; listKey: string }> = {
+    'organizations': { endpoint: 'organizations', listKey: 'organizations' },
+    'job-seekers': { endpoint: 'job-seekers', listKey: 'jobSeekers' },
+    'hiring-managers': { endpoint: 'hiring-managers', listKey: 'hiringManagers' },
+    'jobs': { endpoint: 'jobs', listKey: 'jobs' },
+    'leads': { endpoint: 'leads', listKey: 'leads' },
+    'placements': { endpoint: 'placements', listKey: 'placements' },
+};
+
+interface FieldDefinition {
+    field_name: string;
+    field_label: string;
+    field_type: string;
+    lookup_type?: string | null;
+}
+
+/**
+ * Fetch all records for a lookup type and build a map of record_number → id.
+ * Results are cached per lookup_type for the lifetime of a single import request.
+ */
+async function buildRecordNumberCache(
+    lookupType: string,
+    apiUrl: string,
+    token: string,
+    cache: Map<string, Map<number, string>>
+): Promise<Map<number, string>> {
+    if (cache.has(lookupType)) return cache.get(lookupType)!;
+
+    const config = LOOKUP_TYPE_CONFIG[lookupType];
+    if (!config) return new Map();
+
+    const map = new Map<number, string>();
+    try {
+        const res = await fetch(`${apiUrl}/api/${config.endpoint}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return map;
+        const data = await res.json();
+        const list: any[] = data[config.listKey] ?? data.data ?? [];
+        for (const item of list) {
+            const rn = item.record_number;
+            const id = item.id;
+            if (rn != null && id != null) {
+                map.set(Number(rn), String(id));
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to fetch lookup cache for ${lookupType}:`, e);
+    }
+
+    cache.set(lookupType, map);
+    return map;
+}
+
+/**
+ * Extract the first contiguous digit sequence from a string.
+ * e.g. "O 5" → 5, "JS-12" → 12, "7" → 7, "abc" → null
+ */
+function extractRecordNumber(value: string): number | null {
+    const match = String(value).match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+}
+
+/**
+ * Build the backend payload exactly the same way the individual add pages do:
+ *  1. Every field goes into custom_fields keyed by its field_label.
+ *  2. Fields whose label appears in the entity's BACKEND_COLUMN_BY_LABEL map
+ *     ALSO get set at the top-level column key.
+ */
+function buildPayload(
     entityType: string,
     record: Record<string, any>,
-    fieldNameToLabel?: Record<string, string>
+    fieldNameToLabel: Record<string, string>
 ): Record<string, any> {
-    const mapping = FIELD_NAME_TO_BACKEND[entityType];
-    if (!mapping) return record;
-    const out: Record<string, any> = {};
+    const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
+    const topLevel: Record<string, any> = {};
     const customFields: Record<string, any> = {};
 
-    // Create a reverse mapping of labels to backend keys for standard fields
-    // This handles cases where Field Management uses "Field_N" but the label matches a standard field
-    const labelToBackendKey: Record<string, string> = {};
-    for (const [fieldName, backendKey] of Object.entries(mapping)) {
-        // Map common snake_case names and their probable labels
-        labelToBackendKey[fieldName.toLowerCase().replace(/_/g, ' ')] = backendKey;
-        labelToBackendKey[fieldName.toLowerCase()] = backendKey;
-    }
+    for (const [fieldName, value] of Object.entries(record)) {
+        if (value === undefined || value === null || value === '') continue;
 
-    for (const [key, value] of Object.entries(record)) {
-        if (value === undefined || value === '') continue;
-        
-        const label = fieldNameToLabel?.[key] || key;
-        const normalizedLabel = label.toLowerCase().trim();
-        
-        // Try mapping by field_name first, then by normalized label
-        let backendKey = mapping[key] || labelToBackendKey[normalizedLabel];
-        
-        // Additional common label mappings if not found
-        if (!backendKey) {
-            if (normalizedLabel === 'first name') backendKey = mapping['first_name'];
-            else if (normalizedLabel === 'last name') backendKey = mapping['last_name'];
-            else if (normalizedLabel === 'email' || normalizedLabel === 'email address') backendKey = mapping['email'];
-            else if (normalizedLabel === 'phone' || normalizedLabel === 'phone number' || normalizedLabel === 'contact phone') backendKey = mapping['phone'] || mapping['contact_phone'];
-            else if (normalizedLabel === 'mobile' || normalizedLabel === 'mobile phone') backendKey = mapping['mobile_phone'];
-            else if (normalizedLabel === 'status') backendKey = mapping['status'];
-            else if (normalizedLabel === 'address' || normalizedLabel === 'street address') backendKey = mapping['address'];
-            else if (normalizedLabel === 'website' || normalizedLabel === 'organization website') backendKey = mapping['website'];
-            else if (normalizedLabel === 'company' || normalizedLabel === 'organization' || normalizedLabel === 'company name' || normalizedLabel === 'organization name') backendKey = mapping['name'] || mapping['organization_name'];
-        }
+        const label = fieldNameToLabel[fieldName] ?? fieldName;
+        customFields[label] = value;
 
-        if (backendKey !== undefined) {
-            // Standard field: put at top level (use backend key, e.g. firstName)
-            if (backendKey === 'custom_fields') {
-                // Merge existing custom_fields from record into our customFields
-                const existing = typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
-                Object.assign(customFields, existing);
-            } else {
-                out[backendKey] = value;
-            }
-        } else {
-            // Custom field (not in mapping): store by field_label so DB matches rest of app
-            const labelKey = fieldNameToLabel?.[key] ?? key;
-            customFields[labelKey] = value;
+        const backendCol = labelMap[label];
+        if (backendCol) {
+            topLevel[backendCol] = value;
         }
     }
 
-    if (Object.keys(customFields).length > 0) {
-        out.custom_fields = customFields;
-    }
+    return { ...topLevel, custom_fields: customFields };
+}
 
-    // For organizations: if "name" is missing, try common alternative keys (custom fields may use different names)
-    if (entityType === 'organizations') {
-        const nameVal = out['name'];
-        if (!nameVal || String(nameVal).trim() === '') {
-            for (const alt of ORGANIZATION_NAME_ALTERNATIVES) {
-                if (alt === 'name') continue;
-                const val = record[alt] ?? out[alt];
-                if (val != null && String(val).trim() !== '') {
-                    out['name'] = String(val).trim();
-                    break;
-                }
-            }
-        }
+/** Extract a value from the payload by trying multiple possible keys */
+function getVal(payload: Record<string, any>, ...keys: string[]): string {
+    for (const k of keys) {
+        const v = payload[k] ?? payload.custom_fields?.[k];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
     }
-    return out;
+    return '';
 }
 
 export async function POST(request: NextRequest) {
@@ -175,7 +200,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { entityType, records, options, fieldNameToLabel } = body;
+        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [] } = body;
 
         if (!entityType || !records || !Array.isArray(records)) {
             return NextResponse.json(
@@ -184,7 +209,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Map entity types to backend endpoints
         const entityEndpointMap: Record<string, string> = {
             'organizations': 'organizations',
             'job-seekers': 'job-seekers',
@@ -203,245 +227,216 @@ export async function POST(request: NextRequest) {
         }
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const summary: {
-            totalRows: number;
-            successful: number;
-            failed: number;
-            errors: Array<{ row: number; errors: string[] }>;
-        } = {
+
+        // Build a map of field_name → FieldDefinition for quick lookup
+        const fieldDefByName = new Map<string, FieldDefinition>();
+        for (const fd of (fieldDefinitions as FieldDefinition[])) {
+            if (fd.field_name) fieldDefByName.set(fd.field_name, fd);
+        }
+
+        // Per-request cache: lookup_type → Map<record_number, id>
+        const lookupCache = new Map<string, Map<number, string>>();
+
+        const summary = {
             totalRows: records.length,
             successful: 0,
             failed: 0,
-            errors: [],
+            errors: [] as Array<{ row: number; errors: string[] }>,
         };
 
-        // Process each record
         for (let i = 0; i < records.length; i++) {
             const record = records[i];
             const rowNumber = i + 1;
-            const errors: string[] = [];
 
             try {
-                // Convert field_name keys to backend-expected keys; custom fields stored by field_label
-                const payload = recordToBackendPayload(entityType, record, fieldNameToLabel);
+                // Build payload the same way individual add pages do
+                const payload = buildPayload(entityType, record, fieldNameToLabel);
 
-                // ----- Entity-specific normalization (mirrors organization robustness) -----
-                // Jobs: ensure we always have some jobTitle value if possible
-                if (entityType === 'jobs') {
-                    const rawTitle =
-                        payload.jobTitle ??
-                        record.job_title ??
-                        record.title ??
-                        record.JobTitle ??
-                        record.Title;
-                    if (typeof rawTitle === 'string' && rawTitle.trim() !== '') {
-                        payload.jobTitle = rawTitle.trim();
-                    }
-                }
+                // ── Lookup type resolution (import-only) ─────────────────────────────
+                // For every field that has a lookup_type, extract the record_number from
+                // the CSV value, find the matching record's PK id, and replace the value
+                // in custom_fields (and top-level if applicable) with that id.
+                for (const [fieldName, rawValue] of Object.entries(record)) {
+                    if (!rawValue || String(rawValue).trim() === '') continue;
 
-                // Job seekers: enforce firstName/lastName like organizations enforce "name"
-                if (entityType === 'job-seekers') {
-                    // Try to derive from full name if mapping didn't give us both
-                    const existingFirst = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
-                    const existingLast = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+                    const fieldDef = fieldDefByName.get(fieldName);
+                    if (!fieldDef?.lookup_type) continue;
 
-                    if (!existingFirst || !existingLast) {
-                        const fullNameSource =
-                            record.full_name ??
-                            record.FullName ??
-                            record.name ??
-                            record.Name ??
-                            '';
-                        if (typeof fullNameSource === 'string' && fullNameSource.trim() !== '') {
-                            const parts = fullNameSource.trim().split(/\s+/);
-                            if (!existingFirst && parts[0]) {
-                                payload.firstName = parts[0];
-                            }
-                            if (!existingLast && parts.length > 1) {
-                                payload.lastName = parts.slice(1).join(' ') || existingLast;
-                            }
+                    const lookupType = fieldDef.lookup_type;
+                    if (!LOOKUP_TYPE_CONFIG[lookupType]) continue;
+
+                    const recordNum = extractRecordNumber(String(rawValue));
+                    if (recordNum === null) continue;
+
+                    const rnMap = await buildRecordNumberCache(lookupType, apiUrl, token, lookupCache);
+                    const resolvedId = rnMap.get(recordNum);
+
+                    if (resolvedId) {
+                        const label = fieldNameToLabel[fieldName] ?? fieldName;
+                        // Replace in custom_fields
+                        payload.custom_fields[label] = resolvedId;
+                        // Also replace at top level if this label maps to a backend column
+                        const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
+                        const backendCol = labelMap[label];
+                        if (backendCol && payload[backendCol] !== undefined) {
+                            payload[backendCol] = resolvedId;
                         }
                     }
+                    // If not found, leave the original value as fallback (already set by buildPayload)
+                }
 
-                    // If we still don't have both names, fail this row with a clear, per-row error
-                    const finalFirst = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
-                    const finalLast = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
-                    if (!finalFirst || !finalLast) {
-                        errors.push('First name and last name are required for job seekers');
+                // Ensure custom_fields is always a plain serialisable object
+                payload.custom_fields = JSON.parse(JSON.stringify(payload.custom_fields ?? {}));
+
+                // ── Entity-specific defaults / fallbacks ──────────────────────────────
+
+                if (entityType === 'organizations') {
+                    if (!payload.name || String(payload.name).trim() === '') {
+                        const fallback = getVal(payload, 'name', 'organization_name', 'company_name', 'company');
+                        payload.name = fallback || 'Unnamed Organization';
+                    }
+                    if (!payload.status) payload.status = 'Active';
+                    if (!payload.contract_on_file) payload.contract_on_file = 'No';
+                }
+
+                if (entityType === 'job-seekers') {
+                    if (!payload.firstName || !payload.lastName) {
+                        const full = getVal(payload, 'full_name', 'name', 'Full Name', 'Name');
+                        if (full) {
+                            const parts = full.trim().split(/\s+/);
+                            if (!payload.firstName) payload.firstName = parts[0] ?? '';
+                            if (!payload.lastName) payload.lastName = parts.slice(1).join(' ') || '';
+                        }
+                    }
+                    if (!payload.firstName || !payload.lastName) {
                         summary.failed++;
-                        summary.errors.push({ row: rowNumber, errors });
+                        summary.errors.push({ row: rowNumber, errors: ['First name and last name are required for job seekers'] });
                         continue;
                     }
+                    if (!payload.status) payload.status = 'Active';
                 }
 
-                // Normalize custom_fields for all entity types: CSV may send a JSON string
-                if (payload.custom_fields && typeof payload.custom_fields === 'string') {
-                    try {
-                        const parsed = JSON.parse(payload.custom_fields);
-                        payload.custom_fields =
-                            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-                    } catch {
-                        // If the string isn't valid JSON, drop it so backend models don't throw
-                        payload.custom_fields = {};
+                if (entityType === 'jobs') {
+                    if (!payload.jobTitle) {
+                        const t = getVal(payload, 'jobTitle', 'job_title', 'title', 'Job Title', 'Title');
+                        if (t) payload.jobTitle = t;
                     }
                 }
 
-                // Determine unique identifier field(s) (backend key) for find-existing
-                let uniqueChecks: Array<{ field: string; value: any }> = [];
+                // ── Duplicate detection ───────────────────────────────────────────────
+
+                const opts = options ?? {};
+                const needsDupCheck = opts.skipDuplicates || opts.importNewOnly || opts.updateExisting;
+
+                const uniqueChecks: Array<{ field: string; value: string }> = [];
                 if (entityType === 'organizations') {
-                    // Unique fields for Organizations: Field_6 (Phone) and Field_5 (Website)
-                    const phone = record['Field_6'];
-                    const website = record['Field_5'];
-                    if (phone) uniqueChecks.push({ field: 'contact_phone', value: phone });
-                    if (website) uniqueChecks.push({ field: 'website', value: website });
-                    // Fallback to name if neither is present
-                    if (uniqueChecks.length === 0 && payload['name']) {
-                        uniqueChecks.push({ field: 'name', value: payload['name'] });
-                    }
+                    if (payload.contact_phone) uniqueChecks.push({ field: 'contact_phone', value: payload.contact_phone });
+                    if (payload.website) uniqueChecks.push({ field: 'website', value: payload.website });
+                    if (!uniqueChecks.length && payload.name) uniqueChecks.push({ field: 'name', value: payload.name });
                 } else if (entityType === 'job-seekers') {
-                    // Unique fields for Job Seeker: Field_11 (Phone) and Field_8 (Email)
-                    const phone = record['Field_11'];
-                    const email = record['Field_8'];
-                    if (phone) uniqueChecks.push({ field: 'phone', value: phone });
-                    if (email) uniqueChecks.push({ field: 'email', value: email });
-                } else if (entityType === 'jobs') {
-                    // Unique field for Jobs: Field_3 (Reference Number)
-                    const ref = record['Field_3'];
-                    if (ref) uniqueChecks.push({ field: 'reference_number', value: ref });
-                    else if (payload['jobTitle']) uniqueChecks.push({ field: 'jobTitle', value: payload['jobTitle'] });
+                    if (payload.phone) uniqueChecks.push({ field: 'phone', value: payload.phone });
+                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
                 } else if (entityType === 'hiring-managers') {
-                    // Unique field for Hiring Manager: Field_7 (Email)
-                    const email = record['Field_7'];
-                    if (email) uniqueChecks.push({ field: 'email', value: email });
-                } else if (entityType === 'placements') {
-                    uniqueChecks.push({ field: 'jobSeekerId', value: payload['jobSeekerId'] });
-                } else {
-                    // Default to email for others
-                    if (payload['email']) uniqueChecks.push({ field: 'email', value: payload['email'] });
+                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
+                } else if (entityType === 'leads') {
+                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
+                } else if (entityType === 'jobs') {
+                    if (payload.jobTitle) uniqueChecks.push({ field: 'jobTitle', value: payload.jobTitle });
                 }
 
-                // Check for duplicates if needed
-                const opts = options || {};
                 let foundDuplicate = false;
 
-                if (opts.skipDuplicates || opts.importNewOnly || opts.updateExisting) {
+                if (needsDupCheck) {
                     for (const check of uniqueChecks) {
                         if (!check.value) continue;
-
                         try {
-                            const searchResponse = await fetch(
-                                `${apiUrl}/api/${endpoint}?${check.field}=${encodeURIComponent(String(check.value))}`,
-                                {
-                                    method: 'GET',
-                                    headers: {
-                                        Authorization: `Bearer ${token}`,
-                                    },
-                                }
+                            const searchRes = await fetch(
+                                `${apiUrl}/api/${endpoint}?${check.field}=${encodeURIComponent(check.value)}`,
+                                { headers: { Authorization: `Bearer ${token}` } }
                             );
+                            if (!searchRes.ok) continue;
 
-                            if (searchResponse.ok) {
-                                const searchData = await searchResponse.json();
-                                const responseListKeys: Record<string, string> = {
-                                    'job-seekers': 'jobSeekers',
-                                    'hiring-managers': 'hiringManagers',
-                                    'organizations': 'organizations',
-                                    'jobs': 'jobs',
-                                    'leads': 'leads',
-                                    'placements': 'placements',
-                                };
-                                const listKey = responseListKeys[endpoint] || endpoint;
-                                let existingRecords: any[] = searchData[listKey] || searchData[endpoint] || searchData.data || [];
-                                
-                                // Filter client-side by exact match on the unique field
-                                existingRecords = existingRecords.filter((r: any) => {
-                                    const val = r[check.field] ?? r['Field_' + check.field.split('_').pop()]; // Try both backend name and Field_X if needed
-                                    return val != null && String(val).toLowerCase().trim() === String(check.value).toLowerCase().trim();
-                                });
+                            const searchData = await searchRes.json();
+                            const listKeyMap: Record<string, string> = {
+                                'job-seekers': 'jobSeekers',
+                                'hiring-managers': 'hiringManagers',
+                                'organizations': 'organizations',
+                                'jobs': 'jobs',
+                                'leads': 'leads',
+                                'placements': 'placements',
+                            };
+                            const listKey = listKeyMap[endpoint] ?? endpoint;
+                            const existingList: any[] = searchData[listKey] ?? searchData.data ?? [];
 
-                                if (existingRecords.length > 0) {
-                                    const existingRecord = existingRecords[0];
-                                    foundDuplicate = true;
+                            const match = existingList.find((r: any) => {
+                                const v = r[check.field];
+                                return v != null && String(v).toLowerCase().trim() === check.value.toLowerCase().trim();
+                            });
 
-                                    if (opts.skipDuplicates || opts.importNewOnly) {
-                                        // Skip this record
+                            if (match) {
+                                foundDuplicate = true;
+
+                                if (opts.skipDuplicates || opts.importNewOnly) {
+                                    summary.failed++;
+                                    summary.errors.push({
+                                        row: rowNumber,
+                                        errors: [`Record already exists (${check.field}: ${check.value})`],
+                                    });
+                                    break;
+                                }
+
+                                if (opts.updateExisting) {
+                                    const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                        body: JSON.stringify(payload),
+                                    });
+                                    const updateData = await updateRes.json();
+                                    if (!updateRes.ok) {
                                         summary.failed++;
-                                        summary.errors.push({
-                                            row: rowNumber,
-                                            errors: [`Record already exists (${check.field}: ${check.value})`],
-                                        });
-                                        break; // Found duplicate, move to next row
+                                        summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
+                                    } else {
+                                        summary.successful++;
                                     }
-
-                                    if (opts.updateExisting) {
-                                        // Update existing record
-                                        const updateResponse = await fetch(`${apiUrl}/api/${endpoint}/${existingRecord.id}`, {
-                                            method: 'PUT',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                                Authorization: `Bearer ${token}`,
-                                            },
-                                            body: JSON.stringify(payload),
-                                        });
-
-                                        const updateData = await updateResponse.json();
-
-                                        if (!updateResponse.ok) {
-                                            errors.push(updateData.message || 'Failed to update record');
-                                            summary.failed++;
-                                            summary.errors.push({ row: rowNumber, errors });
-                                        } else {
-                                            summary.successful++;
-                                        }
-                                        break; // Done with this row
-                                    }
+                                    break;
                                 }
                             }
-                        } catch (searchErr) {
-                            console.warn(`Could not check for existing record by ${check.field}:`, searchErr);
+                        } catch (e) {
+                            console.warn(`Duplicate check failed for ${check.field}:`, e);
                         }
                     }
                 }
 
-                if (foundDuplicate) continue; // Skip creating if duplicate was found and handled
+                if (foundDuplicate) continue;
 
-
-                // Create new record
-                const response = await fetch(`${apiUrl}/api/${endpoint}`, {
+                // ── Create new record ─────────────────────────────────────────────────
+                const createRes = await fetch(`${apiUrl}/api/${endpoint}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                     body: JSON.stringify(payload),
                 });
+                const createData = await createRes.json();
 
-                const data = await response.json();
-
-                if (!response.ok) {
-                    errors.push(data.message || 'Failed to create record');
+                if (!createRes.ok) {
                     summary.failed++;
-                    summary.errors.push({ row: rowNumber, errors });
+                    summary.errors.push({ row: rowNumber, errors: [createData.message ?? 'Failed to create record'] });
                 } else {
                     summary.successful++;
                 }
             } catch (err) {
-                errors.push(err instanceof Error ? err.message : 'Unknown error occurred');
                 summary.failed++;
-                summary.errors.push({ row: rowNumber, errors });
+                summary.errors.push({
+                    row: rowNumber,
+                    errors: [err instanceof Error ? err.message : 'Unknown error'],
+                });
             }
         }
 
-        return NextResponse.json({
-            success: true,
-            summary,
-        });
+        return NextResponse.json({ success: true, summary });
     } catch (error) {
         console.error('Error processing CSV import:', error);
         return NextResponse.json(
-            {
-                success: false,
-                message: error instanceof Error ? error.message : 'Internal server error',
-            },
+            { success: false, message: error instanceof Error ? error.message : 'Internal server error' },
             { status: 500 }
         );
     }

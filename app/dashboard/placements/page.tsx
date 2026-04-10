@@ -1161,8 +1161,8 @@ export default function PlacementList() {
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
                 className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
               >
                 <IoFilterSharp /> Filter
@@ -1193,20 +1193,22 @@ export default function PlacementList() {
         </div>
 
         {/* Desktop: Favorites, Bulk, Columns, Archived, Add */}
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0 overflow-x-auto">
           {selectedPlacements.length > 0 && (
-            <BulkActionsButton
-              selectedCount={selectedPlacements.length}
-              entityType="placement"
-              entityIds={selectedPlacements}
-              availableFields={availableFields}
-              onSuccess={() => {
-                fetchPlacements();
-                setSelectedPlacements([]);
-                setSelectAll(false);
-              }}
-              onCSVExport={handleCSVExport}
-            />
+            <div className="shrink-0">
+              <BulkActionsButton
+                selectedCount={selectedPlacements.length}
+                entityType="placement"
+                entityIds={selectedPlacements}
+                availableFields={availableFields}
+                onSuccess={() => {
+                  fetchPlacements();
+                  setSelectedPlacements([]);
+                  setSelectAll(false);
+                }}
+                onCSVExport={handleCSVExport}
+              />
+            </div>
           )}
 
           <div ref={favoritesMenuRef} className="relative">
@@ -1268,21 +1270,21 @@ export default function PlacementList() {
 
           <button
             onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Columns
           </button>
 
           <button
             onClick={handleViewArchived}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Archived
           </button>
 
           <button
             onClick={handleAddPlacement}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0 whitespace-nowrap"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />

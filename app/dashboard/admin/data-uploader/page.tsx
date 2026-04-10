@@ -115,7 +115,7 @@ export default function DataUploader() {
                     setSelectedFile(file);
                     setRecordType('Job Seeker'); // Default for admin sidebar upload
                     handleFileSelectForData(file);
-                    
+
                     // Cleanup
                     sessionStorage.removeItem('adminParseDataPendingFile');
                     toast.success(`File "${file.name}" loaded for upload.`);
@@ -367,15 +367,15 @@ export default function DataUploader() {
 
     const skipDefectiveRows = () => {
         if (validationErrors.length === 0) return;
-        
+
         const defectiveRows = new Set(validationErrors.map(e => e.row));
         const beforeCount = csvRows.length;
         const newRows = csvRows.filter((_, idx) => !defectiveRows.has(idx + 2));
-        
+
         setCsvRows(newRows);
         setValidationErrors([]);
         toast.success(`Removed ${beforeCount - newRows.length} rows with validation errors.`);
-        
+
         // Brief delay before re-validating to ensure state has settled
         setTimeout(() => {
             validateData();
@@ -401,13 +401,6 @@ export default function DataUploader() {
             return;
         }
         if (currentStep === 3) {
-            // Validate mappings before proceeding
-            const requiredFields = availableFields.filter(f => f.is_required);
-            const unmappedRequired = requiredFields.filter(f => !fieldMappings[f.field_name]);
-            if (unmappedRequired.length > 0) {
-                toast.error(`Please map all required fields: ${unmappedRequired.map(f => f.field_label).join(', ')}`);
-                return;
-            }
             // Run validation
             validateData();
             // Move to next step after validation
@@ -441,26 +434,10 @@ export default function DataUploader() {
             availableFields.forEach((field) => {
                 const csvColumn = fieldMappings[field.field_name];
                 if (!csvColumn) {
-                    if (field.is_required) {
-                        errors.push({
-                            row: actualRowNumber,
-                            field: field.field_label,
-                            message: `Required field "${field.field_label}" is not mapped`,
-                        });
-                    }
                     return;
                 }
 
                 const value = row[csvColumn]?.trim() || '';
-
-                // Check required fields
-                if (field.is_required && !value) {
-                    errors.push({
-                        row: actualRowNumber,
-                        field: field.field_label,
-                        message: `Required field "${field.field_label}" is empty`,
-                    });
-                }
 
                 // Validate email format
                 if (field.field_type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
@@ -536,6 +513,14 @@ export default function DataUploader() {
                 }
             });
 
+            // Build fieldDefinitions for lookup resolution on the server
+            const fieldDefinitions = availableFields.map(f => ({
+                field_name: f.field_name,
+                field_label: f.field_label,
+                field_type: f.field_type,
+                lookup_type: f.lookup_type ?? null,
+            }));
+
             // Prepare import data
             const importData = csvRows.map((row) => {
                 const record: Record<string, any> = {};
@@ -556,7 +541,8 @@ export default function DataUploader() {
                     entityType,
                     records: importData,
                     options: importOptions,
-                    fieldNameToLabel, // Pass the mapping to the backend
+                    fieldNameToLabel,
+                    fieldDefinitions, // Pass full field defs so server can resolve lookup types
                 }),
             });
 
@@ -678,13 +664,12 @@ export default function DataUploader() {
                             <div key={step} className="flex items-center flex-1">
                                 <div className="flex flex-col items-center flex-1">
                                     <div
-                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                                            currentStep === step
-                                                ? 'bg-blue-500 text-white'
-                                                : currentStep > step
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${currentStep === step
+                                            ? 'bg-blue-500 text-white'
+                                            : currentStep > step
                                                 ? 'bg-green-500 text-white'
                                                 : 'bg-gray-300 text-gray-600'
-                                        }`}
+                                            }`}
                                     >
                                         {currentStep > step ? '✓' : step}
                                     </div>
@@ -699,9 +684,8 @@ export default function DataUploader() {
                                 </div>
                                 {step < totalSteps && (
                                     <div
-                                        className={`h-1 flex-1 mx-2 ${
-                                            currentStep > step ? 'bg-green-500' : 'bg-gray-300'
-                                        }`}
+                                        className={`h-1 flex-1 mx-2 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'
+                                            }`}
                                     />
                                 )}
                             </div>
@@ -741,7 +725,7 @@ export default function DataUploader() {
                                 </div>
                                 <div className="p-4 bg-blue-50 border border-blue-200 rounded">
                                     <p className="text-sm text-blue-800">
-                                        <strong>Tip:</strong> Download the CSV template to see the required field structure for {recordType} records. 
+                                        <strong>Tip:</strong> Download the CSV template to see the required field structure for {recordType} records.
                                         The template includes all available fields with proper headers.
                                     </p>
                                 </div>
@@ -800,35 +784,18 @@ export default function DataUploader() {
                                     </div>
                                 ) : (
                                     <>
-                                        {/* Validation Warning */}
-                                        {(() => {
-                                            const requiredFields = availableFields.filter(f => f.is_required);
-                                            const unmappedRequired = requiredFields.filter(f => !fieldMappings[f.field_name]);
-                                            return unmappedRequired.length > 0 && (
-                                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                                                    <p className="text-yellow-800 font-semibold mb-2">
-                                                        ⚠️ {unmappedRequired.length} required field(s) not mapped:
-                                                    </p>
-                                                    <ul className="list-disc list-inside text-sm text-yellow-700">
-                                                        {unmappedRequired.map(f => (
-                                                            <li key={f.id}>{f.field_label}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            );
-                                        })()}
+
                                         <div className="space-y-4">
                                             {availableFields.map((field) => {
                                                 const isRequired = field.is_required;
                                                 const isMapped = !!fieldMappings[field.field_name];
                                                 const isRequiredAndUnmapped = isRequired && !isMapped;
-                                                
+
                                                 return (
-                                                    <div 
-                                                        key={field.id} 
-                                                        className={`flex items-center space-x-4 p-3 border rounded ${
-                                                            isRequiredAndUnmapped ? 'border-red-300 bg-red-50' : ''
-                                                        }`}
+                                                    <div
+                                                        key={field.id}
+                                                        className={`flex items-center space-x-4 p-3 border rounded ${isRequiredAndUnmapped ? 'border-red-300 bg-red-50' : ''
+                                                            }`}
                                                     >
                                                         <div className="w-64">
                                                             <label className="text-sm font-medium text-gray-700">
@@ -850,11 +817,10 @@ export default function DataUploader() {
                                                                         [field.field_name]: e.target.value,
                                                                     }))
                                                                 }
-                                                                className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                                                    isRequiredAndUnmapped 
-                                                                        ? 'border-red-500 bg-white' 
-                                                                        : 'border-gray-300'
-                                                                }`}
+                                                                className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isRequiredAndUnmapped
+                                                                    ? 'border-red-500 bg-white'
+                                                                    : 'border-gray-300'
+                                                                    }`}
                                                             >
                                                                 <option value="">-- Select CSV Column --</option>
                                                                 {csvHeaders.map((header) => (
@@ -1170,15 +1136,14 @@ export default function DataUploader() {
                                     <button
                                         onClick={handleImport}
                                         disabled={
-                                            isImporting || 
+                                            isImporting ||
                                             !(importOptions.skipDuplicates || importOptions.updateExisting || importOptions.importNewOnly)
                                         }
-                                        className={`px-6 py-2 rounded text-white font-medium transition-colors ${
-                                            isImporting || 
+                                        className={`px-6 py-2 rounded text-white font-medium transition-colors ${isImporting ||
                                             !(importOptions.skipDuplicates || importOptions.updateExisting || importOptions.importNewOnly)
-                                                ? 'bg-gray-400 cursor-not-allowed opacity-70'
-                                                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
-                                        }`}
+                                            ? 'bg-gray-400 cursor-not-allowed opacity-70'
+                                            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+                                            }`}
                                     >
                                         {isImporting ? 'Importing...' : 'Start Import'}
                                     </button>

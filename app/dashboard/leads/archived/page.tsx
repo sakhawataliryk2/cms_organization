@@ -923,7 +923,7 @@ export default function ArchivedLeadsList() {
         </div>
 
         {/* Desktop: Favorites, Delete Selected, Columns, Add - single row */}
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0 overflow-x-auto">
           {/* Favorites Dropdown - ref on wrapper so click-outside works for both desktop and mobile */}
           <div ref={favoritesMenuRef} className="relative">
             <button
@@ -1016,7 +1016,7 @@ export default function ArchivedLeadsList() {
 
           <button
             onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Columns
           </button>

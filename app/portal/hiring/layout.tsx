@@ -24,4 +24,3 @@ export default function HiringPortalLayout({ children }: { children: React.React
     </PortalRoleGuard>
   );
 }
-
