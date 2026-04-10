@@ -403,8 +403,11 @@ export async function POST(request: NextRequest) {
                                 const resolved = idToRn.get(String(value));
                                 if (resolved) {
                                     resolvedRow[key] = resolved;
+                                } else if (/^\d+$/.test(String(value).trim())) {
+                                    // Pure numeric ID — record_number not found, return empty cell
+                                    resolvedRow[key] = '';
                                 }
-                                // If not found, keep original value as fallback
+                                // If value contains letters/characters (e.g. "O 5", "JS 12"), keep as-is
                             }
 
                             resolvedData.push(resolvedRow);

@@ -365,20 +365,24 @@ export async function POST(request: NextRequest) {
                 const needsDupCheck = opts.skipDuplicates || opts.importNewOnly || opts.updateExisting;
 
                 const uniqueChecks: Array<{ field: string; value: string }> = [];
-                if (entityType === 'organizations') {
-                    if (payload.contact_phone) uniqueChecks.push({ field: 'contact_phone', value: payload.contact_phone });
-                    if (payload.website) uniqueChecks.push({ field: 'website', value: payload.website });
-                    if (!uniqueChecks.length && payload.name) uniqueChecks.push({ field: 'name', value: payload.name });
-                } else if (entityType === 'job-seekers') {
-                    if (payload.phone) uniqueChecks.push({ field: 'phone', value: payload.phone });
-                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                } else if (entityType === 'hiring-managers') {
-                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                } else if (entityType === 'leads') {
-                    if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                } else if (entityType === 'jobs') {
-                    if (payload.jobTitle) uniqueChecks.push({ field: 'jobTitle', value: payload.jobTitle });
-                }
+                // ── Uniqueness checks temporarily disabled ────────────────────────────
+                // Website, email, phone and job-title uniqueness checks are commented out
+                // so all records proceed to import regardless of duplicates on those fields.
+                // if (entityType === 'organizations') {
+                //     if (payload.contact_phone) uniqueChecks.push({ field: 'contact_phone', value: payload.contact_phone });
+                //     if (payload.website) uniqueChecks.push({ field: 'website', value: payload.website });
+                //     if (!uniqueChecks.length && payload.name) uniqueChecks.push({ field: 'name', value: payload.name });
+                // } else if (entityType === 'job-seekers') {
+                //     if (payload.phone) uniqueChecks.push({ field: 'phone', value: payload.phone });
+                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
+                // } else if (entityType === 'hiring-managers') {
+                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
+                // } else if (entityType === 'leads') {
+                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
+                // } else if (entityType === 'jobs') {
+                //     if (payload.jobTitle) uniqueChecks.push({ field: 'jobTitle', value: payload.jobTitle });
+                // }
+                // ─────────────────────────────────────────────────────────────────────
 
                 let foundDuplicate = false;
 

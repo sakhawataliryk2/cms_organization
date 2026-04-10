@@ -60,14 +60,6 @@ export const ADDRESS_FIELD_NAMES = [
   }
 ];
 
-// const ADDRESS_FIELD_LABELS = {
-//   address: ["address", "address1"],
-//   address2: ["address2", "address 2"],
-//   city: ["city"],
-//   state: ["state"],
-//   zip: ["zip", "zip code", "postal code"],
-// };
-
 export function getAddressFields(customFields: CustomFieldDefinition[], entityType?: string) {
   const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
 
@@ -323,9 +315,9 @@ export default function AddressGroupRenderer({
 
       {/* Row 2: City, State, ZIP */}
       {(cityField || stateField || zipField) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="flex flex-wrap gap-6">
           {cityField && (
-            <div className="space-y-1">
+            <div className="space-y-1 flex-1 min-w-[140px]">
               <UnderlineField
                 field={cityField}
                 values={values}
@@ -335,7 +327,7 @@ export default function AddressGroupRenderer({
             </div>
           )}
           {stateField && (
-            <div className="space-y-1">
+            <div className="space-y-1 flex-1 min-w-[140px]">
               <CustomFieldRenderer
                 field={stateField}
                 value={values?.[stateField.field_name] ?? ""}
@@ -344,7 +336,7 @@ export default function AddressGroupRenderer({
             </div>
           )}
           {zipField && (
-            <div className="space-y-1">
+            <div className="space-y-1 flex-1 min-w-[140px]">
               <UnderlineField
                 field={zipField}
                 values={values}
