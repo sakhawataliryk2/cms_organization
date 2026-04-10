@@ -439,55 +439,13 @@ export default function DataUploader() {
 
                 const value = row[csvColumn]?.trim() || '';
 
-                // Validate email format
+                // Validate email format only — all other type validations removed
+                // since fields are not required and data should import as-is
                 if (field.field_type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
                     errors.push({
                         row: actualRowNumber,
                         field: field.field_label,
                         message: `Invalid email format: "${value}"`,
-                    });
-                }
-
-                // Validate phone format (basic validation)
-                if (field.field_type === 'phone' && value) {
-                    // Remove common phone formatting characters for validation
-                    const cleaned = value.replace(/[\s\-\(\)\.]/g, '');
-                    if (!/^\+?[\d]{10,15}$/.test(cleaned)) {
-                        errors.push({
-                            row: actualRowNumber,
-                            field: field.field_label,
-                            message: `Invalid phone format: "${value}"`,
-                        });
-                    }
-                }
-
-                // Validate date format (accepts multiple formats)
-                if (field.field_type === 'date' && value) {
-                    const dateFormats = [
-                        /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
-                        /^\d{2}\/\d{2}\/\d{4}$/, // MM/DD/YYYY
-                        /^\d{2}-\d{2}-\d{4}$/, // MM-DD-YYYY
-                    ];
-                    const isValidFormat = dateFormats.some(regex => regex.test(value));
-                    if (!isValidFormat) {
-                        // Try parsing as date
-                        const parsedDate = new Date(value);
-                        if (isNaN(parsedDate.getTime())) {
-                            errors.push({
-                                row: actualRowNumber,
-                                field: field.field_label,
-                                message: `Invalid date format: "${value}". Expected YYYY-MM-DD, MM/DD/YYYY, or MM-DD-YYYY`,
-                            });
-                        }
-                    }
-                }
-
-                // Validate number format
-                if (field.field_type === 'number' && value && isNaN(Number(value))) {
-                    errors.push({
-                        row: actualRowNumber,
-                        field: field.field_label,
-                        message: `Invalid number format: "${value}"`,
                     });
                 }
             });

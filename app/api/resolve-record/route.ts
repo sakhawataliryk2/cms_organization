@@ -200,6 +200,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       name: (name || "").trim() || recordNumberFallback || `#${id}`,
+      record_number: recordNumber ?? null,
+      prefix: prefix ?? null,
       id: String(id),
       type: normalizedType,
     });
