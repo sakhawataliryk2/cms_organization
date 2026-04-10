@@ -3166,11 +3166,11 @@ export default function HiringManagerView() {
     }
 
     try {
-      const response = await fetch("/api/calls/start", {
+      const response = await fetch("/api/hiring-managers/calls/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          candidateId: hiringManagerId,
+          hiringManagerId: hiringManagerId,
           phoneNumber: normalizedNumber,
         }),
       });
