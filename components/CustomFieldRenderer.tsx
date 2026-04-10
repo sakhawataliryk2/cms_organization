@@ -39,7 +39,7 @@ export interface CustomFieldRendererContext {
 
 /** True when the field is a billing-contact-style lookup (label or field_name contains "billing"); uses .includes() so "Billing contact" and "Billing contacts" both match. */
 function isBillingContactLookupField(
-  field: { field_label?: string | null; field_type?: string; lookup_type?: string; field_name?: string; [k: string]: any },
+  field: { field_label?: string | null; field_type?: string; lookup_type?: string; field_name?: string;[k: string]: any },
 ): boolean {
   const rawLabel =
     field.field_label ??
@@ -116,7 +116,7 @@ function SearchableMultiSelect({
   onChange,
   placeholder = "Type to search...",
   disabled = false,
-  className = "w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500",
+  className = "w-full p-2 border-none! rounded focus:outline-none focus:ring-2 focus:ring-blue-500",
   id,
 }: {
   options: string[];
@@ -802,11 +802,10 @@ export default function CustomFieldRenderer({
                 return (
                   <label
                     key={`${field.field_name}-${option}`}
-                    className={`relative px-5 py-2 rounded-md text-sm font-medium transition-colors select-none ${
-                      isChecked
+                    className={`relative px-5 py-2 rounded-md text-sm font-medium transition-colors select-none ${isChecked
                         ? "bg-blue-600 text-white shadow-sm"
                         : "text-gray-700 hover:bg-white"
-                    } ${readOnly || isDisabledByDependency ? "" : "cursor-pointer"}`}
+                      } ${readOnly || isDisabledByDependency ? "" : "cursor-pointer"}`}
                   >
                     <input
                       type="radio"
