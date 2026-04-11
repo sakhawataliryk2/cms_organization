@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { formatRecordId } from "@/lib/recordIdFormatter";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
 
 /** Map job_type from API to placement add segment (URL path). */
 function jobTypeToPlacementSegment(jobType: string): string {
@@ -69,164 +70,6 @@ async function getOrganizationValueFromJobCustomFields(job: any): Promise<string
   if (fallbackOrgId == null) return null;
   const fallback = String(fallbackOrgId).trim();
   return fallback || null;
-}
-
-interface JobSearchSelectOption {
-  id: string;
-  name: string;
-  sub?: string;
-}
-
-interface JobSearchSelectProps {
-  value: string;
-  options: JobSearchSelectOption[];
-  onChange: (id: string, opt: JobSearchSelectOption) => void;
-  placeholder?: string;
-  loading?: boolean;
-  className?: string;
-  disabled?: boolean;
-}
-
-function JobSearchSelect({
-  value,
-  options,
-  onChange,
-  placeholder = "Search or select Job",
-  loading = false,
-  className = "",
-  disabled = false,
-}: JobSearchSelectProps) {
-  const [search, setSearch] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(0);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  const selectedOption = options.find((o) => String(o.id) === value);
-  const displayValue = selectedOption
-    ? selectedOption.sub
-      ? `${selectedOption.name} · ${selectedOption.sub}`
-      : selectedOption.name
-    : "";
-
-  const filteredOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((opt) => {
-      const nameMatch = (opt.name || "").toLowerCase().includes(q);
-      const subMatch = (opt.sub || "").toLowerCase().includes(q);
-      return nameMatch || subMatch;
-    });
-  }, [search, options]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    setHighlightIndex(0);
-  }, [search, isOpen]);
-
-  useEffect(() => {
-    if (!isOpen || !listRef.current) return;
-    const el = listRef.current.querySelector(`[data-index="${highlightIndex}"]`);
-    el?.scrollIntoView({ block: "nearest" });
-  }, [highlightIndex, isOpen]);
-
-  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (!isOpen) {
-      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-        e.preventDefault();
-        setIsOpen(true);
-      }
-      return;
-    }
-    if (e.key === "Escape") {
-      setIsOpen(false);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.min(i + 1, filteredOptions.length - 1));
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlightIndex((i) => Math.max(i - 1, 0));
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const opt = filteredOptions[highlightIndex];
-      if (opt) {
-        onChange(opt.id, opt);
-        setIsOpen(false);
-        setSearch("");
-      }
-    }
-  };
-
-  const handleSelect = (opt: JobSearchSelectOption) => {
-    onChange(opt.id, opt);
-    setIsOpen(false);
-    setSearch("");
-  };
-
-  return (
-    <div ref={wrapperRef} className={`relative ${className}`}>
-      <div
-        className={`w-full p-2 border-b border-gray-300 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
-      >
-        <input
-          type="text"
-          value={isOpen ? search : displayValue}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => !disabled && setIsOpen(true)}
-          onKeyDown={handleKeyDown}
-          placeholder={displayValue ? "" : placeholder}
-          disabled={disabled}
-          className="flex-1 min-w-0 outline-none bg-transparent"
-          autoComplete="off"
-        />
-      </div>
-      {isOpen && (
-        <div
-          ref={listRef}
-          className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-sm max-h-56 overflow-auto"
-        >
-          {loading ? (
-            <p className="px-3 py-4 text-sm text-gray-500 mt-1">Loading...</p>
-          ) : filteredOptions.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-gray-500 text-center">
-              No jobs match your search
-            </div>
-          ) : (
-            filteredOptions.map((opt, idx) => (
-              <button
-                key={opt.id}
-                type="button"
-                data-index={idx}
-                onClick={() => handleSelect(opt)}
-                className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${idx === highlightIndex ? "bg-blue-50" : ""} ${String(opt.id) === value ? "font-medium text-blue-700" : ""}`}
-              >
-                <span className="block">{opt.name}</span>
-                {opt.sub && <span className="block text-xs text-gray-500 mt-0.5">{opt.sub}</span>}
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function AddPlacementLanding() {
@@ -333,7 +176,7 @@ export default function AddPlacementLanding() {
     };
   }, [searchParams, router]);
 
-  const jobOptions = useMemo((): JobSearchSelectOption[] => {
+  const jobOptions = useMemo((): StyledSelectOption[] => {
     const nonArchived = jobs.filter(
       (job) => (job.archived_at ?? job.archivedAt) == null
     );
@@ -343,7 +186,7 @@ export default function AddPlacementLanding() {
       const title = job.job_title ?? job.jobTitle ?? "Untitled Job";
       const name = `${formatRecordId(recordNum, "job")} - ${title}`;
       const org = job.organization_name ?? job.organizationName ?? "";
-      return { id, name, sub: org || undefined };
+      return { value: id, label: org ? `${name} (${org})` : name };
     });
   }, [jobs]);
 
@@ -358,7 +201,7 @@ export default function AddPlacementLanding() {
       }
       const data = await res.json();
       const job = data.job;
-      const jobType = job?.job_type ?? job?.jobType ?? "";
+      const jobType = job?.employment_type ?? job?.employmentType ?? job?.job_type ?? job?.jobType ?? "";
       if (!isKnownJobType(jobType) && jobType !== "") {
         setSelectError(
           "This job's type is not configured for placements. Please choose another job or contact your administrator."
@@ -437,12 +280,12 @@ export default function AddPlacementLanding() {
           <div className="flex items-center gap-4">
             <label className="w-48 font-medium shrink-0">Job:</label>
             <div className="flex-1">
-              <JobSearchSelect
-                value={selectedJobId}
+              <StyledReactSelect
+                value={jobOptions.find((opt) => opt.value === selectedJobId) || null}
                 options={jobOptions}
-                onChange={(id) => setSelectedJobId(id)}
+                onChange={(opt) => setSelectedJobId((opt as StyledSelectOption)?.value || "")}
                 placeholder="Search or select Job"
-                loading={jobsLoading}
+                isLoading={jobsLoading}
               />
             </div>
           </div>

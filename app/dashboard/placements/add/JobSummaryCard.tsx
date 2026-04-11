@@ -1,8 +1,14 @@
 "use client";
 
+import RecordNameResolver from "@/components/RecordNameResolver";
+
 type JobSummaryCardProps = {
   job: {
+    company_name?: number;
+    organization_id?: number;
+    id?: number;
     job_title?: string;
+    record_number?: string;
     jobTitle?: string;
     category?: string;
     organization_name?: string;
@@ -12,8 +18,7 @@ type JobSummaryCardProps = {
 };
 
 export default function JobSummaryCard({ job, className = "" }: JobSummaryCardProps) {
-  const title = job.job_title ?? job.jobTitle ?? "Job";
-  const category = job.category;
+  const organizationID = job.organization_id || job.company_name;
   const client = job.organization_name ?? job.organizationName;
 
   return (
@@ -23,10 +28,12 @@ export default function JobSummaryCard({ job, className = "" }: JobSummaryCardPr
       aria-label="Selected job summary"
     >
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-1">Selected job</p>
-      <p className="font-semibold text-gray-900">{title}</p>
-      {(category || client) && (
+      <p className="font-semibold text-gray-900">
+        <RecordNameResolver id={job.id} type="job" clickable={true} />
+      </p>
+      {(organizationID || client) && (
         <p className="text-sm text-gray-600 mt-1">
-          {[category, client].filter(Boolean).join(" · ")}
+          <RecordNameResolver id={organizationID} type="organization" clickable={true} />
         </p>
       )}
     </div>

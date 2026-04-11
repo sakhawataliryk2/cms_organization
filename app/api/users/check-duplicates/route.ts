@@ -26,13 +26,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const phone = searchParams.get("phone") ?? "";
     const email = searchParams.get("email") ?? "";
+    const zoomExtensionNumber = searchParams.get("zoomExtensionNumber") ?? "";
     const excludeId = searchParams.get("excludeId") ?? "";
 
-    const hasAny = normalizePhone(phone) || normalizeEmail(email);
+    const normZoomExt = zoomExtensionNumber.replace(/\D/g, "").trim();
+    const hasAny =
+      normalizePhone(phone) || normalizeEmail(email) || normZoomExt.length > 0;
     if (!hasAny) {
       return NextResponse.json({
         success: true,
-        duplicates: { phone: [], email: [] },
+        duplicates: { phone: [], email: [], zoomExtensionNumber: [] },
       });
     }
 
@@ -40,6 +43,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${apiUrl}/api/users/check-duplicates`);
     if (phone) url.searchParams.set("phone", phone);
     if (email) url.searchParams.set("email", email);
+    if (normZoomExt) url.searchParams.set("zoomExtensionNumber", normZoomExt);
     if (excludeId) url.searchParams.set("excludeId", excludeId);
 
     const response = await fetch(url.toString(), {
