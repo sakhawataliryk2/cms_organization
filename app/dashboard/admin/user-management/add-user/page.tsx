@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff, FiEdit2 } from 'react-icons/fi';
 import Tooltip from '@/components/Tooltip';
 
 interface User {
@@ -13,6 +13,9 @@ interface User {
     email: string;
     phone: string;
     phone2?: string;
+    zoomExtensionNumber?: string;
+    officeId?: string;
+    teamId?: string;
     title: string;
     office: string;
     team: string;
@@ -55,6 +58,7 @@ export default function UserManagement() {
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
     const [activeTab, setActiveTab] = useState<'active' | 'deactivated'>('active');
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -91,6 +95,17 @@ export default function UserManagement() {
                         email: user.email || '',
                         phone: user.phone || '',
                         phone2: user.phone2 || '',
+                        zoomExtensionNumber: user.zoom_extension_number
+                            ? String(user.zoom_extension_number)
+                            : '',
+                        officeId:
+                            user.office_id != null && user.office_id !== ''
+                                ? String(user.office_id)
+                                : '',
+                        teamId:
+                            user.team_id != null && user.team_id !== ''
+                                ? String(user.team_id)
+                                : '',
                         title: user.title || '',
                         office: user.office_name || '',
                         team: user.team_name || '',
@@ -131,6 +146,7 @@ export default function UserManagement() {
             user.lastName,
             user.email,
             user.phone,
+            user.zoomExtensionNumber,
             user.title,
             user.office,
             user.team,
@@ -270,6 +286,7 @@ export default function UserManagement() {
         { id: 'email', label: 'Email' },
         { id: 'phone', label: 'Phone' },
         { id: 'phone2', label: 'Phone2' },
+        { id: 'zoomExt', label: 'Zoom ext.' },
         { id: 'title', label: 'Title' },
         { id: 'office', label: 'Office' },
         { id: 'team', label: 'Team' },
@@ -277,7 +294,7 @@ export default function UserManagement() {
         { id: 'userType', label: 'User Type' },
         { id: 'isAdmin', label: 'Is Admin' },
         { id: 'status', label: 'Status' },
-        { id: 'actions', label: 'Actions' }
+        { id: 'actions', label: 'Actions' },
     ];
 
     return (
@@ -398,6 +415,7 @@ export default function UserManagement() {
                                         <td className="px-4 py-3 text-sm whitespace-nowrap text-blue-600"><a href={`mailto:${user.email}`} className="hover:underline">{user.email}</a></td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.phone}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.phone2 || '-'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap font-mono">{user.zoomExtensionNumber || '—'}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.title}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.office}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.team}</td>
@@ -426,25 +444,36 @@ export default function UserManagement() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">
-                                            {user.status ? (
+                                            <div className="flex flex-wrap items-center gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleDeactivate(user)}
-                                                    disabled={updatingUserId === user.id}
-                                                    className="px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    onClick={() => setEditingUser(user)}
+                                                    className="inline-flex items-center gap-1 px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                                    title="Edit user"
                                                 >
-                                                    {updatingUserId === user.id ? 'Deactivating...' : 'Deactivate'}
+                                                    <FiEdit2 size={14} />
+                                                    Edit
                                                 </button>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleActivate(user)}
-                                                    disabled={updatingUserId === user.id}
-                                                    className="px-3 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                                                >
-                                                    {updatingUserId === user.id ? 'Activating...' : 'Activate'}
-                                                </button>
-                                            )}
+                                                {user.status ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeactivate(user)}
+                                                        disabled={updatingUserId === user.id}
+                                                        className="px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    >
+                                                        {updatingUserId === user.id ? 'Deactivating...' : 'Deactivate'}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleActivate(user)}
+                                                        disabled={updatingUserId === user.id}
+                                                        className="px-3 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                    >
+                                                        {updatingUserId === user.id ? 'Activating...' : 'Activate'}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -466,6 +495,17 @@ export default function UserManagement() {
                     onClose={() => setIsAddUserModalOpen(false)} 
                     onUserAdded={handleUserAdded}
                     initialIdNumber={getNextIdNumber()}
+                />
+            )}
+            {editingUser && (
+                <EditUserModal
+                    key={editingUser.id}
+                    user={editingUser}
+                    onClose={() => setEditingUser(null)}
+                    onSaved={() => {
+                        fetchUsers();
+                        setEditingUser(null);
+                    }}
                 />
             )}
         </div>
@@ -504,6 +544,7 @@ function AddUserModal({
         email: '',
         phone: '',
         phone2: '',
+        zoomExtensionNumber: '',
         title: '',
         officeId: '',
         teamId: '',
@@ -527,10 +568,12 @@ function AddUserModal({
     const [duplicateWarning, setDuplicateWarning] = useState<{
         email: { id: string | number; name: string }[];
         phone: { id: string | number; name: string }[];
+        zoomExtensionNumber: { id: string | number; name: string }[];
     } | null>(null);
     const [checkingDuplicates, setCheckingDuplicates] = useState(false);
     const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
 
     // Fetch offices and teams on component mount
     useEffect(() => {
@@ -538,23 +581,26 @@ function AddUserModal({
         fetchTeams();
     }, []);
 
-    // Real-time duplicate detection for email / phone
+    // Real-time duplicate detection for email / phone / Zoom extension
     useEffect(() => {
         const controller = new AbortController();
-        const { email, phone } = formData;
+        const { email, phone, zoomExtensionNumber } = formData;
         const normEmail = (email || '').trim().toLowerCase();
         const normPhone = (phone || '').replace(/\D/g, '').trim();
+        const normZoomExt = (zoomExtensionNumber || '').replace(/\D/g, '').trim();
 
-        if (!normEmail && !normPhone) {
+        if (!normEmail && !normPhone && !normZoomExt) {
             setDuplicateWarning(null);
             setEmailStatus('idle');
             setPhoneStatus('idle');
+            setZoomExtStatus('idle');
             return;
         }
 
         // Set checking state for fields that have values
         if (normEmail) setEmailStatus('checking');
         if (normPhone) setPhoneStatus('checking');
+        if (normZoomExt) setZoomExtStatus('checking');
 
         const timeout = setTimeout(async () => {
             try {
@@ -562,6 +608,7 @@ function AddUserModal({
                 const params = new URLSearchParams();
                 if (normEmail) params.set('email', normEmail);
                 if (normPhone) params.set('phone', normPhone);
+                if (normZoomExt) params.set('zoomExtensionNumber', normZoomExt);
 
                 const res = await fetch(`/api/users/check-duplicates?${params.toString()}`, {
                     method: 'GET',
@@ -572,12 +619,17 @@ function AddUserModal({
                     setDuplicateWarning(null);
                     if (normEmail) setEmailStatus('idle');
                     if (normPhone) setPhoneStatus('idle');
+                    if (normZoomExt) setZoomExtStatus('idle');
                     return;
                 }
 
                 const data = await res.json();
                 if (data.success && data.duplicates) {
-                    const { email: dupEmail = [], phone: dupPhone = [] } = data.duplicates;
+                    const {
+                        email: dupEmail = [],
+                        phone: dupPhone = [],
+                        zoomExtensionNumber: dupZoomExt = [],
+                    } = data.duplicates;
 
                     // Update per-field status
                     if (normEmail) {
@@ -590,10 +642,23 @@ function AddUserModal({
                     } else {
                         setPhoneStatus('idle');
                     }
+                    if (normZoomExt) {
+                        setZoomExtStatus((dupZoomExt.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else {
+                        setZoomExtStatus('idle');
+                    }
 
                     // Store combined warning only when there is at least one duplicate
-                    if ((dupEmail.length ?? 0) > 0 || (dupPhone.length ?? 0) > 0) {
-                        setDuplicateWarning({ email: dupEmail, phone: dupPhone });
+                    if (
+                        (dupEmail.length ?? 0) > 0 ||
+                        (dupPhone.length ?? 0) > 0 ||
+                        (dupZoomExt.length ?? 0) > 0
+                    ) {
+                        setDuplicateWarning({
+                            email: dupEmail,
+                            phone: dupPhone,
+                            zoomExtensionNumber: dupZoomExt,
+                        });
                     } else {
                         setDuplicateWarning(null);
                     }
@@ -601,6 +666,7 @@ function AddUserModal({
                     setDuplicateWarning(null);
                     if (normEmail) setEmailStatus('idle');
                     if (normPhone) setPhoneStatus('idle');
+                    if (normZoomExt) setZoomExtStatus('idle');
                 }
             } catch (err) {
                 if ((err as any).name !== 'AbortError') {
@@ -615,7 +681,7 @@ function AddUserModal({
             controller.abort();
             clearTimeout(timeout);
         };
-    }, [formData.email, formData.phone]);
+    }, [formData.email, formData.phone, formData.zoomExtensionNumber]);
 
     // Debug: Log when teams or officeId changes
     useEffect(() => {
@@ -705,8 +771,8 @@ function AddUserModal({
             setError('First name, last name, and email are required');
             return;
         }
-        if (emailStatus === 'duplicate' || phoneStatus === 'duplicate') {
-            setError('Email or phone already exists for another user. Please review and fix before saving.');
+        if (emailStatus === 'duplicate' || phoneStatus === 'duplicate' || zoomExtStatus === 'duplicate') {
+            setError('Email, phone, or Zoom extension already exists for another user. Please review and fix before saving.');
             return;
         }
         if (!formData.officeId || !formData.teamId) {
@@ -717,6 +783,7 @@ function AddUserModal({
         setLoading(true);
 
         try {
+            const zoomExtDigits = (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim();
             const body: Record<string, unknown> = {
                 name: `${formData.firstName} ${formData.lastName}`,
                 email: formData.email,
@@ -725,6 +792,7 @@ function AddUserModal({
                 teamId: formData.teamId,
                 phone: formData.phone,
                 phone2: formData.phone2,
+                ...(zoomExtDigits ? { zoomExtensionNumber: zoomExtDigits } : {}),
                 title: formData.title,
                 idNumber: formData.idNumber,
                 isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType)
@@ -821,7 +889,7 @@ function AddUserModal({
                     {duplicateWarning && (
                         <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">
                             <p className="font-semibold mb-1">
-                                Possible duplicate user(s) detected. Email and phone must be unique.
+                                Possible duplicate user(s) detected. Email, phone, and Zoom extension must be unique.
                             </p>
                             {(duplicateWarning.email?.length ?? 0) > 0 && (
                                 <div className="mt-1">
@@ -839,6 +907,16 @@ function AddUserModal({
                                     <ul className="list-disc list-inside">
                                         {duplicateWarning.phone.map((u) => (
                                             <li key={`dup-phone-${u.id}`}>{u.name}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {(duplicateWarning.zoomExtensionNumber?.length ?? 0) > 0 && (
+                                <div className="mt-1">
+                                    <p className="font-medium">Matching Zoom extension:</p>
+                                    <ul className="list-disc list-inside">
+                                        {duplicateWarning.zoomExtensionNumber.map((u) => (
+                                            <li key={`dup-zoom-${u.id}`}>{u.name}</li>
                                         ))}
                                     </ul>
                                 </div>
@@ -955,6 +1033,43 @@ function AddUserModal({
                                     onChange={handleChange}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Zoom Phone extension
+                                </label>
+                                <p className="text-xs text-gray-500 mb-1">
+                                    Internal extension (e.g. 8247) from Zoom Phone — used to match inbound calls to this user. Digits only; must be unique.
+                                </p>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        name="zoomExtensionNumber"
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                        placeholder="e.g. 8247"
+                                        value={formData.zoomExtensionNumber}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {zoomExtStatus === 'ok' && (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim() !== '' && (
+                                        <Tooltip
+                                            text="Extension is available"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-green-600 text-lg">✓</span>
+                                        </Tooltip>
+                                    )}
+                                    {zoomExtStatus === 'duplicate' && (
+                                        <Tooltip
+                                            text="Extension already assigned"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-red-600 text-lg">✕</span>
+                                        </Tooltip>
+                                    )}
+                                </div>
                             </div>
 
                             <div>
@@ -1106,6 +1221,561 @@ function AddUserModal({
                                         Processing...
                                     </>
                                 ) : 'Save'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function EditUserModal({
+    user,
+    onClose,
+    onSaved,
+}: {
+    user: User;
+    onClose: () => void;
+    onSaved?: () => void;
+}) {
+    const [formData, setFormData] = useState({
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        phone2: user.phone2 || '',
+        zoomExtensionNumber: user.zoomExtensionNumber || '',
+        title: user.title || '',
+        officeId: user.officeId || '',
+        teamId: user.teamId || '',
+        idNumber: user.idNumber || '',
+        userType: (user.role || 'recruiter').toLowerCase(),
+        statusActive: user.status,
+    });
+
+    const [offices, setOffices] = useState<Office[]>([]);
+    const [teams, setTeams] = useState<Team[]>([]);
+    const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [loadingOffices, setLoadingOffices] = useState(true);
+    const [loadingTeams, setLoadingTeams] = useState(false);
+    const [duplicateWarning, setDuplicateWarning] = useState<{
+        email: { id: string | number; name: string }[];
+        phone: { id: string | number; name: string }[];
+        zoomExtensionNumber: { id: string | number; name: string }[];
+    } | null>(null);
+    const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+    const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                setLoadingOffices(true);
+                const oRes = await fetch('/api/offices');
+                const oData = await oRes.json();
+                if (oData.success) setOffices(oData.offices || []);
+            } catch {
+                setError('Failed to load offices');
+            } finally {
+                setLoadingOffices(false);
+            }
+            try {
+                setLoadingTeams(true);
+                const tRes = await fetch('/api/teams');
+                const tData = await tRes.json();
+                if (tData.success) setTeams(tData.teams || []);
+            } catch {
+                setError('Failed to load teams');
+            } finally {
+                setLoadingTeams(false);
+            }
+        };
+        load();
+    }, []);
+
+    useEffect(() => {
+        if (formData.officeId) {
+            const officeIdStr = String(formData.officeId);
+            const filtered = teams.filter((team) => {
+                const teamOfficeId = team.office_id ? String(team.office_id) : null;
+                return teamOfficeId === officeIdStr;
+            });
+            setFilteredTeams(filtered);
+            if (
+                teams.length > 0 &&
+                formData.teamId &&
+                !filtered.find((team) => String(team.id) === String(formData.teamId))
+            ) {
+                setFormData((prev) => ({ ...prev, teamId: '' }));
+            }
+        } else {
+            setFilteredTeams([]);
+            setFormData((prev) => (prev.teamId ? { ...prev, teamId: '' } : prev));
+        }
+    }, [formData.officeId, formData.teamId, teams]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        const { email, phone, zoomExtensionNumber } = formData;
+        const normEmail = (email || '').trim().toLowerCase();
+        const normPhone = (phone || '').replace(/\D/g, '').trim();
+        const normZoomExt = (zoomExtensionNumber || '').replace(/\D/g, '').trim();
+
+        if (!normEmail && !normPhone && !normZoomExt) {
+            setDuplicateWarning(null);
+            setEmailStatus('idle');
+            setPhoneStatus('idle');
+            setZoomExtStatus('idle');
+            return;
+        }
+
+        if (normEmail) setEmailStatus('checking');
+        if (normPhone) setPhoneStatus('checking');
+        if (normZoomExt) setZoomExtStatus('checking');
+
+        const timeout = setTimeout(async () => {
+            try {
+                setCheckingDuplicates(true);
+                const params = new URLSearchParams();
+                if (normEmail) params.set('email', normEmail);
+                if (normPhone) params.set('phone', normPhone);
+                if (normZoomExt) params.set('zoomExtensionNumber', normZoomExt);
+                params.set('excludeId', user.id);
+
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`, {
+                    method: 'GET',
+                    signal: controller.signal,
+                });
+
+                if (!res.ok) {
+                    setDuplicateWarning(null);
+                    if (normEmail) setEmailStatus('idle');
+                    if (normPhone) setPhoneStatus('idle');
+                    if (normZoomExt) setZoomExtStatus('idle');
+                    return;
+                }
+
+                const data = await res.json();
+                if (data.success && data.duplicates) {
+                    const {
+                        email: dupEmail = [],
+                        phone: dupPhone = [],
+                        zoomExtensionNumber: dupZoomExt = [],
+                    } = data.duplicates;
+
+                    if (normEmail) {
+                        setEmailStatus((dupEmail.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else setEmailStatus('idle');
+                    if (normPhone) {
+                        setPhoneStatus((dupPhone.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else setPhoneStatus('idle');
+                    if (normZoomExt) {
+                        setZoomExtStatus((dupZoomExt.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else setZoomExtStatus('idle');
+
+                    if (
+                        (dupEmail.length ?? 0) > 0 ||
+                        (dupPhone.length ?? 0) > 0 ||
+                        (dupZoomExt.length ?? 0) > 0
+                    ) {
+                        setDuplicateWarning({
+                            email: dupEmail,
+                            phone: dupPhone,
+                            zoomExtensionNumber: dupZoomExt,
+                        });
+                    } else setDuplicateWarning(null);
+                } else {
+                    setDuplicateWarning(null);
+                    if (normEmail) setEmailStatus('idle');
+                    if (normPhone) setPhoneStatus('idle');
+                    if (normZoomExt) setZoomExtStatus('idle');
+                }
+            } catch (err) {
+                if ((err as Error).name !== 'AbortError') {
+                    console.error('Error checking user duplicates:', err);
+                }
+            } finally {
+                setCheckingDuplicates(false);
+            }
+        }, 500);
+
+        return () => {
+            controller.abort();
+            clearTimeout(timeout);
+        };
+    }, [formData.email, formData.phone, formData.zoomExtensionNumber, user.id]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value, type } = e.target as HTMLInputElement;
+        if (type === 'checkbox') {
+            const checked = (e.target as HTMLInputElement).checked;
+            setFormData((prev) => ({ ...prev, [name]: checked }));
+        } else {
+            setFormData((prev) => ({ ...prev, [name]: value }));
+        }
+    };
+
+    const officeTeamRequired = ['recruiter', 'candidate'].includes(formData.userType);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+
+        if (!formData.firstName || !formData.lastName || !formData.email) {
+            setError('First name, last name, and email are required');
+            return;
+        }
+        if (emailStatus === 'duplicate' || phoneStatus === 'duplicate' || zoomExtStatus === 'duplicate') {
+            setError('Email, phone, or Zoom extension conflicts with another user. Fix before saving.');
+            return;
+        }
+        if (officeTeamRequired && (!formData.officeId || !formData.teamId)) {
+            setError('Office and team are required for recruiters and candidates');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const zoomExtDigits = (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim();
+            const body = {
+                name: `${formData.firstName} ${formData.lastName}`.trim(),
+                email: formData.email,
+                phone: formData.phone || null,
+                phone2: formData.phone2 || null,
+                title: formData.title || null,
+                idNumber: formData.idNumber || null,
+                officeId: formData.officeId || null,
+                teamId: formData.teamId || null,
+                zoomExtensionNumber: zoomExtDigits || null,
+                role: formData.userType,
+                status: formData.statusActive,
+            };
+
+            const response = await fetch(`/api/users/${user.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                setError(data.message || 'Failed to update user');
+                return;
+            }
+            if (onSaved) onSaved();
+        } catch {
+            setError('An error occurred. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[999]">
+            <div className="bg-white rounded-md shadow-lg w-full max-w-4xl overflow-hidden max-h-[90vh] flex flex-col">
+                <div className="flex justify-between items-center bg-gray-100 p-4 border-b shrink-0">
+                    <h2 className="text-lg font-semibold">Edit User</h2>
+                    <button type="button" onClick={onClose} className="p-1 rounded hover:bg-gray-200">
+                        <FiX size={20} />
+                    </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1">
+                    {error && (
+                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                            {error}
+                        </div>
+                    )}
+                    {duplicateWarning && (
+                        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">
+                            <p className="font-semibold mb-1">
+                                Possible duplicate user(s) detected (excluding this user).
+                            </p>
+                            {(duplicateWarning.email?.length ?? 0) > 0 && (
+                                <ul className="list-disc list-inside">
+                                    {duplicateWarning.email.map((u) => (
+                                        <li key={`e-${u.id}`}>{u.name} (email)</li>
+                                    ))}
+                                </ul>
+                            )}
+                            {(duplicateWarning.phone?.length ?? 0) > 0 && (
+                                <ul className="list-disc list-inside">
+                                    {duplicateWarning.phone.map((u) => (
+                                        <li key={`p-${u.id}`}>{u.name} (phone)</li>
+                                    ))}
+                                </ul>
+                            )}
+                            {(duplicateWarning.zoomExtensionNumber?.length ?? 0) > 0 && (
+                                <ul className="list-disc list-inside">
+                                    {duplicateWarning.zoomExtensionNumber.map((u) => (
+                                        <li key={`z-${u.id}`}>{u.name} (Zoom ext.)</li>
+                                    ))}
+                                </ul>
+                            )}
+                            {checkingDuplicates && (
+                                <p className="mt-1 text-xs text-yellow-700">Re-checking…</p>
+                            )}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit}>
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    First Name <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    name="firstName"
+                                    value={formData.firstName}
+                                    onChange={handleChange}
+                                    required
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Last Name <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    name="lastName"
+                                    value={formData.lastName}
+                                    onChange={handleChange}
+                                    required
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Email <span className="text-red-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {emailStatus === 'ok' && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 text-lg">
+                                            ✓
+                                        </span>
+                                    )}
+                                    {emailStatus === 'duplicate' && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-red-600 text-lg">
+                                            ✕
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                <div className="relative">
+                                    <input
+                                        type="tel"
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {phoneStatus === 'ok' && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 text-lg">
+                                            ✓
+                                        </span>
+                                    )}
+                                    {phoneStatus === 'duplicate' && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-red-600 text-lg">
+                                            ✕
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone2</label>
+                                <input
+                                    type="tel"
+                                    name="phone2"
+                                    value={formData.phone2}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Zoom Phone extension
+                                </label>
+                                <p className="text-xs text-gray-500 mb-1">Digits only; unique per user.</p>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        name="zoomExtensionNumber"
+                                        inputMode="numeric"
+                                        value={formData.zoomExtensionNumber}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {zoomExtStatus === 'ok' &&
+                                        (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim() !== '' && (
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 text-lg">
+                                                ✓
+                                            </span>
+                                        )}
+                                    {zoomExtStatus === 'duplicate' && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-red-600 text-lg">
+                                            ✕
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                                <input
+                                    type="text"
+                                    name="title"
+                                    value={formData.title}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Office {officeTeamRequired && <span className="text-red-500">*</span>}
+                                </label>
+                                <select
+                                    name="officeId"
+                                    value={formData.officeId}
+                                    onChange={handleChange}
+                                    required={officeTeamRequired}
+                                    disabled={loadingOffices}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                                >
+                                    <option value="">
+                                        {loadingOffices ? 'Loading…' : 'Select office'}
+                                    </option>
+                                    {offices.map((office) => (
+                                        <option key={office.id} value={office.id}>
+                                            {office.building_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Team {officeTeamRequired && <span className="text-red-500">*</span>}
+                                </label>
+                                <select
+                                    name="teamId"
+                                    value={formData.teamId}
+                                    onChange={handleChange}
+                                    required={officeTeamRequired}
+                                    disabled={!formData.officeId || loadingTeams}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                                >
+                                    <option value="">
+                                        {!formData.officeId
+                                            ? 'Select office first'
+                                            : loadingTeams
+                                              ? 'Loading…'
+                                              : filteredTeams.length === 0
+                                                ? 'No teams'
+                                                : 'Select team'}
+                                    </option>
+                                    {filteredTeams.map((team) => (
+                                        <option key={team.id} value={team.id}>
+                                            {team.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">ID Number</label>
+                                <input
+                                    type="text"
+                                    name="idNumber"
+                                    value={formData.idNumber}
+                                    readOnly
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={user.userId || ''}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    User type <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    name="userType"
+                                    value={formData.userType}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {USER_TYPES.map((t) => (
+                                        <option key={t.value} value={t.value}>
+                                            {t.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-6">
+                                <input
+                                    id="edit-user-status-active"
+                                    type="checkbox"
+                                    name="statusActive"
+                                    checked={formData.statusActive}
+                                    onChange={handleChange}
+                                    className="h-4 w-4"
+                                />
+                                <label htmlFor="edit-user-status-active" className="text-sm font-medium text-gray-700">
+                                    Account active (can sign in)
+                                </label>
+                            </div>
+
+                            <div className="col-span-2">
+                                <p className="text-xs text-gray-500">
+                                    Password cannot be changed here — use the password reset flow if needed.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-8 flex justify-end space-x-4">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-md"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-4 py-2 text-white bg-blue-500 hover:bg-blue-600 rounded-md disabled:opacity-60"
+                            >
+                                {loading ? 'Saving…' : 'Save changes'}
                             </button>
                         </div>
                     </form>
