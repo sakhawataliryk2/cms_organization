@@ -4488,6 +4488,7 @@ export default function PlacementView() {
                           fieldInfo={fieldInfo}
                           emptyPlaceholder="-"
                           clickable
+                          ellipsisInCell
                         />
                       </div>
                     </div>

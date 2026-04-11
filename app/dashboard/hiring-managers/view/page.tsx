@@ -4171,6 +4171,7 @@ export default function HiringManagerView() {
                       emptyPlaceholder="-"
                       clickable
                       entityType="hiring-managers"
+                      ellipsisInCell
                     />
                   </div>
                 );

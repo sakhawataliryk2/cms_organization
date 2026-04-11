@@ -3388,6 +3388,7 @@ export default function LeadView() {
                       fieldInfo={info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
+                      ellipsisInCell
                     />
                   </div>
                 );

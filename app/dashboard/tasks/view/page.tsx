@@ -2519,6 +2519,7 @@ export default function TaskView() {
                                             clickable
                                             entityType="tasks"
                                             recordId={task.id}
+                                            ellipsisInCell
                                         />
                                     </div>
                                 );
