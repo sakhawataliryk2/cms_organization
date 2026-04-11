@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { candidateId, phoneNumber } = body || {};
+    const { candidateId, phoneNumber, fieldName } = body || {};
 
     if (!candidateId || !phoneNumber) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ candidateId, phoneNumber }),
+      body: JSON.stringify({ candidateId, phoneNumber, fieldName: fieldName || null }),
     });
 
     const data = await response.json();
