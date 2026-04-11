@@ -327,6 +327,8 @@ const PAYROLL_INFO_STATIC_VALUES: Record<string, string> = {
 };
 
 const PRIMARY_PHONE_FIELD_IDENTIFIER = "field_11";
+// Additional phone fields that also show the Call button
+const EXTRA_PHONE_FIELD_IDENTIFIERS = ["field_12", "field_13"];
 
 const normalizeFieldIdentifier = (identifier: unknown) => {
   if (identifier === undefined || identifier === null) {
@@ -347,7 +349,10 @@ const isPrimaryPhoneField = (key: string, field?: any) => {
   ]
     .map(normalizeFieldIdentifier)
     .filter(Boolean);
-  return identifiers.includes(PRIMARY_PHONE_FIELD_IDENTIFIER);
+  return (
+    identifiers.includes(PRIMARY_PHONE_FIELD_IDENTIFIER) ||
+    EXTRA_PHONE_FIELD_IDENTIFIERS.some((id) => identifiers.includes(id))
+  );
 };
 
 const shouldShowPrimaryPhoneCallButton = (
@@ -634,6 +639,11 @@ export default function JobSeekerView() {
 
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
+
+  // Quick-call dropdown state
+  const [showCallDropdown, setShowCallDropdown] = useState(false);
+  const callDropdownRef = useRef<HTMLDivElement>(null);
+  const [quickCallPhones, setQuickCallPhones] = useState<Array<{ fieldName: string; label: string; value: string }>>([]);
 
   // Notes and history state
   const [notes, setNotes] = useState<Array<any>>([]);
@@ -1757,6 +1767,28 @@ Best regards`;
     }
   }, [jobSeeker, jobSeekerId]);
 
+  // Resolve quick-call phone fields (Field_11, Field_12, Field_13) whenever job seeker or fields load
+  useEffect(() => {
+    if (!jobSeeker) return;
+    let cancelled = false;
+    const PHONE_FIELD_NAMES = ["Field_11", "Field_12", "Field_13"];
+    (async () => {
+      const cf = (jobSeeker as any).customFields || {};
+      const entries = await Promise.all(
+        PHONE_FIELD_NAMES.map(async (fieldName) => {
+          const label = await getCustomFieldLabel("job-seekers", fieldName);
+          if (!label) return null;
+          const value = cf[label];
+          if (!value || String(value).trim() === "" || String(value).trim() === "-") return null;
+          return { fieldName, label, value: String(value).trim() };
+        })
+      );
+      if (cancelled) return;
+      setQuickCallPhones(entries.filter(Boolean) as Array<{ fieldName: string; label: string; value: string }>);
+    })();
+    return () => { cancelled = true; };
+  }, [jobSeeker]);
+
   // Fetch users for email notification
   useEffect(() => {
     if (showAddNote) {
@@ -1764,6 +1796,18 @@ Best regards`;
       fetchActionFields();
     }
   }, [showAddNote]);
+
+  // Close call dropdown on outside click
+  useEffect(() => {
+    if (!showCallDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (callDropdownRef.current && !callDropdownRef.current.contains(e.target as Node)) {
+        setShowCallDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showCallDropdown]);
 
   // Search for references for About field
   const searchAboutReferences = async (query: string) => {
@@ -4665,7 +4709,7 @@ Best regards`;
             {shouldShowCallButton && (
               <button
                 type="button"
-                onClick={() => handleStartZoomCall(fieldValue)}
+                onClick={() => handleStartZoomCall(fieldValue, field?.field_name)}
                 className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
                 title="Call via Zoom Phone"
               >
@@ -4690,7 +4734,7 @@ Best regards`;
     );
   };
 
-  const handleStartZoomCall = async (phoneNumber?: string) => {
+  const handleStartZoomCall = async (phoneNumber?: string, fieldName?: string) => {
     if (!jobSeekerId || !jobSeeker) {
       toast.error("Job seeker not loaded");
       return;
@@ -4737,6 +4781,7 @@ Best regards`;
         body: JSON.stringify({
           candidateId: jobSeekerId,
           phoneNumber: normalizedNumber,
+          fieldName: fieldName || null,
         }),
       });
 
@@ -4823,7 +4868,7 @@ Best regards`;
             {shouldShowCallButton && (
               <button
                 type="button"
-                onClick={() => handleStartZoomCall(fieldValue)}
+                onClick={() => handleStartZoomCall(fieldValue, field?.field_name)}
                 className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
                 title="Call via Zoom Phone"
               >
@@ -5024,8 +5069,8 @@ Best regards`;
         </div>
       </div>
 
-      <div className="bg-white border-b border-gray-300 px-3 py-2 sm:px-4">
-        <div className="flex flex-col lg:flex-row justify-between items-start gap-3 sm:gap-4">
+      <div className="bg-white border-b border-gray-300 h-ful px-3 py-2 sm:px-4">
+        <div className="flex flex-col lg:flex-row h-full justify-between items-start gap-3 sm:gap-4">
           {/* LEFT: dynamic fields */}
           <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-6 sm:gap-x-8 gap-y-3">
             {headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).length === 0 ? (
@@ -5052,68 +5097,122 @@ Best regards`;
               })
             )}
           </div>
+          <div className="flex flex-col justify-center h-full gap-2">
+            {/* RIGHT: pencil + existing actions */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => setShowHeaderFieldModal(true)}
+                className="p-2 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+                aria-label="Edit header fields"
+                title="Edit header fields"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 20h9"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
 
-          {/* RIGHT: pencil + existing actions */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowHeaderFieldModal(true)}
-              className="p-2 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
-              aria-label="Edit header fields"
-              title="Edit header fields"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 20h9"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
 
-            <ActionDropdown label="Actions" options={actionOptions} />
+              <ActionDropdown label="Actions" options={actionOptions} />
 
-            <button
-              onClick={handlePrint}
-              className="p-1 hover:bg-gray-200 rounded"
-              aria-label="Print"
-            >
-              <Image src="/print.svg" alt="Print" width={20} height={20} />
-            </button>
+              <button
+                onClick={handlePrint}
+                className="p-1 hover:bg-gray-200 rounded"
+                aria-label="Print"
+              >
+                <Image src="/print.svg" alt="Print" width={20} height={20} />
+              </button>
 
-            <button
-              onClick={handleTogglePinnedRecord}
-              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
-              aria-label={isRecordPinned ? "Unpin" : "Pin"}
-              title={isRecordPinned ? "Unpin" : "Pin"}
-              disabled={!jobSeeker}
-            >
-              <BsFillPinAngleFill size={18} />
-            </button>
+              <button
+                onClick={handleTogglePinnedRecord}
+                className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+                aria-label={isRecordPinned ? "Unpin" : "Pin"}
+                title={isRecordPinned ? "Unpin" : "Pin"}
+                disabled={!jobSeeker}
+              >
+                <BsFillPinAngleFill size={18} />
+              </button>
 
-            <button
-              className="p-1 hover:bg-gray-200 rounded"
-              aria-label="Reload"
-              onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
-            >
-              <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-            </button>
+              <button
+                className="p-1 hover:bg-gray-200 rounded"
+                aria-label="Reload"
+                onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
+              >
+                <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+              </button>
 
-            <button
-              onClick={handleGoBack}
-              className="p-1 hover:bg-gray-200 rounded"
-              aria-label="Close"
-            >
-              <Image src="/x.svg" alt="Close" width={20} height={20} />
-            </button>
+              <button
+                onClick={handleGoBack}
+                className="p-1 hover:bg-gray-200 rounded"
+                aria-label="Close"
+              >
+                <Image src="/x.svg" alt="Close" width={20} height={20} />
+              </button>
+            </div>
+            <div className="self-end flex items-center justify-end gap-4 mt-2 w-full">
+              {/* Call dropdown */}
+              <div className="relative" ref={callDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowCallDropdown((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm"
+                  title="Call job seeker"
+                >
+                  <FiPhone size={16} />
+                  Call
+                </button>
+                {showCallDropdown && (
+                  <div className="absolute right-1/2 left-1/2 -translate-x-1/2 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[220px]">
+                    {quickCallPhones.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-gray-500">No phone numbers available</div>
+                    ) : (
+                      quickCallPhones.map(({ fieldName, label, value }) => (
+                        <button
+                          key={fieldName}
+                          type="button"
+                          className="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-b-0 cursor-pointer"
+                          onClick={() => {
+                            setShowCallDropdown(false);
+                            handleStartZoomCall(value, fieldName);
+                          }}
+                        >
+                          <span className="text-gray-500 font-medium">{label}</span>
+                          <span className="text-gray-800 font-semibold mt-0.5">{value}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Message — coming soon */}
+              <button
+                type="button"
+                onClick={() => toast.info("Messaging — coming soon")}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium shadow-sm transition-color duration-100"
+                title="Message job seeker"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                Message
+              </button>
+            </div>
           </div>
+
+          {/* Quick-action row: Call + Message */}
+
         </div>
       </div>
 
