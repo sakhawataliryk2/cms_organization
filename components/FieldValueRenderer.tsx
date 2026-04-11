@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import { EllipsisCell } from "@/components/EllipsisCell";
 import { CheckIcon, FileText } from "lucide-react";
 import Tooltip from "@/components/Tooltip";
 import DescriptionModal from "@/components/DescriptionModal";
@@ -13,11 +14,16 @@ import {
   normalizeCrmEntityTypeSlug,
 } from "@/lib/entitySummaryFieldMaps";
 import { ADDRESS_FIELD_NAMES } from "@/components/AddressGroupRenderer";
+import {
+  formatPhoneForDisplay,
+  isPhoneLikeValue,
+  phoneDigitsForTel,
+} from "@/lib/formatPhoneDisplay";
 
 /** Placeholder when value is empty or N/A */
 const DEFAULT_EMPTY = "—";
 
-/** US phone pattern: (XXX) XXX-XXXX e.g. (112) 287-3112 */
+/** US phone pattern: (XXX) XXX-XXXX e.g. (112) 287-3112 — still recognized for tel/copy */
 const PHONE_PATTERN = /^\(\d{3}\)\s*\d{3}-\d{4}$/;
 
 /** Matches common date formats so we don't treat them as phones (YYYY-MM-DD, MM/DD/YYYY, etc.) */
@@ -107,6 +113,10 @@ export interface FieldValueRendererProps {
   entityType?: string;
   /** Record id for mapped status PUT (see statusMappings; field defs + options fetched inside this component) */
   recordId?: string | number;
+  /**
+   * Tight grids (e.g. record header): single-line ellipsis; if overflow is real, hover shows full text on a white padded panel (no tooltip).
+   */
+  ellipsisInCell?: boolean;
 }
 
 function formatToMMDDYYYY(value: string): string {
@@ -244,6 +254,7 @@ export default function FieldValueRenderer({
   required = false,
   entityType,
   recordId,
+  ellipsisInCell = false,
 }: FieldValueRendererProps) {
   const [copied, setCopied] = useState(false);
   const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false);
@@ -552,7 +563,20 @@ export default function FieldValueRenderer({
         </span>
       );
     }
-    return <span className={className}>{str}</span>;
+    return (
+      <EllipsisCell
+        active={ellipsisInCell}
+        measureDep={String(str)}
+        wrapperClassName="block w-full min-w-0 max-w-full"
+        baseClassName={className}
+      >
+        {({ ref, className: c }) => (
+          <span ref={ref} className={c}>
+            {str}
+          </span>
+        )}
+      </EllipsisCell>
+    );
   }
 
 
@@ -599,13 +623,38 @@ export default function FieldValueRenderer({
     const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
     const showLookupWarning = Boolean(lookupFallback);
     return (
-      <span onClick={handleClick} className={`inline-flex items-center gap-1 ${className}`}>
-        <RecordNameResolver
-          id={raw || null}
-          type={lookupType || ""}
-          clickable
-          fallback={fallback}
-        />
+      <span
+        onClick={handleClick}
+        className={`inline-flex items-center gap-1 ${ellipsisInCell ? "w-full min-w-0 max-w-full" : ""} ${className}`}
+      >
+        {ellipsisInCell ? (
+          <EllipsisCell
+            active
+            measureDep={`${String(raw ?? "")}:${lookupType ?? ""}:${fallback}`}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName=""
+          >
+            {({ ref, className: c }) => (
+              <span ref={ref} className={c}>
+                <RecordNameResolver
+                  id={raw || null}
+                  type={lookupType || ""}
+                  clickable
+                  fallback={fallback}
+                />
+              </span>
+            )}
+          </EllipsisCell>
+        ) : (
+          <span>
+            <RecordNameResolver
+              id={raw || null}
+              type={lookupType || ""}
+              clickable
+              fallback={fallback}
+            />
+          </span>
+        )}
         {showLookupWarning && (
           <span title="Lookup fallback used" aria-label="Lookup may be missing">
             <WarningIcon className="shrink-0 text-amber-500" />
@@ -628,18 +677,39 @@ export default function FieldValueRenderer({
               ? "bg-gray-100 text-gray-800"
               : "bg-green-100 text-green-800";
     return (
-      <span
-        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass} ${className}`}
+      <EllipsisCell
+        active={ellipsisInCell}
+        measureDep={str}
+        fullWidthTruncate={false}
+        wrapperClassName="block w-full min-w-0 max-w-full"
+        baseClassName={`inline-flex items-center max-w-full min-w-0 px-2 text-xs leading-5 font-semibold rounded-full ${statusClass} ${className}`}
       >
-        {str}
-      </span>
+        {({ ref, className: c }) => (
+          <span ref={ref} className={c}>
+            {str}
+          </span>
+        )}
+      </EllipsisCell>
     );
   }
 
   // Percentage
   if (fieldType === "percentage") {
     const percentStr = formatPercentage(raw);
-    return <span className={className}>{percentStr}</span>;
+    return (
+      <EllipsisCell
+        active={ellipsisInCell}
+        measureDep={percentStr}
+        wrapperClassName="block w-full min-w-0 max-w-full"
+        baseClassName={className}
+      >
+        {({ ref, className: c }) => (
+          <span ref={ref} className={c}>
+            {percentStr}
+          </span>
+        )}
+      </EllipsisCell>
+    );
   }
 
   // Date: plain text + optional relative
@@ -647,9 +717,30 @@ export default function FieldValueRenderer({
     const formattedDate = formatToMMDDYYYY(raw);
     const relative = showRelativeDate ? getRelativeDateString(raw) : null;
     return (
-      <span className={`inline-flex items-center gap-1 flex-wrap ${className}`}>
-        <span>{formattedDate}</span>
-        {relative && <span className="text-gray-500 text-sm">({relative})</span>}
+      <span
+        className={`inline-flex items-center gap-1 ${ellipsisInCell ? "min-w-0 max-w-full w-full flex-nowrap" : "flex-wrap"} ${className}`}
+      >
+        {ellipsisInCell ? (
+          <EllipsisCell
+            active
+            measureDep={formattedDate}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName=""
+          >
+            {({ ref, className: c }) => (
+              <span ref={ref} className={c}>
+                {formattedDate}
+              </span>
+            )}
+          </EllipsisCell>
+        ) : (
+          <span>{formattedDate}</span>
+        )}
+        {relative && (
+          <span className={`text-gray-500 text-sm ${ellipsisInCell ? "shrink-0" : ""}`}>
+            ({relative})
+          </span>
+        )}
       </span>
     );
   }
@@ -658,16 +749,45 @@ export default function FieldValueRenderer({
   if (isAddressField(fieldInfo?.label) && str !== emptyPlaceholder) {
     const fullAddress = `${str}, USA`;
     const encodedAddress = encodeURIComponent(fullAddress);
-    return (
+
+    const addressLink = (
       <a
         href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
         target="_blank"
         rel="noopener noreferrer"
-        className={`text-blue-600 hover:underline ${className}`}
+        className={`text-blue-600 hover:underline ${ellipsisInCell ? "min-w-0 flex-1 truncate" : ""}`.trim()}
         onClick={handleClick}
       >
         {str}
       </a>
+    );
+
+    return (
+      <span className={`inline-flex items-center gap-1.5 ${ellipsisInCell ? "w-full min-w-0 max-w-full" : ""} ${className}`.trim()}>
+        {ellipsisInCell ? (
+          <EllipsisCell
+            active
+            measureDep={str}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName="text-blue-600 hover:underline"
+          >
+            {({ ref, className: c }) => (
+              <a
+                ref={ref}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={c}
+                onClick={handleClick}
+              >
+                {str}
+              </a>
+            )}
+          </EllipsisCell>
+        ) : (
+          addressLink
+        )}
+      </span>
     );
   }
 
@@ -684,39 +804,98 @@ export default function FieldValueRenderer({
       displayText = href;
     }
 
-    return (
+    const urlLink = (
       <a
         href={href}
-        title={href}
+        title={!ellipsisInCell ? href : undefined}
         target="_blank"
         rel="noopener noreferrer"
-        className={`text-blue-600 hover:underline ${className}`}
+        className={`text-blue-600 hover:underline ${ellipsisInCell ? "min-w-0 flex-1 truncate" : ""}`.trim()}
         onClick={handleClick}
       >
         {displayText}
       </a>
     );
+
+    return (
+      <span className={`inline-flex items-center gap-1.5 ${ellipsisInCell ? "w-full min-w-0 max-w-full" : ""} ${className}`.trim()}>
+        {ellipsisInCell ? (
+          <EllipsisCell
+            active
+            measureDep={displayText}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName="text-blue-600 hover:underline"
+          >
+            {({ ref, className: c }) => (
+              <a
+                ref={ref}
+                href={href}
+                title={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={c}
+                onClick={handleClick}
+              >
+                {displayText}
+              </a>
+            )}
+          </EllipsisCell>
+        ) : (
+          urlLink
+        )}
+      </span>
+    );
   }
 
   // Email: mailto + optional domain badge + optional copy (copy only when value is real email)
-  // Replace line 580 with a more strict check
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const isEmail = fieldType === "email" || emailRegex.test(str.trim());
   if (isEmail) {
     const hasRealEmail = str !== emptyPlaceholder && str.includes("@");
     const domain = hasRealEmail && showEmailDomain ? extractEmailDomain(str) : "";
     const showCopy = enableCopy && hasRealEmail;
+    const rowClass = ellipsisInCell
+      ? `inline-flex w-full min-w-0 max-w-full items-center gap-1.5 ${className}`.trim()
+      : `inline-flex items-center gap-1.5 flex-wrap ${className}`.trim();
+
+    // Don't wrap email link in EllipsisCell when it has interactive siblings
+    // This prevents hover state conflicts and event blocking
+    const emailLink = (
+      <a
+        href={hasRealEmail ? `mailto:${str}` : "#"}
+        className={`${hasRealEmail ? "text-blue-600 hover:underline" : ""} ${ellipsisInCell ? "min-w-0 flex-1 truncate" : ""}`.trim()}
+        title={hasRealEmail && !ellipsisInCell ? str : undefined}
+        onClick={hasRealEmail ? handleClick : (e) => e.preventDefault()}
+      >
+        {str}
+      </a>
+    );
+
     return (
-      <span className={`inline-flex items-center gap-1.5 flex-wrap ${className}`}>
-        <a
-          href={hasRealEmail ? `mailto:${str}` : "#"}
-          className={hasRealEmail ? "text-blue-600 hover:underline" : ""}
-          onClick={hasRealEmail ? handleClick : (e) => e.preventDefault()}
-        >
-          {str}
-        </a>
+      <span className={rowClass}>
+        {ellipsisInCell ? (
+          <EllipsisCell
+            active
+            measureDep={str}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName={hasRealEmail ? "text-blue-600 hover:underline" : ""}
+          >
+            {({ ref, className: c }) => (
+              <a
+                ref={ref}
+                href={hasRealEmail ? `mailto:${str}` : "#"}
+                className={c}
+                onClick={hasRealEmail ? handleClick : (e) => e.preventDefault()}
+              >
+                {str}
+              </a>
+            )}
+          </EllipsisCell>
+        ) : (
+          emailLink
+        )}
         {domain && (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
+          <span className="inline-flex items-center shrink-0 px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
             {domain}
           </span>
         )}
@@ -724,7 +903,7 @@ export default function FieldValueRenderer({
           <button
             type="button"
             onClick={(e) => handleCopy(str, e)}
-            className="inline-flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+            className="inline-flex shrink-0 items-center text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
             aria-label="Copy email"
             title="Copy email"
           >
@@ -739,26 +918,63 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Phone: tel link + optional copy (copy only when value is real phone, not empty/placeholder)
-  const matchesPhoneFormat = PHONE_PATTERN.test(str);
-  if (matchesPhoneFormat) {
-    const hasRealPhone = str !== emptyPlaceholder && raw !== "";
+  // Phone: NANP + international display, tel: + optional copy
+  const phoneDigits = phoneDigitsForTel(str);
+  const shouldRenderPhone =
+    phoneDigits.length >= 10 &&
+    (isPhoneLikeValue(str, {
+      fieldType,
+      label: fieldInfo?.label,
+      key: fieldInfo?.key,
+    }) ||
+      PHONE_PATTERN.test(str));
+
+  if (shouldRenderPhone) {
+    const display = formatPhoneForDisplay(str);
+    const hasRealPhone = str !== emptyPlaceholder && raw !== "" && phoneDigits.length >= 10;
     const showCopy = enableCopy && hasRealPhone;
-    const digits = str.replace(/\D/g, "");
+
+    const telLink = (
+      <a
+        href={hasRealPhone ? `tel:${phoneDigits}` : "#"}
+        className={`${hasRealPhone ? "text-blue-600 hover:underline" : ""} tabular-nums ${ellipsisInCell ? "min-w-0 flex-1 truncate" : ""}`.trim()}
+        title={!ellipsisInCell && hasRealPhone ? str : undefined}
+        onClick={hasRealPhone ? handleClick : (e) => e.preventDefault()}
+      >
+        {display}
+      </a>
+    );
+
     return (
-      <span className={`inline-flex items-center gap-1.5 ${className}`}>
-        <a
-          href={hasRealPhone ? `tel:${digits}` : "#"}
-          className={hasRealPhone ? "text-blue-600 hover:underline" : ""}
-          onClick={hasRealPhone ? handleClick : (e) => e.preventDefault()}
-        >
-          {str}
-        </a>
+      <span
+        className={`inline-flex items-center gap-1.5 ${ellipsisInCell ? "w-full min-w-0 max-w-full" : "flex-wrap"} ${className}`}
+      >
+        {ellipsisInCell && hasRealPhone ? (
+          <EllipsisCell
+            active
+            measureDep={display}
+            wrapperClassName="min-w-0 flex-1 max-w-full"
+            baseClassName="text-blue-600 hover:underline tabular-nums"
+          >
+            {({ ref, className: c }) => (
+              <a
+                ref={ref}
+                href={`tel:${phoneDigits}`}
+                className={c}
+                onClick={handleClick}
+              >
+                {display}
+              </a>
+            )}
+          </EllipsisCell>
+        ) : (
+          telLink
+        )}
         {showCopy && (
           <button
             type="button"
-            onClick={(e) => handleCopy(str, e)}
-            className="inline-flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+            onClick={(e) => handleCopy(phoneDigits, e)}
+            className="inline-flex shrink-0 items-center text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
             aria-label="Copy phone"
             title="Copy phone"
           >
@@ -774,7 +990,21 @@ export default function FieldValueRenderer({
   }
 
   if (fieldType === "phone") {
-    return <span className={className}>{str}</span>;
+    const formatted = formatPhoneForDisplay(str) || str;
+    return (
+      <EllipsisCell
+        active={ellipsisInCell}
+        measureDep={formatted}
+        wrapperClassName="block w-full min-w-0 max-w-full"
+        baseClassName={`tabular-nums ${className}`.trim()}
+      >
+        {({ ref, className: c }) => (
+          <span ref={ref} className={c}>
+            {formatted}
+          </span>
+        )}
+      </EllipsisCell>
+    );
   }
 
   // Currency / Salary highlight: green + bold when > 100000
@@ -783,13 +1013,35 @@ export default function FieldValueRenderer({
     const num = parseNumericValue(raw);
     if (num !== null && num > 100000) {
       return (
-        <span className={`text-green-700 font-semibold ${className}`}>
-          {str}
-        </span>
+        <EllipsisCell
+          active={ellipsisInCell}
+          measureDep={str}
+          wrapperClassName="block w-full min-w-0 max-w-full"
+          baseClassName={`text-green-700 font-semibold ${className}`.trim()}
+        >
+          {({ ref, className: c }) => (
+            <span ref={ref} className={c}>
+              {str}
+            </span>
+          )}
+        </EllipsisCell>
       );
     }
   }
 
   // Default: plain text
-  return <span className={className}>{str}</span>;
+  return (
+    <EllipsisCell
+      active={ellipsisInCell}
+      measureDep={str}
+      wrapperClassName="block w-full min-w-0 max-w-full"
+      baseClassName={className}
+    >
+      {({ ref, className: c }) => (
+        <span ref={ref} className={c}>
+          {str}
+        </span>
+      )}
+    </EllipsisCell>
+  );
 }

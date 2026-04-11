@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
+import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
 import SubmissionFormModal from "@/components/SubmissionFormModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 // Drag and drop imports
@@ -4333,9 +4334,26 @@ Best regards`;
               };
               const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
               const actionLabel = note.action || "General Note";
+              const zoomKind = getZoomPhoneNoteKind(note.text);
+              const zoomAccentClass =
+                zoomKind === "call"
+                  ? "border-l-4 border-l-indigo-400"
+                  : zoomKind === "sms"
+                    ? "border-l-4 border-l-teal-500"
+                    : "";
+              const zoomActionBadge =
+                /zoom\s*call/i.test(String(actionLabel))
+                  ? "bg-indigo-100 text-indigo-900 border border-indigo-200/80"
+                  : /zoom\s*sms/i.test(String(actionLabel))
+                    ? "bg-teal-100 text-teal-900 border border-teal-200/80"
+                    : "bg-blue-100 text-blue-800";
 
               return (
-                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                <div
+                  id={`note-${note.id}`}
+                  key={note.id}
+                  className={`p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors ${zoomAccentClass}`}
+                >
                   <div className="border-b border-gray-200 pb-3 mb-3">
                     <div className="flex justify-between items-start">
                       <div className="flex flex-col gap-2">
@@ -4344,7 +4362,7 @@ Best regards`;
                             {note.created_by_name || "Unknown User"}
                           </span>
                           {actionLabel && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${zoomActionBadge}`}>
                               {actionLabel}
                             </span>
                           )}
@@ -4426,7 +4444,7 @@ Best regards`;
                     </div>
                   )}
                   <div className="mt-2">
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                    <ZoomPhoneNoteBody text={note.text} />
                   </div>
                 </div>
               );
@@ -4936,7 +4954,9 @@ Best regards`;
                   <span>{note.created_by_name}</span>
                   <span>{new Date(note.created_at).toLocaleDateString()}</span>
                 </div>
-                <p className="mt-1">{note.text}</p>
+                <div className="mt-1">
+                  <ZoomPhoneNoteBody text={note.text} compact />
+                </div>
               </div>
             ))}
           </div>
@@ -5091,6 +5111,7 @@ Best regards`;
                       emptyPlaceholder="-"
                       clickable
                       entityType="job-seekers"
+                      ellipsisInCell
                     />
                   </div>
                 );
@@ -5369,8 +5390,8 @@ Best regards`;
                           : null}
                       </div>
                       {note.text && (
-                        <div className="mt-1 text-gray-800 line-clamp-2">
-                          {note.text}
+                        <div className="mt-1 text-gray-800 line-clamp-3">
+                          <ZoomPhoneNoteBody text={note.text} compact />
                         </div>
                       )}
                     </div>

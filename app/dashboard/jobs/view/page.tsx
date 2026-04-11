@@ -5610,6 +5610,7 @@ export default function JobView() {
                         emptyPlaceholder="-"
                         clickable
                         entityType="job"
+                        ellipsisInCell
                       />
                     </div>
                   );

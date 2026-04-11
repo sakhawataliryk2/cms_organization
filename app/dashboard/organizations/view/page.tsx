@@ -5502,6 +5502,7 @@ export default function OrganizationView() {
                       fieldInfo={info ? { key: info.key ?? fk, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
+                      ellipsisInCell
                     />
                   </div>
                 );
