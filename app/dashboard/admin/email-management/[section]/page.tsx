@@ -1149,7 +1149,7 @@ export default function EmailManagementSectionPage() {
       </table>
 
       {showModal && (
-        <div className="fixed inset-0 bg-gray-800/60 flex justify-center items-center px-4 z-50">
+        <div className="fixed inset-0 bg-gray-800/60 flex justify-center items-center px-4 z-999">
           <div className="bg-white p-8 rounded-lg shadow-lg w-[900px] max-w-full relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowModal(false)}
