@@ -325,7 +325,7 @@ export default function DocumentManagementOrganizationPage() {
       </div>
 
       {showPdfViewer && welcomeDefault?.file_url && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999] bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl flex flex-col w-full max-w-4xl max-h-[90vh]">
             <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50 shrink-0">
               <span className="text-sm font-medium text-gray-800">
