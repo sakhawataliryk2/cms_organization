@@ -5190,7 +5190,7 @@ export default function HiringManagerView() {
       {/* Delete Modal */}
       {
         showDeleteModal && (
-          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
             <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
               {/* Header */}
               <div className="flex justify-between items-center p-4 border-b border-gray-200">
