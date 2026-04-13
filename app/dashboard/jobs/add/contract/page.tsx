@@ -7,7 +7,6 @@ import { useRouter } from "nextjs-toploader/app";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
-import { getCookie } from "cookies-next";
 import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import CustomFieldRenderer, {
   useCustomFields,
@@ -15,10 +14,8 @@ import CustomFieldRenderer, {
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, {
   getAddressFields,
-  isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 import Tooltip from "@/components/Tooltip";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import { FiInfo } from "react-icons/fi";
 import EmploymentTypeHeader from "../EmploymentTypeHeader";
 
@@ -114,6 +111,14 @@ const JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME = "Field_3";
 /** Admin stable names for org / hiring-manager lookups (URL prefill + read-only lock). */
 const JOB_ORG_LOOKUP_FIELD_NAME = "Field_2";
 const JOB_HIRING_MANAGER_LOOKUP_FIELD_NAME = "Field_22";
+const ORG_TO_JOB_FIELD_MAPPING: Record<string, string> = {
+  Field_8: "Field_12",
+  Field_9: "Field_13",
+  Field_10: "Field_14",
+  Field_11: "Field_15",
+  Field_12: "Field_17",
+};
+const ORGANIZATION_SOURCE_FIELD_NAMES = Object.keys(ORG_TO_JOB_FIELD_MAPPING);
 
 function valueFromSubmissionByLabel(
   submission: Record<string, unknown>,
@@ -476,9 +481,11 @@ export default function AddJob() {
   const [organizationName, setOrganizationName] = useState<string>("");
   const [leadPrefillData, setLeadPrefillData] = useState<any>(null);
   const [currentOrganizationId, setCurrentOrganizationId] = useState<string | null>(null);
+  const [organizationFieldLabels, setOrganizationFieldLabels] = useState<Record<string, string>>({});
   const [organizations, setOrganizations] = useState<
     Array<{ id: string; name: string }>
   >([]);
+  const lastMappedOrganizationIdRef = useRef<string | null>(null);
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
@@ -627,6 +634,61 @@ export default function AddJob() {
       )
     );
   }, [jobDupLabelsFromApi.reference, customFields]);
+
+  useEffect(() => {
+    const missingFieldNames = ORGANIZATION_SOURCE_FIELD_NAMES.filter(
+      (name) => !organizationFieldLabels[name]
+    );
+    if (missingFieldNames.length === 0) return;
+
+    let cancelled = false;
+    const token =
+      typeof document !== "undefined"
+        ? document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        )
+        : "";
+
+    (async () => {
+      const fetched: Record<string, string> = {};
+      await Promise.all(
+        missingFieldNames.map(async (fieldName) => {
+          try {
+            const res = await fetch(
+              `/api/custom-fields/field-label?entity_type=organizations&field_name=${encodeURIComponent(
+                fieldName
+              )}`,
+              {
+                headers: token
+                  ? { Authorization: `Bearer ${token}` }
+                  : undefined,
+                cache: "no-store",
+              }
+            );
+            if (!res.ok) return;
+            const data = await res.json().catch(() => ({}));
+            if (cancelled) return;
+            const label =
+              data.field_label || data.fieldLabel || data.label || "";
+            if (label) {
+              fetched[fieldName] = label;
+            }
+          } catch {
+            // Non-blocking; fallback paths still try direct keys.
+          }
+        })
+      );
+      if (cancelled) return;
+      if (Object.keys(fetched).length > 0) {
+        setOrganizationFieldLabels((prev) => ({ ...prev, ...fetched }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationFieldLabels]);
 
   const hiringManagerValue =
     (hiringManagerCustomField
@@ -1033,7 +1095,10 @@ export default function AddJob() {
   useEffect(() => {
     if (customFieldsLoading || !organizationField) return;
     const fieldValue = customFieldValues[organizationField.field_name] || "";
-    if (!fieldValue) return;
+    if (!fieldValue) {
+      lastMappedOrganizationIdRef.current = null;
+      return;
+    }
     // Lookup stores org id; legacy select may store name or id
     const selectedOrg = organizations.find(
       (org) => org.name === fieldValue || org.id.toString() === fieldValue
@@ -1050,9 +1115,11 @@ export default function AddJob() {
     currentOrganizationId,
   ]);
 
-  // When selected organization changes (from URL or from form), fetch org and auto-fill address; address stays editable
+  // When selected organization changes (from URL or from form), fetch org and auto-fill
+  // (a) address fields and (b) mapped org->job fields using stable Field_X names.
   useEffect(() => {
     if (!currentOrganizationId || addressFields.length === 0) return;
+    if (lastMappedOrganizationIdRef.current === currentOrganizationId) return;
 
     const fetchOrgAndPrefillAddress = async () => {
       try {
@@ -1105,15 +1172,48 @@ export default function AddJob() {
               next[addrField.field_name] = value;
             }
           });
+
+          // Map Organization -> Job fields by stable field_name.
+          // Source values are resolved from org custom_fields using source field labels.
+          let orgCustomFields: Record<string, any> = {};
+          if (org.custom_fields) {
+            try {
+              orgCustomFields =
+                typeof org.custom_fields === "string"
+                  ? JSON.parse(org.custom_fields)
+                  : org.custom_fields;
+            } catch (e) {
+              console.error("Error parsing organization custom_fields for mapping:", e);
+            }
+          }
+
+          Object.entries(ORG_TO_JOB_FIELD_MAPPING).forEach(
+            ([orgFieldName, jobFieldName]) => {
+              const orgFieldLabel = organizationFieldLabels[orgFieldName];
+              const rawValue =
+                (orgFieldLabel
+                  ? orgCustomFields[orgFieldLabel] ?? org[orgFieldLabel]
+                  : undefined) ??
+                orgCustomFields[orgFieldName] ??
+                org[orgFieldName];
+              if (rawValue === undefined || rawValue === null) return;
+              const normalized =
+                typeof rawValue === "string" ? rawValue.trim() : rawValue;
+              if (normalized === "") return;
+              next[jobFieldName] = normalized;
+            }
+          );
+
           return next;
         });
+        lastMappedOrganizationIdRef.current = currentOrganizationId;
       } catch (e) {
         console.error("Error fetching organization for address prefill:", e);
       }
     };
 
     fetchOrgAndPrefillAddress();
-  }, [currentOrganizationId, addressFields, setCustomFieldValues]);
+  }, [currentOrganizationId, addressFields, setCustomFieldValues, organizationFieldLabels]);
 
   // Prefill organizationId from URL if provided (create mode only)
   useEffect(() => {
