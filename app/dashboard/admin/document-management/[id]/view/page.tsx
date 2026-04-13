@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useParams } from "next/navigation";
 import { Document, Page, pdfjs } from "react-pdf";
 
 // PDF worker setup

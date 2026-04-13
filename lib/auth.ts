@@ -1,7 +1,8 @@
 import { getCookie, setCookie, deleteCookie } from 'cookies-next';
 import { jwtVerify } from 'jose';
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
+import { usePathname } from 'next/navigation';
 
 export interface UserData {
     id: string;
@@ -32,7 +33,7 @@ export const logout = (redirectUrl?: string) => {
     deleteCookie('user');
 
     if (typeof window !== 'undefined') {
-        const loginUrl = redirectUrl 
+        const loginUrl = redirectUrl
             ? `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`
             : '/auth/login';
         window.location.href = loginUrl;
@@ -167,7 +168,7 @@ export function useAuth() {
                 } catch (e) {
                     // Ignore sessionStorage errors (private browsing, etc.)
                 }
-                
+
                 // Preserve the original URL when redirecting to login
                 const loginUrl = fullUrl
                     ? `/auth/login?redirect=${encodeURIComponent(fullUrl)}`

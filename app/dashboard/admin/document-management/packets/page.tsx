@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { FiSearch, FiRefreshCw, FiArrowLeft } from "react-icons/fi";
 import DocumentMgmtTabs from "@/components/document-management/DocumentMgmtTabs";
 

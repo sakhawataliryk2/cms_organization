@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { usePathname } from "next/navigation";
 import { getUser, logout } from "@/lib/auth";
 // Import icons from react-icons
 import {

@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { FiLogOut, FiMenu, FiX } from "react-icons/fi";
 import assets from "@/app/assets/assets";

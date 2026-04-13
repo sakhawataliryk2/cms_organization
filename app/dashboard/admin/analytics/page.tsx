@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { 
   FiActivity, FiUsers, FiEye, FiClock, FiMousePointer, 
   FiEdit3, FiArrowLeft, FiDownload, FiRefreshCw,

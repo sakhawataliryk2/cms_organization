@@ -1,8 +1,10 @@
 // app/dashboard/admin/field-mapping/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useTopLoader } from "nextjs-toploader";
 import { toast } from "sonner";
 import {
   DndContext,
@@ -192,6 +194,7 @@ const FieldMapping = () => {
   const MAX_FIELDS_PER_SECTION = 500;
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
+  const topLoader = useTopLoader();
   const section = searchParams.get("section") || "jobs";
 
   const [showCount, setShowCount] = useState("200");
@@ -241,6 +244,12 @@ const FieldMapping = () => {
   const [defaultValueValidationError, setDefaultValueValidationError] = useState<
     string | null
   >(null);
+  /** Live duplicate field_label within module (admin); server + browser cache ~2 min. */
+  const [labelDuplicate, setLabelDuplicate] = useState<{
+    conflictingFieldName?: string;
+  } | null>(null);
+  const labelCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isSavingField, setIsSavingField] = useState(false);
   const [orderedFields, setOrderedFields] = useState<CustomField[]>([]);
   const [savedOrderSnapshot, setSavedOrderSnapshot] = useState<CustomField[]>([]);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
@@ -292,7 +301,75 @@ const FieldMapping = () => {
     fetchCustomFields();
   }, [section]);
 
+  useEffect(() => {
+    if (!showEditForm && !showAddForm) {
+      setLabelDuplicate(null);
+      return;
+    }
+    if (fieldLocks?.is_label_locked) {
+      setLabelDuplicate(null);
+      return;
+    }
+    const label = editFormData.fieldLabel.trim();
+    if (!label) {
+      setLabelDuplicate(null);
+      return;
+    }
+
+    const ac = new AbortController();
+    if (labelCheckTimerRef.current) {
+      clearTimeout(labelCheckTimerRef.current);
+    }
+    labelCheckTimerRef.current = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({
+          entity_type: section,
+          field_label: label,
+        });
+        if (selectedField?.id) {
+          qs.set("exclude_id", String(selectedField.id));
+        }
+        const res = await fetch(
+          `/api/custom-fields/check-label-unique?${qs.toString()}`,
+          { signal: ac.signal, cache: "no-store" }
+        );
+        const data = await res.json();
+        if (!data.success) {
+          setLabelDuplicate(null);
+          return;
+        }
+        if (data.unique) {
+          setLabelDuplicate(null);
+        } else {
+          setLabelDuplicate({
+            conflictingFieldName: data.conflicting_field_name,
+          });
+        }
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setLabelDuplicate(null);
+        }
+      }
+    }, 450);
+
+    return () => {
+      ac.abort();
+      if (labelCheckTimerRef.current) {
+        clearTimeout(labelCheckTimerRef.current);
+        labelCheckTimerRef.current = null;
+      }
+    };
+  }, [
+    showEditForm,
+    showAddForm,
+    editFormData.fieldLabel,
+    section,
+    selectedField?.id,
+    fieldLocks?.is_label_locked,
+  ]);
+
   const fetchCustomFields = async () => {
+    topLoader.start();
     setIsLoading(true);
     setError(null);
 
@@ -317,6 +394,7 @@ const FieldMapping = () => {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsLoading(false);
+      topLoader.done();
     }
   };
 
@@ -346,7 +424,9 @@ const FieldMapping = () => {
   };
 
   const handleFieldClick = (field: CustomField) => {
+    topLoader.start();
     setDefaultValueValidationError(null);
+    setLabelDuplicate(null);
     setSelectedField(field);
     const subIds = field.sub_field_ids;
     const depId = (field as any).dependent_on_field_id;
@@ -369,16 +449,23 @@ const FieldMapping = () => {
       dependentOnFieldId: depId != null ? String(depId) : "",
     });
     setShowEditForm(true);
+    window.setTimeout(() => topLoader.done(), 240);
   };
 
-  const handleShowHistory = (field: CustomField) => {
+  const handleShowHistory = async (field: CustomField) => {
     setSelectedField(field);
     setShowHistoryModal(true);
-    fetchFieldHistory(field.id);
+    topLoader.start();
+    try {
+      await fetchFieldHistory(field.id);
+    } finally {
+      topLoader.done();
+    }
   };
 
   const handleAddField = () => {
     setDefaultValueValidationError(null);
+    setLabelDuplicate(null);
     if (customFields.length >= MAX_FIELDS_PER_SECTION) {
       toast.error(`You can add up to ${MAX_FIELDS_PER_SECTION} fields per section.`);
       return;
@@ -404,7 +491,9 @@ const FieldMapping = () => {
       dependentOnFieldId: "",
     });
     setSelectedField(null);
+    topLoader.start();
     setShowAddForm(true);
+    window.setTimeout(() => topLoader.done(), 240);
   };
 
   // Helper function to generate the next field number
@@ -496,13 +585,13 @@ const FieldMapping = () => {
 
 
   const handleSaveField = async () => {
-    try {
-      let apiData;
-      let response;
+      let apiData: Record<string, unknown>;
+      let response: Response;
       if (!selectedField && customFields.length >= MAX_FIELDS_PER_SECTION) {
-        throw new Error(
+        toast.error(
           `Maximum limit reached: You can only add up to ${MAX_FIELDS_PER_SECTION} fields per section.`
         );
+        return;
       }
 
       const trimmedOptionList = editFormData.options
@@ -519,10 +608,22 @@ const FieldMapping = () => {
         toast.error(defaultCheck.message);
         return;
       }
+      if (
+        labelDuplicate &&
+        editFormData.fieldLabel.trim() &&
+        !fieldLocks?.is_label_locked
+      ) {
+        toast.error(
+          `This label is already used in this module (field name: ${labelDuplicate.conflictingFieldName || "other"}).`
+        );
+        return;
+      }
       setDefaultValueValidationError(null);
       const defaultValueForApi =
         defaultCheck.normalized.trim() !== "" ? defaultCheck.normalized : null;
 
+      setIsSavingField(true);
+      try {
       if (selectedField) {
         // Update existing field - only send changed fields
         apiData = {
@@ -608,7 +709,15 @@ const FieldMapping = () => {
       console.log("Response data:", data);
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to save field");
+        if (response.status === 409) {
+          const cfn =
+            data.conflictingFieldName ?? data.conflicting_field_name;
+          if (cfn) {
+            setLabelDuplicate({ conflictingFieldName: String(cfn) });
+          }
+        }
+        toast.error(data.message || "Failed to save field");
+        return;
       }
 
       // Refresh the fields list
@@ -618,14 +727,16 @@ const FieldMapping = () => {
       setShowEditForm(false);
       setShowAddForm(false);
       setSelectedField(null);
-    } catch (err) {
-      console.error("Error saving field:", err);
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while saving the field"
-      );
-    }
+      } catch (err) {
+        console.error("Error saving field:", err);
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while saving the field"
+        );
+      } finally {
+        setIsSavingField(false);
+      }
   };
 
   // Fixed toggle functions with API calls - with mutual exclusivity
@@ -1214,9 +1325,10 @@ const FieldMapping = () => {
       <tr
         ref={setNodeRef}
         style={style}
-        className={`border-t border-gray-200 hover:bg-gray-50 ${isDragging ? "invisible" : ""}`}
+        onClick={() => handleFieldClick(field)}
+        className={`border-t border-gray-200 hover:bg-gray-50 cursor-pointer ${isDragging ? "invisible" : ""}`}
       >
-        <td className="p-3">
+        <td className="p-3" onClick={(e) => e.stopPropagation()}>
           <div className="flex space-x-1">
             <button
               {...attributes}
@@ -1588,21 +1700,41 @@ const FieldMapping = () => {
               </h2>
               <div className="space-x-2">
                 <button
+                  type="button"
+                  disabled={isSavingField}
                   onClick={() => {
                     setShowEditForm(false);
                     setShowAddForm(false);
                     setSelectedField(null);
                     setDefaultValueValidationError(null);
+                    setLabelDuplicate(null);
+                    setIsSavingField(false);
                   }}
-                  className="px-4 py-1 bg-gray-200 border border-gray-300 text-gray-700 rounded hover:bg-gray-200"
+                  className="px-4 py-1 bg-gray-200 border border-gray-300 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleSaveField}
-                  className="px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  disabled={isSavingField}
+                  aria-busy={isSavingField}
+                  className="inline-flex items-center justify-center gap-1.5 min-w-[7.5rem] px-4 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  {selectedField ? "Update" : "Create"}
+                  {isSavingField ? (
+                    <>
+                      <FiRefreshCw
+                        className="shrink-0 animate-spin"
+                        size={14}
+                        aria-hidden
+                      />
+                      <span>{selectedField ? "Updating…" : "Creating…"}</span>
+                    </>
+                  ) : selectedField ? (
+                    "Update"
+                  ) : (
+                    "Create"
+                  )}
                 </button>
               </div>
             </div>
@@ -1638,19 +1770,42 @@ const FieldMapping = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                    htmlFor="field-mapping-field-label"
+                  >
                     Field Label: <span className="text-red-500">*</span>
                   </label>
                   <input
+                    id="field-mapping-field-label"
                     type="text"
                     name="fieldLabel"
                     value={editFormData.fieldLabel}
                     onChange={handleEditFormChange}
-                    className={`w-full px-3 py-2 border rounded ${fieldLocks?.is_label_locked ? "bg-gray-200" : ""}`}
+                    className={`w-full px-3 py-2 border rounded ${fieldLocks?.is_label_locked ? "bg-gray-200" : ""} ${labelDuplicate && !fieldLocks?.is_label_locked ? "border-red-500 ring-1 ring-red-200" : ""}`}
                     placeholder="e.g., Company Size"
                     required
                     readOnly={!!fieldLocks?.is_label_locked}
+                    aria-invalid={labelDuplicate && !fieldLocks?.is_label_locked ? true : undefined}
+                    aria-describedby={
+                      labelDuplicate && !fieldLocks?.is_label_locked
+                        ? "field-mapping-label-duplicate-hint"
+                        : undefined
+                    }
                   />
+                  {labelDuplicate && !fieldLocks?.is_label_locked && (
+                    <p
+                      id="field-mapping-label-duplicate-hint"
+                      className="text-xs text-red-600 mt-1.5"
+                      role="alert"
+                    >
+                      This label is already used by{" "}
+                      <span className="font-mono font-semibold">
+                        {labelDuplicate.conflictingFieldName || "another field"}
+                      </span>{" "}
+                      in this module. Labels must be unique (case-insensitive).
+                    </p>
+                  )}
                 </div>
 
                 <div>

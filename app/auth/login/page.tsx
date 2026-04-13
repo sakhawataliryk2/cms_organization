@@ -7,7 +7,7 @@ import {
   KeyboardEvent,
   ClipboardEvent,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
 import { setCookie } from "cookies-next";
 import assets from "@/app/assets/assets";

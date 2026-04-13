@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FiUser, FiMail, FiPhone, FiMapPin, FiBriefcase, FiX } from "react-icons/fi"; // Close button (FiX)
-import { useRouter } from "next/navigation"; 
+import { useRouter } from "nextjs-toploader/app"; 
 
 export default function ProfileModal({ isOpen, closeModal }: { isOpen: boolean; closeModal: () => void }) {
   const [profile, setProfile] = useState<any>(null);

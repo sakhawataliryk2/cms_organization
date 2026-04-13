@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useParams } from "next/navigation";
 import { FiX, FiEdit2, FiTrash2, FiArrowLeft } from "react-icons/fi";
 
 interface EmailTemplate {

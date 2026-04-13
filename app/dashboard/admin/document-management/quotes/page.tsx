@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { FiArrowLeft, FiX } from "react-icons/fi";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { formatRecordId } from "@/lib/recordIdFormatter";

@@ -9,7 +9,8 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import {
   FiX,
   FiPrinter,

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { FiCopy, FiRefreshCw } from 'react-icons/fi';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 
 export default function ApiManagement() {
     const router = useRouter();

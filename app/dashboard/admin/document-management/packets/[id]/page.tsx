@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useParams } from "next/navigation";
 import { FiChevronRight, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
 

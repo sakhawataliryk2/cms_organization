@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { usePathname } from "next/navigation";
 import { useMemo } from "react";
 
 type PortalTab = {

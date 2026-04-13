@@ -3,7 +3,7 @@
 'use client'
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { FiChevronRight, FiX } from 'react-icons/fi';
 
 interface Section {

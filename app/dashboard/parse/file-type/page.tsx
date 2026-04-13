@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import LoadingScreen from '@/components/LoadingScreen';
 
 export default function FileTypeSelection() {

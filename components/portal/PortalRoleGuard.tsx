@@ -1,7 +1,7 @@
 "use client";
 
 import { getCookie } from "cookies-next";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { useEffect, useState } from "react";
 import LoadingState from "@/components/portal/LoadingState";
 

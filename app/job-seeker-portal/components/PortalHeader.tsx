@@ -3,7 +3,7 @@
 import { FiHelpCircle, FiUser, FiLogOut } from "react-icons/fi";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation"; 
+import { useRouter } from "nextjs-toploader/app"; 
 import ProfileModal from "./ProfileModal"; 
 
 interface PortalHeaderProps {

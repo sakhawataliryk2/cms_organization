@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { AiOutlineLoading3Quarters } from "react-icons/ai";
 
 export type RecordType =
