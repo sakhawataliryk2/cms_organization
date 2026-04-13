@@ -329,6 +329,20 @@ function HiringManagerSearchSelect({
   );
 }
 
+function labelForFieldNameFromDefinitions(
+  fields: Array<{ field_name?: string; field_label?: string | null }>,
+  fieldName: string
+): string | null {
+  const f = fields.find(
+    (x) =>
+      x.field_name === fieldName ||
+      (x.field_name != null &&
+        x.field_name.toLowerCase() === fieldName.toLowerCase())
+  );
+  const l = f?.field_label != null ? String(f.field_label).trim() : "";
+  return l || null;
+}
+
 export default function AddExecutiveSearchJob() {
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -411,15 +425,45 @@ export default function AddExecutiveSearchJob() {
     return found?.name || raw;
   }, [hiringManagerOptions, hiringManagerValue]);
 
-  // Pre-populate hiring manager from URL when redirected from jobs/add (org flow)
+  // Resolve Field_2 and Field_22 labels as requested
+  const field2Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_2"), [customFields]);
+  const field22Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_22"), [customFields]);
+
+  // Pre-populate Organization (Field_2) and Hiring Manager (Field_22) from URL
   useEffect(() => {
-    if (!jobId && hiringManagerIdFromUrl && hiringManagerCustomField) {
-      setCustomFieldValues((prev) => {
-        if (prev[hiringManagerCustomField.field_name] === hiringManagerIdFromUrl) return prev;
-        return { ...prev, [hiringManagerCustomField.field_name]: hiringManagerIdFromUrl };
-      });
+    if (jobId || customFieldsLoading || customFields.length === 0) return;
+
+    setCustomFieldValues((prev) => {
+      let next = { ...prev };
+      let changed = false;
+
+      if (organizationIdFromUrl) {
+        const foundOrg = organizations.find(
+          (org) => org.id.toString() === organizationIdFromUrl
+        );
+        if (foundOrg && foundOrg.name && prev["Field_2"] !== foundOrg.name) {
+          next["Field_2"] = foundOrg.name;
+          changed = true;
+        }
+      }
+
+      if (hiringManagerIdFromUrl) {
+        const foundHM = hiringManagerOptions.find(
+          (hm) => hm.id.toString() === hiringManagerIdFromUrl
+        );
+        if (foundHM && foundHM.name && prev["Field_22"] !== foundHM.name) {
+          next["Field_22"] = foundHM.name;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+
+    if (organizationIdFromUrl && currentOrganizationId !== organizationIdFromUrl) {
+      setCurrentOrganizationId(organizationIdFromUrl);
     }
-  }, [jobId, hiringManagerIdFromUrl, hiringManagerCustomField, setCustomFieldValues]);
+  }, [jobId, organizationIdFromUrl, hiringManagerIdFromUrl, customFieldsLoading, customFields.length, setCustomFieldValues, currentOrganizationId]);
 
   // Prefill Organization based on hiringManagerId when coming from Hiring Manager view
   const hasPrefilledOrgFromHmRef = useRef(false);
@@ -1291,6 +1335,12 @@ export default function AddExecutiveSearchJob() {
 
                     const fieldValue = customFieldValues[field.field_name] || "";
 
+                    const isAutoFilledOrg = field.field_name === "Field_2" && !!organizationIdFromUrl && !isEditMode;
+                    const isAutoFilledHM = field.field_name === "Field_22" && !!hiringManagerIdFromUrl && !isEditMode;
+                    const effectiveField = (isAutoFilledOrg || isAutoFilledHM)
+                      ? { ...field, is_read_only: true }
+                      : field;
+
                     return (
                       <div key={field.id} className="flex items-center gap-4 mb-3">
                         <label className="w-48 font-medium flex items-center">
@@ -1299,7 +1349,7 @@ export default function AddExecutiveSearchJob() {
 
                         <div className="flex-1 relative">
                           <CustomFieldRenderer
-                            field={field}
+                            field={effectiveField}
                             value={fieldValue}
                             onChange={handleCustomFieldChange}
                             allFields={customFields}
