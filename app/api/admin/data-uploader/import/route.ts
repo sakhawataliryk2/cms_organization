@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { normalizeDateInputToIso } from '@/lib/dateNormalize';
 
 // Mirror the exact same label→backend-column mappings used by the individual add pages.
 // Every field ALWAYS goes into custom_fields (keyed by field_label).
@@ -157,7 +158,8 @@ function extractRecordNumber(value: string): number | null {
 function buildPayload(
     entityType: string,
     record: Record<string, any>,
-    fieldNameToLabel: Record<string, string>
+    fieldNameToLabel: Record<string, string>,
+    fieldDefByName?: Map<string, FieldDefinition>
 ): Record<string, any> {
     const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
     const topLevel: Record<string, any> = {};
@@ -166,12 +168,21 @@ function buildPayload(
     for (const [fieldName, value] of Object.entries(record)) {
         if (value === undefined || value === null || value === '') continue;
 
+        let v = value;
+        if (typeof v === 'string' && fieldDefByName) {
+            const def = fieldDefByName.get(fieldName);
+            if (def?.field_type === 'date') {
+                const iso = normalizeDateInputToIso(v.trim());
+                if (iso) v = iso;
+            }
+        }
+
         const label = fieldNameToLabel[fieldName] ?? fieldName;
-        customFields[label] = value;
+        customFields[label] = v;
 
         const backendCol = labelMap[label];
         if (backendCol) {
-            topLevel[backendCol] = value;
+            topLevel[backendCol] = v;
         }
     }
 
@@ -284,7 +295,7 @@ export async function POST(request: NextRequest) {
 
             try {
                 // Build payload the same way individual add pages do
-                const payload = buildPayload(entityType, record, fieldNameToLabel);
+                const payload = buildPayload(entityType, record, fieldNameToLabel, fieldDefByName);
 
                 // ── Lookup type resolution (import-only) ─────────────────────────────
                 // For every field that has a lookup_type, extract the record_number from

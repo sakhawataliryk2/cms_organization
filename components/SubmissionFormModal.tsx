@@ -189,13 +189,11 @@ export default function SubmissionFormModal({
       if (res.ok) {
         const list = data.jobs ?? data.data ?? [];
         const all = Array.isArray(list) ? list : [];
-        // Only show open, non-archived jobs for submission
-        const openNonArchived = all.filter(
-          (j: Job) =>
-            String(j.status ?? "").toLowerCase() === "open" &&
-            (j.archived_at == null || j.archived_at === "")
+        // Only show non-archived jobs for submission
+        const nonArchived = all.filter(
+          (j: Job) => j.archived_at == null || j.archived_at === "",
         );
-        setJobsList(openNonArchived);
+        setJobsList(nonArchived);
       } else {
         setJobsList([]);
       }
