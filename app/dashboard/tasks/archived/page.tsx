@@ -851,7 +851,7 @@ export default function ArchivedTasksList() {
                 advancedSearchCriteria.length > 0) && (
                   <button
                     onClick={handleClearAllFilters}
-                    className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                    className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
                   >
                     <FiX /> Clear All
                   </button>
@@ -1068,7 +1068,7 @@ export default function ArchivedTasksList() {
               advancedSearchCriteria.length > 0) && (
                 <button
                   onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
                 >
                   <FiX /> Clear All
                 </button>

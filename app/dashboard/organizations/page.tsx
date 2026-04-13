@@ -1032,7 +1032,7 @@ export default function OrganizationList() {
               {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0 || advancedSearchCriteria.length > 0) && (
                 <button
                   onClick={handleClearAllFilters}
-                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                  className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
                 >
                   <FiX />
                   Clear All
@@ -1062,7 +1062,7 @@ export default function OrganizationList() {
         </div>
 
         {/* Desktop: Favorites, Delete Selected, Columns, Add - single row */}
-        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0 overflow-x-auto">
+        <div className="hidden md:flex items-center gap-2 flex-nowrap shrink-0">
           {/* Favorites Dropdown - ref on wrapper so click-outside works for both desktop and mobile */}
           <div ref={favoritesMenuRef} className="relative">
             <button

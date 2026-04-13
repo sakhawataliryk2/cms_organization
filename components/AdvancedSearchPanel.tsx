@@ -8,8 +8,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { FiPlus, FiSearch, FiX } from "react-icons/fi";
+import StyledReactSelect from "@/components/StyledReactSelect";
 
 // One row in the criteria list
 export type AdvancedSearchCriterion = {
@@ -314,8 +314,21 @@ export default function AdvancedSearchPanel({
   useEffect(() => {
     if (!open) return;
     const onResize = () => reposition();
-    const onScroll = () => onClose();
     const scrollParents = anchorEl ? getScrollParents(anchorEl) : [];
+    /** Only close when the scrolling element is the page or an anchor scroll parent — not nested menus (portals). */
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (t === document || t === document.documentElement || t === document.body) {
+        onClose();
+        return;
+      }
+      if (
+        scrollParents.length > 0 &&
+        scrollParents.some((el) => el === t)
+      ) {
+        onClose();
+      }
+    };
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onScroll, true);
     scrollParents.forEach((el) => el.addEventListener("scroll", onScroll));
@@ -331,9 +344,15 @@ export default function AdvancedSearchPanel({
     if (!open) return;
     const onDocMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
+      const el = target instanceof HTMLElement ? target : null;
       const inPanel = panelRef.current?.contains(target);
       const inAnchor = anchorEl?.contains(target as Node);
-      if (!inPanel && !inAnchor) onClose();
+      const inSelectOverlay =
+        el?.closest?.('[role="listbox"]') ||
+        el?.closest?.('[role="option"]') ||
+        el?.closest?.(".react-select__menu") ||
+        el?.closest?.('[class*="react-select"]');
+      if (!inPanel && !inAnchor && !inSelectOverlay) onClose();
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -463,16 +482,6 @@ export default function AdvancedSearchPanel({
     runSearch(recent.criteria);
   };
 
-  const [fieldSearch, setFieldSearch] = useState("");
-  const filteredFields = useMemo(() => {
-    if (!fieldSearch.trim()) return fieldCatalog;
-    const q = fieldSearch.toLowerCase();
-    return fieldCatalog.filter(
-      (f) =>
-        f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q)
-    );
-  }, [fieldCatalog, fieldSearch]);
-
   const canRun = useMemo(() => {
     if (activeTab !== "search") return false;
     return criteria.some((c) => {
@@ -556,9 +565,7 @@ export default function AdvancedSearchPanel({
                   <SearchRow
                     key={row.id}
                     row={row}
-                    filteredFields={filteredFields}
-                    fieldSearch={fieldSearch}
-                    onFieldSearchChange={setFieldSearch}
+                    fieldCatalog={fieldCatalog}
                     getFieldInfo={getFieldInfo}
                     onUpdate={(patch) => updateCriterion(row.id, patch)}
                     onRemove={() => removeRow(row.id)}
@@ -635,31 +642,35 @@ export default function AdvancedSearchPanel({
 // Single criterion row: remove button, field dropdown, operator dropdown, value input(s)
 function SearchRow({
   row,
-  filteredFields,
-  fieldSearch,
-  onFieldSearchChange,
+  fieldCatalog,
   getFieldInfo,
   onUpdate,
   onRemove,
   canRemove,
 }: {
   row: AdvancedSearchCriterion;
-  filteredFields: FieldCatalogItem[];
-  fieldSearch: string;
-  onFieldSearchChange: (v: string) => void;
+  fieldCatalog: FieldCatalogItem[];
   getFieldInfo: (key: string) => FieldCatalogItem | undefined;
   onUpdate: (patch: Partial<AdvancedSearchCriterion>) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
-  const [fieldDropdownOpen, setFieldDropdownOpen] = useState(false);
-  const fieldButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [dropdownPos, setDropdownPos] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
   const fieldInfo = getFieldInfo(row.fieldKey);
+
+  const fieldSelectOptions = useMemo(
+    () =>
+      fieldCatalog.map((f) => ({
+        value: f.key,
+        label: f.label,
+      })),
+    [fieldCatalog]
+  );
+
+  const fieldSelectValue = useMemo(() => {
+    if (!row.fieldKey) return null;
+    const label = fieldInfo?.label ?? row.fieldKey;
+    return { value: row.fieldKey, label };
+  }, [row.fieldKey, fieldInfo?.label]);
   const rawType = String(fieldInfo?.fieldType || "").toLowerCase();
   const operators = getOperatorsForFieldType(rawType);
   // derive a coarse input kind from admin field_type for rendering inputs
@@ -713,48 +724,13 @@ function SearchRow({
 
   const selectOptions = kind === "boolean" ? booleanOptions : fieldInfo?.options || [];
 
-  useLayoutEffect(() => {
-    if (!fieldDropdownOpen) {
-      setDropdownPos(null);
-      return;
-    }
-    const el = fieldButtonRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setDropdownPos({
-      top: rect.bottom + 6,
-      left: rect.left,
-      width: rect.width,
-    });
-  }, [fieldDropdownOpen]);
-
-  useEffect(() => {
-    if (!fieldDropdownOpen) return;
-    const onResize = () => {
-      const el = fieldButtonRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.bottom + 6,
-        left: rect.left,
-        width: rect.width,
-      });
-    };
-    window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onResize, true);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onResize, true);
-    };
-  }, [fieldDropdownOpen]);
-
   return (
-    <div className="flex flex-wrap items-start gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {canRemove ? (
         <button
           type="button"
           onClick={onRemove}
-          className="flex items-center justify-center w-9 h-9 rounded-full text-white bg-red-500 hover:bg-red-600 shrink-0"
+          className="flex items-center justify-center w-5 h-5 text-red-500 hover:text-red-600 border border-red-500 hover:border-red-600 rounded-md shrink-0"
           title="Remove row"
           aria-label="Remove row"
         >
@@ -766,84 +742,32 @@ function SearchRow({
 
       {/* Field selector (searchable) */}
       <div className="relative min-w-[240px] flex-1 max-w-[340px]">
-        <button
-          type="button"
-          ref={fieldButtonRef}
-          onClick={() => setFieldDropdownOpen((v) => !v)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-md text-sm text-left bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between"
-        >
-          <span className="truncate">{fieldInfo ? fieldInfo.label : ""}</span>
-          <span className="text-gray-400">▼</span>
-        </button>
-
-        {fieldDropdownOpen && (
-          <>
-            {typeof document !== "undefined" &&
-              dropdownPos &&
-              createPortal(
-                <>
-                  <div
-                    className="fixed inset-0 z-[9998]"
-                    onMouseDown={() => setFieldDropdownOpen(false)}
-                    aria-hidden="true"
-                  />
-                  <div
-                    className="fixed z-[9999] bg-white border border-gray-300 rounded-md shadow-xl overflow-hidden"
-                    style={{
-                      top: dropdownPos.top,
-                      left: dropdownPos.left,
-                      width: dropdownPos.width,
-                      maxHeight: "18rem",
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <div className="px-3 py-2 border-b border-gray-100 bg-white sticky top-0">
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Search fields..."
-                        value={fieldSearch}
-                        onChange={(e) => onFieldSearchChange(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Available Fields
-                      </p>
-                    </div>
-
-                    <div className="overflow-auto" style={{ maxHeight: "14rem" }}>
-                      {filteredFields.map((f) => (
-                        <button
-                          key={f.key}
-                          type="button"
-                          onClick={() => {
-                            onUpdate({
-                              fieldKey: f.key,
-                              operator: "",
-                              value: undefined,
-                              valueFrom: undefined,
-                              valueTo: undefined,
-                            });
-                            setFieldDropdownOpen(false);
-                            onFieldSearchChange("");
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 text-gray-800"
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                      {filteredFields.length === 0 && (
-                        <p className="px-4 py-2 text-sm text-gray-400">
-                          No fields match
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </>,
-                document.body
-              )}
-          </>
-        )}
+        <StyledReactSelect
+          aria-label="Search field"
+          placeholder="Select field…"
+          isClearable
+          isSearchable
+          menuPortalTarget={
+            typeof document !== "undefined" ? document.body : null
+          }
+          menuPosition="fixed"
+          options={fieldSelectOptions}
+          value={fieldSelectValue}
+          onChange={(opt) => {
+            const key = opt?.value ?? "";
+            onUpdate({
+              fieldKey: key,
+              operator: "",
+              value: undefined,
+              valueFrom: undefined,
+              valueTo: undefined,
+            });
+          }}
+          styles={{
+            menuPortal: (base) => ({ ...base, zIndex: 10050 }),
+            menu: (base) => ({ ...base, zIndex: 10050 }),
+          }}
+        />
       </div>
 
       {/* Operator selector */}
@@ -858,7 +782,7 @@ function SearchRow({
               valueTo: undefined,
             })
           }
-          className="w-full px-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
         >
           <option value="">Match type</option>
           {operators.map((op) => (
@@ -946,7 +870,7 @@ function SearchRow({
             value={row.value ?? ""}
             onChange={(e) => onUpdate({ value: e.target.value })}
             placeholder="Value"
-            className="flex-1 min-w-[220px] px-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+            className="flex-1 min-w-[220px] px-4 py-2.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
           />
         ) : (
           <div className="flex-1" />
