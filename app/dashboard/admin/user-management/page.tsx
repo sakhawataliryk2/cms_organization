@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'nextjs-toploader/app';
+import { ArrowLeft } from 'lucide-react';
 
 export default function UserManagement() {
     const router = useRouter();
@@ -84,8 +85,9 @@ export default function UserManagement() {
                     <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
                     <button
                         onClick={handleGoBack}
-                        className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-md transition duration-150 ease-in-out"
+                        className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-md transition duration-150 ease-in-out inline-flex items-center gap-2"
                     >
+                        <ArrowLeft size={16} />
                         Back
                     </button>
                 </div>
