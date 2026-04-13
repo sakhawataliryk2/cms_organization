@@ -135,6 +135,9 @@ export default function AddLead() {
       try {
         const userData = JSON.parse(decodeURIComponent(userCookie));
         setCurrentUser(userData);
+        if (!leadId && userData.id) {
+          setFormData((prev) => ({ ...prev, owner: String(userData.id) }));
+        }
       } catch (e) {
         console.error("Error parsing user cookie:", e);
       }
@@ -158,7 +161,7 @@ export default function AddLead() {
       }
     };
     fetchActiveUsers();
-  }, []);
+  }, [leadId]);
 
   // If leadId is present, fetch the lead data
   useEffect(() => {
