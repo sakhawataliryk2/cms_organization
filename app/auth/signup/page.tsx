@@ -2,7 +2,7 @@
 import Image from "next/image";
 import { useState, FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 
 export default function Signup() {
     const [showPassword, setShowPassword] = useState<boolean>(false);

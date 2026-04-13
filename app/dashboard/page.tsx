@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2, FiMonitor } from 'react-icons/fi';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { ActivityReportGrid, type ActivityReportRow } from '@/components/ActivityReportGrid';

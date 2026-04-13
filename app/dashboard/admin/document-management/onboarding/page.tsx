@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useSearchParams } from "next/navigation";
 import {
   FiSearch,
   FiRefreshCw,

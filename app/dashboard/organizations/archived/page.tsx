@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";

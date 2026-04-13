@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { FiX, FiDownload } from 'react-icons/fi';
 import LoadingScreen from '@/components/LoadingScreen';
 

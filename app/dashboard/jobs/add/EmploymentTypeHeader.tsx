@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { usePathname } from "next/navigation";
 import { FiEdit3 } from "react-icons/fi";
 
 const formatEmploymentType = (value: string) => {

@@ -8,7 +8,7 @@ import { FiX, FiChevronLeft, FiChevronRight, FiUser, FiRefreshCw } from 'react-i
 import { TbBinoculars } from 'react-icons/tb';
 import { FaFacebookF, FaLinkedinIn } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
-import { useRouter } from 'next/navigation';
+import { useRouter } from "nextjs-toploader/app";
 import SubmissionFormModal from '@/components/SubmissionFormModal';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
 import AddNoteModal from '@/components/AddNoteModal';

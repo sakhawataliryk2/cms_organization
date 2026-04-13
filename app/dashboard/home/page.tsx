@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { FiSearch, FiChevronDown, FiX } from 'react-icons/fi';
-import { useRouter } from 'next/navigation';
+import { useRouter } from "nextjs-toploader/app";
 
 export default function Dashboard() {
     const { user } = useAuth();

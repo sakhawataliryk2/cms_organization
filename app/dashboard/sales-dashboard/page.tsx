@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { FiX, FiChevronLeft, FiEye } from 'react-icons/fi';
-import { useRouter } from 'next/navigation';
+import { useRouter } from "nextjs-toploader/app";
 import { toast } from 'sonner';
 import RecordNameResolver from '@/components/RecordNameResolver';
 import { formatRecordId } from '@/lib/recordIdFormatter';

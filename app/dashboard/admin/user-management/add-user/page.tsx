@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff, FiEdit2 } from 'react-icons/fi';
 import Tooltip from '@/components/Tooltip';
 

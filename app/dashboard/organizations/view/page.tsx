@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";

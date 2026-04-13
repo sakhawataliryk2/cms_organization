@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'nextjs-toploader/app';
 import { SiIndeed, SiMonster } from "react-icons/si";
 import { PiOfficeChairDuotone } from "react-icons/pi";
 import { FiX } from "react-icons/fi";

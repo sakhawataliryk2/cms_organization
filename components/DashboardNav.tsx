@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
+import { usePathname, useSearchParams } from "next/navigation";
 import { getUser, logout } from "@/lib/auth";
 import {
   type PinnedRecord,
