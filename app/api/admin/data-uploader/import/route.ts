@@ -198,6 +198,9 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
     return '';
 }
 
+/** Organizations per backend bulk-create call (single DB transaction; tune for ~10–30s per chunk). */
+const ORG_BULK_CHUNK_SIZE = 250;
+
 export async function POST(request: NextRequest) {
     try {
         const cookieStore = await cookies();
@@ -281,6 +284,75 @@ export async function POST(request: NextRequest) {
             successful: 0,
             failed: 0,
             errors: [] as Array<{ row: number; errors: string[] }>,
+        };
+
+        const opts = options ?? {};
+        const needsDupCheck =
+            !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
+        const useOrgBulkCreate = entityType === 'organizations' && !needsDupCheck;
+
+        const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
+
+        const flushOrganizationBulkChunk = async () => {
+            if (orgBulkPending.length === 0) return;
+            const chunk = orgBulkPending.splice(0, orgBulkPending.length);
+            try {
+                const createRes = await fetch(`${apiUrl}/api/organizations/bulk-create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        items: chunk.map((c) => c.payload),
+                        maxBatch: ORG_BULK_CHUNK_SIZE,
+                    }),
+                });
+                const createData = await createRes.json().catch(() => ({}));
+
+                if (!createRes.ok) {
+                    const msg =
+                        createData.message ??
+                        (typeof createData === 'string' ? createData : 'Bulk create failed');
+                    for (const c of chunk) {
+                        summary.failed++;
+                        summary.errors.push({ row: c.row, errors: [String(msg)] });
+                    }
+                    return;
+                }
+
+                const s = createData.summary as
+                    | {
+                          successful?: number;
+                          failed?: number;
+                          errors?: Array<{ rowIndex: number; errors: string[] }>;
+                      }
+                    | undefined;
+
+                if (s) {
+                    summary.successful += s.successful ?? 0;
+                    summary.failed += s.failed ?? 0;
+                    for (const e of s.errors ?? []) {
+                        const mapped = chunk[e.rowIndex];
+                        if (mapped) {
+                            summary.errors.push({
+                                row: mapped.row,
+                                errors: e.errors ?? ['Unknown error'],
+                            });
+                        }
+                    }
+                } else {
+                    for (const c of chunk) {
+                        summary.successful++;
+                    }
+                }
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : 'Bulk create failed';
+                for (const c of chunk) {
+                    summary.failed++;
+                    summary.errors.push({ row: c.row, errors: [msg] });
+                }
+            }
         };
 
         for (let i = 0; i < records.length; i++) {
@@ -372,9 +444,6 @@ export async function POST(request: NextRequest) {
 
                 // ── Duplicate detection ───────────────────────────────────────────────
 
-                const opts = options ?? {};
-                const needsDupCheck = opts.skipDuplicates || opts.importNewOnly || opts.updateExisting;
-
                 const uniqueChecks: Array<{ field: string; value: string }> = [];
                 // ── Uniqueness checks temporarily disabled ────────────────────────────
                 // Website, email, phone and job-title uniqueness checks are commented out
@@ -442,18 +511,31 @@ export async function POST(request: NextRequest) {
                 if (foundDuplicate) continue;
 
                 // ── Create new record ─────────────────────────────────────────────────
-                const createRes = await fetch(`${apiUrl}/api/${endpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify(payload),
-                });
-                const createData = await createRes.json();
-
-                if (!createRes.ok) {
-                    summary.failed++;
-                    summary.errors.push({ row: rowNumber, errors: [createData.message ?? 'Failed to create record'] });
+                if (useOrgBulkCreate) {
+                    orgBulkPending.push({ row: rowNumber, payload });
+                    if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE) {
+                        await flushOrganizationBulkChunk();
+                    }
                 } else {
-                    summary.successful++;
+                    const createRes = await fetch(`${apiUrl}/api/${endpoint}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    const createData = await createRes.json();
+
+                    if (!createRes.ok) {
+                        summary.failed++;
+                        summary.errors.push({
+                            row: rowNumber,
+                            errors: [createData.message ?? 'Failed to create record'],
+                        });
+                    } else {
+                        summary.successful++;
+                    }
                 }
             } catch (err) {
                 summary.failed++;
@@ -462,6 +544,10 @@ export async function POST(request: NextRequest) {
                     errors: [err instanceof Error ? err.message : 'Unknown error'],
                 });
             }
+        }
+
+        if (useOrgBulkCreate) {
+            await flushOrganizationBulkChunk();
         }
 
         return NextResponse.json({ success: true, summary });
