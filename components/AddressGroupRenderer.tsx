@@ -57,6 +57,14 @@ export const ADDRESS_FIELD_NAMES = [
     city: ["Field_17"],
     state: ["Field_18"],
     zip: ["Field_19"],
+  },
+  {
+    entity_type: "leads",
+    address: ["Field_7"],
+    address2: ["Field_8"],
+    city: ["Field_9"],
+    state: ["Field_10"],
+    zip: ["Field_11"],
   }
 ];
 
