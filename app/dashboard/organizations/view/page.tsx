@@ -7242,14 +7242,11 @@ export default function OrganizationView() {
                       {dependencyCounts.details.hiring_managers.map((hm: any) => (
                         <div key={hm.id} className="px-4 py-2 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
-                            <button
-                              onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
-                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <span className="font-medium">{formatRecordId(hm.id, "hiringManager")}</span>
-                              <span className="ml-2">{hm.name}</span>
-                              {hm.title && <span className="ml-2 text-gray-500 text-xs">({hm.title})</span>}
-                            </button>
+                            <RecordNameResolver
+                              id={hm.id}
+                              type="hiring-manager"
+                              clickable={true}
+                            />
                           </div>
                         </div>
                       ))}
@@ -7269,13 +7266,11 @@ export default function OrganizationView() {
                       {dependencyCounts.details.jobs.map((job: any) => (
                         <div key={job.id} className="px-4 py-2 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
-                            <button
-                              onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
-                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <span className="font-medium">{formatRecordId(job.id, "job")}</span>
-                              <span className="ml-2">{job.name}</span>
-                            </button>
+                            <RecordNameResolver
+                              id={job.id}
+                              type="job"
+                              clickable={true}
+                            />
                           </div>
                         </div>
                       ))}
@@ -7295,13 +7290,11 @@ export default function OrganizationView() {
                       {dependencyCounts.details.placements.map((placement: any) => (
                         <div key={placement.id} className="px-4 py-2 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
-                            <button
-                              onClick={() => router.push(`/dashboard/placements/view?id=${placement.id}`)}
-                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <span className="font-medium">{formatRecordId(placement.id, "placement")}</span>
-                              <span className="ml-2">{placement.name}</span>
-                            </button>
+                            <RecordNameResolver
+                              id={placement.id}
+                              type="placement"
+                              clickable={true}
+                            />
                           </div>
                         </div>
                       ))}
@@ -7321,13 +7314,11 @@ export default function OrganizationView() {
                       {dependencyCounts.details.child_organizations.map((org: any) => (
                         <div key={org.id} className="px-4 py-2 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
-                            <button
-                              onClick={() => router.push(`/dashboard/organizations/view?id=${org.id}`)}
-                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              <span className="font-medium">{formatRecordId(org.record_number ?? org.id, "organization")}</span>
-                              <span className="ml-2">{org.name}</span>
-                            </button>
+                            <RecordNameResolver
+                              id={org.id}
+                              type="organization"
+                              clickable={true}
+                            />
                           </div>
                         </div>
                       ))}
