@@ -488,30 +488,39 @@ export default function FieldValueRenderer({
       const saveStatus = async (next: string) => {
         setStatusSaving(true);
         try {
-          const token = document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          );
-          const res = await fetch(statusUpdateUrl, {
-            method: statusUpdateMethod,
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
-              customFields: { [statusStorageLabelResolved]: next },
-            }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            throw new Error(
-              (data as { message?: string })?.message || "Failed to update status"
+          const updatePromise = (async () => {
+            const token = document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
             );
-          }
+            const res = await fetch(statusUpdateUrl, {
+              method: statusUpdateMethod,
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({
+                customFields: { [statusStorageLabelResolved]: next },
+              }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              throw new Error(
+                (data as { message?: string })?.message || "Failed to update status"
+              );
+            }
+            return data;
+          })();
+
+          await toast.promise(updatePromise, {
+            loading: "Updating status...",
+            success: "Status updated",
+            error: (err) => err instanceof Error ? err.message : "Update failed",
+          });
+
           setLocalStatusOverride(next);
-          toast.success("Updated");
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Update failed");
+          // Error toast is handled by toast.promise above.
         } finally {
           setStatusSaving(false);
         }

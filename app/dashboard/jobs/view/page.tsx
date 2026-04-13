@@ -1450,6 +1450,7 @@ export default function JobView() {
               allFields={customFieldDefs as any}
               valuesRecord={customObj as any}
               entityType="jobs"
+              recordId={job.id}
             />
           </div>
         </div>
@@ -1550,6 +1551,7 @@ export default function JobView() {
                   allFields={customFieldDefs as any}
                   valuesRecord={job.customFields as any}
                   entityType="jobs"
+                  recordId={job.id}
                 />
               </div>
             </div>
@@ -5611,6 +5613,7 @@ export default function JobView() {
                         emptyPlaceholder="-"
                         clickable
                         entityType="job"
+                        recordId={job?.id}
                         ellipsisInCell
                       />
                     </div>

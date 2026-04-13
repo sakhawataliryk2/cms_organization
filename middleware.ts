@@ -54,7 +54,8 @@ export async function middleware(request: NextRequest) {
   // Helper function to check if URL is an action page (approve/deny) that should be preserved
   const isActionPage = (url: string): boolean => {
     return (url.includes('/transfer/') && (url.includes('/approve') || url.includes('/deny'))) ||
-      (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
+      (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny'))) ||
+      (url.includes('/unarchive/') && (url.includes('/approve') || url.includes('/deny')));
   };
 
   // If the path is public and user is logged in, check for redirect param
