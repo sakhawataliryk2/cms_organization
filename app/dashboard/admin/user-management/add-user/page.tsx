@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
-import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff, FiEdit2 } from 'react-icons/fi';
+import { RefreshCw, X, Pencil } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
+import { isValidUSPhoneNumber } from '@/app/utils/phoneValidation';
 
 interface User {
     id: string;
@@ -54,6 +55,51 @@ interface Team {
     office_id: string;
 }
 
+type DuplicateMatch = { id: string | number; name: string };
+
+function formatPhoneNumber(input: string) {
+    const cleaned = input.replace(/\D/g, '').slice(0, 10);
+    if (cleaned.length >= 6) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    if (cleaned.length >= 3) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
+    if (cleaned.length > 0) return `(${cleaned}`;
+    return '';
+}
+
+function phoneDigitsOnly(input: string | null | undefined): string {
+    return String(input || '').replace(/\D/g, '').slice(0, 10);
+}
+
+function isValidEmail(email: string): boolean {
+    const trimmed = (email || '').trim();
+    if (!trimmed) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+}
+
+function isValidPhone(phone: string): boolean {
+    const trimmed = (phone || '').trim();
+    if (!trimmed) return true;
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.length !== 10) return false;
+    if (!/^\(\d{3}\) \d{3}-\d{4}$/.test(trimmed)) return false;
+    return isValidUSPhoneNumber(trimmed);
+}
+
+function duplicateCacheKey(
+    type: 'email' | 'phone' | 'zoom',
+    excludeId: string,
+    value: string
+): string {
+    return `${type}|ex:${excludeId}|v:${value}`;
+}
+
+function ValidationIndicator({ valid }: { valid: boolean }) {
+    return (
+        <span className={`text-sm font-semibold ${valid ? 'text-green-500' : 'text-red-500'}`} aria-hidden>
+            {valid ? '✔' : '*'}
+        </span>
+    );
+}
+
 export default function UserManagement() {
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
@@ -93,8 +139,8 @@ export default function UserManagement() {
                         firstName: firstName,
                         lastName: lastName,
                         email: user.email || '',
-                        phone: user.phone || '',
-                        phone2: user.phone2 || '',
+                        phone: formatPhoneNumber(user.phone || ''),
+                        phone2: formatPhoneNumber(user.phone2 || ''),
                         zoomExtensionNumber: user.zoom_extension_number
                             ? String(user.zoom_extension_number)
                             : '',
@@ -320,10 +366,10 @@ export default function UserManagement() {
                         className="p-2 rounded hover:bg-gray-200"
                         title="Refresh list"
                     >
-                        <FiRefreshCw size={18} />
+                        <RefreshCw size={18} />
                     </button>
                     <button onClick={handleGoBack} className="p-2 rounded hover:bg-gray-200">
-                        <FiX size={18} />
+                        <X size={18} />
                     </button>
                 </div>
             </div>
@@ -360,7 +406,7 @@ export default function UserManagement() {
                             onClick={handleClearSearch}
                             className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
                         >
-                            <FiX size={16} />
+                            <X size={16} />
                         </button>
                     )}
                 </div>
@@ -451,7 +497,7 @@ export default function UserManagement() {
                                                     className="inline-flex items-center gap-1 px-3 py-1 text-xs rounded border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
                                                     title="Edit user"
                                                 >
-                                                    <FiEdit2 size={14} />
+                                                    <Pencil size={14} />
                                                     Edit
                                                 </button>
                                                 {user.status ? (
@@ -512,22 +558,6 @@ export default function UserManagement() {
     );
 }
 
-const STRONG_PASSWORD_REGEX = {
-    length: /.{8,}/,
-    lower: /[a-z]/,
-    upper: /[A-Z]/,
-    number: /[0-9]/,
-    special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/,
-};
-function validateStrongPassword(p: string): { valid: boolean; message?: string } {
-    if (!p || p.length < 8) return { valid: false, message: 'Password must be at least 8 characters long' };
-    if (!STRONG_PASSWORD_REGEX.lower.test(p)) return { valid: false, message: 'Password must contain at least one lowercase letter' };
-    if (!STRONG_PASSWORD_REGEX.upper.test(p)) return { valid: false, message: 'Password must contain at least one uppercase letter' };
-    if (!STRONG_PASSWORD_REGEX.number.test(p)) return { valid: false, message: 'Password must contain at least one number' };
-    if (!STRONG_PASSWORD_REGEX.special.test(p)) return { valid: false, message: 'Password must contain at least one special character' };
-    return { valid: true };
-}
-
 // Add User Modal Component
 function AddUserModal({
     onClose,
@@ -556,7 +586,6 @@ function AddUserModal({
     });
 
     // Passwords are always auto-generated; manual entry removed.
-    const [passwordMode] = useState<'manual' | 'auto'>('auto');
     const [createdPassword, setCreatedPassword] = useState<string | null>(null);
     const [offices, setOffices] = useState<Office[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
@@ -565,15 +594,30 @@ function AddUserModal({
     const [error, setError] = useState('');
     const [loadingOffices, setLoadingOffices] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(false);
-    const [duplicateWarning, setDuplicateWarning] = useState<{
-        email: { id: string | number; name: string }[];
-        phone: { id: string | number; name: string }[];
-        zoomExtensionNumber: { id: string | number; name: string }[];
-    } | null>(null);
-    const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+    const [emailDupMatches, setEmailDupMatches] = useState<DuplicateMatch[]>([]);
+    const [phoneDupMatches, setPhoneDupMatches] = useState<DuplicateMatch[]>([]);
+    const [zoomDupMatches, setZoomDupMatches] = useState<DuplicateMatch[]>([]);
     const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const emailDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+    const phoneDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+    const zoomDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+
+    const normalizedEmail = useMemo(() => formData.email.trim().toLowerCase(), [formData.email]);
+    const normalizedPhone = useMemo(() => formData.phone.trim(), [formData.phone]);
+    const normalizedPhoneDigits = useMemo(() => normalizedPhone.replace(/\D/g, ''), [normalizedPhone]);
+    const normalizedZoomExt = useMemo(
+        () => formData.zoomExtensionNumber.replace(/\D/g, '').trim(),
+        [formData.zoomExtensionNumber]
+    );
+
+    const isEmailValid = useMemo(() => isValidEmail(normalizedEmail), [normalizedEmail]);
+    const isPhoneValid = useMemo(() => isValidPhone(normalizedPhone), [normalizedPhone]);
+    const isZoomExtValid = useMemo(
+        () => normalizedZoomExt === '' || /^\d+$/.test(normalizedZoomExt),
+        [normalizedZoomExt]
+    );
 
     // Fetch offices and teams on component mount
     useEffect(() => {
@@ -581,107 +625,141 @@ function AddUserModal({
         fetchTeams();
     }, []);
 
-    // Real-time duplicate detection for email / phone / Zoom extension
     useEffect(() => {
-        const controller = new AbortController();
-        const { email, phone, zoomExtensionNumber } = formData;
-        const normEmail = (email || '').trim().toLowerCase();
-        const normPhone = (phone || '').replace(/\D/g, '').trim();
-        const normZoomExt = (zoomExtensionNumber || '').replace(/\D/g, '').trim();
-
-        if (!normEmail && !normPhone && !normZoomExt) {
-            setDuplicateWarning(null);
-            setEmailStatus('idle');
-            setPhoneStatus('idle');
-            setZoomExtStatus('idle');
-            return;
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedEmail || !isEmailValid) {
+            setEmailDupMatches([]);
+            setEmailStatus(normalizedEmail ? 'idle' : 'idle');
+            return () => {
+                isCancelled = true;
+            };
         }
-
-        // Set checking state for fields that have values
-        if (normEmail) setEmailStatus('checking');
-        if (normPhone) setPhoneStatus('checking');
-        if (normZoomExt) setZoomExtStatus('checking');
-
-        const timeout = setTimeout(async () => {
+        const cacheKey = duplicateCacheKey('email', '', normalizedEmail);
+        const cached = emailDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setEmailDupMatches(cached);
+            setEmailStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
             try {
-                setCheckingDuplicates(true);
+                setEmailStatus('checking');
                 const params = new URLSearchParams();
-                if (normEmail) params.set('email', normEmail);
-                if (normPhone) params.set('phone', normPhone);
-                if (normZoomExt) params.set('zoomExtensionNumber', normZoomExt);
-
-                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`, {
-                    method: 'GET',
-                    signal: controller.signal,
-                });
-
-                if (!res.ok) {
-                    setDuplicateWarning(null);
-                    if (normEmail) setEmailStatus('idle');
-                    if (normPhone) setPhoneStatus('idle');
-                    if (normZoomExt) setZoomExtStatus('idle');
-                    return;
-                }
-
+                params.set('email', normalizedEmail);
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
                 const data = await res.json();
-                if (data.success && data.duplicates) {
-                    const {
-                        email: dupEmail = [],
-                        phone: dupPhone = [],
-                        zoomExtensionNumber: dupZoomExt = [],
-                    } = data.duplicates;
-
-                    // Update per-field status
-                    if (normEmail) {
-                        setEmailStatus((dupEmail.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else {
-                        setEmailStatus('idle');
-                    }
-                    if (normPhone) {
-                        setPhoneStatus((dupPhone.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else {
-                        setPhoneStatus('idle');
-                    }
-                    if (normZoomExt) {
-                        setZoomExtStatus((dupZoomExt.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else {
-                        setZoomExtStatus('idle');
-                    }
-
-                    // Store combined warning only when there is at least one duplicate
-                    if (
-                        (dupEmail.length ?? 0) > 0 ||
-                        (dupPhone.length ?? 0) > 0 ||
-                        (dupZoomExt.length ?? 0) > 0
-                    ) {
-                        setDuplicateWarning({
-                            email: dupEmail,
-                            phone: dupPhone,
-                            zoomExtensionNumber: dupZoomExt,
-                        });
-                    } else {
-                        setDuplicateWarning(null);
-                    }
-                } else {
-                    setDuplicateWarning(null);
-                    if (normEmail) setEmailStatus('idle');
-                    if (normPhone) setPhoneStatus('idle');
-                    if (normZoomExt) setZoomExtStatus('idle');
+                if (isCancelled) return;
+                const matches = data.success && data.duplicates ? (data.duplicates.email ?? []) : [];
+                emailDupResponseCache.current.set(cacheKey, matches);
+                setEmailDupMatches(matches);
+                setEmailStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setEmailDupMatches([]);
+                    setEmailStatus('idle');
                 }
-            } catch (err) {
-                if ((err as any).name !== 'AbortError') {
-                    console.error('Error checking user duplicates:', err);
-                }
-            } finally {
-                setCheckingDuplicates(false);
             }
-        }, 500);
-
-        return () => {
-            controller.abort();
-            clearTimeout(timeout);
         };
-    }, [formData.email, formData.phone, formData.zoomExtensionNumber]);
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedEmail, isEmailValid]);
+
+    useEffect(() => {
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedPhoneDigits || !isPhoneValid) {
+            setPhoneDupMatches([]);
+            setPhoneStatus('idle');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const cacheKey = duplicateCacheKey('phone', '', normalizedPhoneDigits);
+        const cached = phoneDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setPhoneDupMatches(cached);
+            setPhoneStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
+            try {
+                setPhoneStatus('checking');
+                const params = new URLSearchParams();
+                params.set('phone', normalizedPhoneDigits);
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
+                const data = await res.json();
+                if (isCancelled) return;
+                const matches = data.success && data.duplicates ? (data.duplicates.phone ?? []) : [];
+                phoneDupResponseCache.current.set(cacheKey, matches);
+                setPhoneDupMatches(matches);
+                setPhoneStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setPhoneDupMatches([]);
+                    setPhoneStatus('idle');
+                }
+            }
+        };
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedPhoneDigits, isPhoneValid]);
+
+    useEffect(() => {
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedZoomExt || !isZoomExtValid) {
+            setZoomDupMatches([]);
+            setZoomExtStatus('idle');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const cacheKey = duplicateCacheKey('zoom', '', normalizedZoomExt);
+        const cached = zoomDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setZoomDupMatches(cached);
+            setZoomExtStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
+            try {
+                setZoomExtStatus('checking');
+                const params = new URLSearchParams();
+                params.set('zoomExtensionNumber', normalizedZoomExt);
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
+                const data = await res.json();
+                if (isCancelled) return;
+                const matches =
+                    data.success && data.duplicates ? (data.duplicates.zoomExtensionNumber ?? []) : [];
+                zoomDupResponseCache.current.set(cacheKey, matches);
+                setZoomDupMatches(matches);
+                setZoomExtStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setZoomDupMatches([]);
+                    setZoomExtStatus('idle');
+                }
+            }
+        };
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedZoomExt, isZoomExtValid]);
 
     // Debug: Log when teams or officeId changes
     useEffect(() => {
@@ -757,11 +835,42 @@ function AddUserModal({
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type, checked } = e.target as HTMLInputElement;
+        let nextValue: string | boolean = type === 'checkbox' ? checked : value;
+        if (name === 'phone' || name === 'phone2') {
+            nextValue = formatPhoneNumber(String(value));
+        }
+        if (name === 'zoomExtensionNumber') {
+            nextValue = String(value).replace(/\D/g, '');
+        }
         setFormData({
             ...formData,
-            [name]: type === 'checkbox' ? checked : value
+            [name]: nextValue
         });
     };
+
+    const isFormValid = useMemo(() => {
+        const requiredFilled =
+            formData.firstName.trim() !== '' &&
+            formData.lastName.trim() !== '' &&
+            formData.officeId.trim() !== '' &&
+            formData.teamId.trim() !== '';
+        if (!requiredFilled) return false;
+        if (!isEmailValid || emailStatus === 'checking' || emailStatus === 'duplicate') return false;
+        if (!isPhoneValid || phoneStatus === 'checking' || phoneStatus === 'duplicate') return false;
+        if (!isZoomExtValid || zoomExtStatus === 'checking' || zoomExtStatus === 'duplicate') return false;
+        return true;
+    }, [
+        formData.firstName,
+        formData.lastName,
+        formData.officeId,
+        formData.teamId,
+        isEmailValid,
+        isPhoneValid,
+        isZoomExtValid,
+        emailStatus,
+        phoneStatus,
+        zoomExtStatus
+    ]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -769,6 +878,14 @@ function AddUserModal({
 
         if (!formData.firstName || !formData.lastName || !formData.email) {
             setError('First name, last name, and email are required');
+            return;
+        }
+        if (!isEmailValid) {
+            setError('Enter a valid email address.');
+            return;
+        }
+        if (!isPhoneValid) {
+            setError('Enter a valid US phone number in format (###) ###-####.');
             return;
         }
         if (emailStatus === 'duplicate' || phoneStatus === 'duplicate' || zoomExtStatus === 'duplicate') {
@@ -784,14 +901,16 @@ function AddUserModal({
 
         try {
             const zoomExtDigits = (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim();
+            const phoneDigits = phoneDigitsOnly(formData.phone);
+            const phone2Digits = phoneDigitsOnly(formData.phone2);
             const body: Record<string, unknown> = {
                 name: `${formData.firstName} ${formData.lastName}`,
                 email: formData.email,
                 userType: formData.userType,
                 officeId: formData.officeId,
                 teamId: formData.teamId,
-                phone: formData.phone,
-                phone2: formData.phone2,
+                phone: phoneDigits || null,
+                phone2: phone2Digits || null,
                 ...(zoomExtDigits ? { zoomExtensionNumber: zoomExtDigits } : {}),
                 title: formData.title,
                 idNumber: formData.idNumber,
@@ -876,7 +995,7 @@ function AddUserModal({
                 <div className="flex justify-between items-center bg-gray-100 p-4 border-b">
                     <h2 className="text-lg font-semibold">Add User</h2>
                     <button onClick={onClose} className="p-1 rounded hover:bg-gray-200">
-                        <FiX size={20} />
+                        <X size={20} />
                     </button>
                 </div>
 
@@ -886,54 +1005,11 @@ function AddUserModal({
                             {error}
                         </div>
                     )}
-                    {duplicateWarning && (
-                        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">
-                            <p className="font-semibold mb-1">
-                                Possible duplicate user(s) detected. Email, phone, and Zoom extension must be unique.
-                            </p>
-                            {(duplicateWarning.email?.length ?? 0) > 0 && (
-                                <div className="mt-1">
-                                    <p className="font-medium">Matching email:</p>
-                                    <ul className="list-disc list-inside">
-                                        {duplicateWarning.email.map((u) => (
-                                            <li key={`dup-email-${u.id}`}>{u.name}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            {(duplicateWarning.phone?.length ?? 0) > 0 && (
-                                <div className="mt-1">
-                                    <p className="font-medium">Matching phone:</p>
-                                    <ul className="list-disc list-inside">
-                                        {duplicateWarning.phone.map((u) => (
-                                            <li key={`dup-phone-${u.id}`}>{u.name}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            {(duplicateWarning.zoomExtensionNumber?.length ?? 0) > 0 && (
-                                <div className="mt-1">
-                                    <p className="font-medium">Matching Zoom extension:</p>
-                                    <ul className="list-disc list-inside">
-                                        {duplicateWarning.zoomExtensionNumber.map((u) => (
-                                            <li key={`dup-zoom-${u.id}`}>{u.name}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            {checkingDuplicates && (
-                                <p className="mt-1 text-xs text-yellow-700">
-                                    Re-checking duplicates...
-                                </p>
-                            )}
-                        </div>
-                    )}
-
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    First Name <span className="text-red-500">*</span>
+                                    First Name <ValidationIndicator valid={formData.firstName.trim() !== ''} />
                                 </label>
                                 <input
                                     type="text"
@@ -947,7 +1023,7 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Last Name <span className="text-red-500">*</span>
+                                    Last Name <ValidationIndicator valid={formData.lastName.trim() !== ''} />
                                 </label>
                                 <input
                                     type="text"
@@ -961,7 +1037,7 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Email <span className="text-red-500">*</span>
+                                    Email <ValidationIndicator valid={isEmailValid} />
                                 </label>
                                 <div className="relative">
                                     <input
@@ -989,6 +1065,23 @@ function AddUserModal({
                                         </Tooltip>
                                     )}
                                 </div>
+                                {emailStatus === 'checking' && isEmailValid && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {!isEmailValid && formData.email.trim() !== '' && (
+                                    <p className="mt-2 text-xs text-red-600">Enter a valid email address.</p>
+                                )}
+                                {emailDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same email:</div>
+                                        <ul className="list-disc list-inside">
+                                            {emailDupMatches.map((u) => (
+                                                <li key={`dup-email-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1001,6 +1094,7 @@ function AddUserModal({
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
+                                        placeholder="(123) 456-7890"
                                         className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                     {phoneStatus === 'ok' && (
@@ -1020,6 +1114,25 @@ function AddUserModal({
                                         </Tooltip>
                                     )}
                                 </div>
+                                {phoneStatus === 'checking' && isPhoneValid && normalizedPhoneDigits !== '' && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {!isPhoneValid && normalizedPhoneDigits !== '' && (
+                                    <p className="mt-2 text-xs text-red-600">
+                                        Invalid phone. Use (###) ###-#### with valid US area/exchange code.
+                                    </p>
+                                )}
+                                {phoneDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same phone number:</div>
+                                        <ul className="list-disc list-inside">
+                                            {phoneDupMatches.map((u) => (
+                                                <li key={`dup-phone-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1070,6 +1183,20 @@ function AddUserModal({
                                         </Tooltip>
                                     )}
                                 </div>
+                                {zoomExtStatus === 'checking' && normalizedZoomExt !== '' && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {zoomDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same Zoom extension:</div>
+                                        <ul className="list-disc list-inside">
+                                            {zoomDupMatches.map((u) => (
+                                                <li key={`dup-zoom-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1087,7 +1214,7 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Office <span className="text-red-500">*</span>
+                                    Office <ValidationIndicator valid={formData.officeId.trim() !== ''} />
                                 </label>
                                 <select
                                     name="officeId"
@@ -1110,7 +1237,7 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Team <span className="text-red-500">*</span>
+                                    Team <ValidationIndicator valid={formData.teamId.trim() !== ''} />
                                 </label>
                                 <select
                                     name="teamId"
@@ -1155,7 +1282,7 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    User Type <span className="text-red-500">*</span>
+                                    User Type <ValidationIndicator valid={formData.userType.trim() !== ''} />
                                 </label>
                                 <select
                                     name="userType"
@@ -1209,8 +1336,8 @@ function AddUserModal({
                             </button>
                             <button
                                 type="submit"
-                                className="px-4 py-2 text-white bg-blue-500 hover:bg-blue-600 rounded-md flex items-center"
-                                disabled={loading}
+                                className="px-4 py-2 text-white bg-blue-500 hover:bg-blue-600 rounded-md flex items-center disabled:opacity-60 disabled:cursor-not-allowed"
+                                disabled={loading || !isFormValid}
                             >
                                 {loading ? (
                                     <>
@@ -1243,8 +1370,8 @@ function EditUserModal({
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        phone: user.phone,
-        phone2: user.phone2 || '',
+        phone: formatPhoneNumber(user.phone),
+        phone2: formatPhoneNumber(user.phone2 || ''),
         zoomExtensionNumber: user.zoomExtensionNumber || '',
         title: user.title || '',
         officeId: user.officeId || '',
@@ -1261,15 +1388,30 @@ function EditUserModal({
     const [error, setError] = useState('');
     const [loadingOffices, setLoadingOffices] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(false);
-    const [duplicateWarning, setDuplicateWarning] = useState<{
-        email: { id: string | number; name: string }[];
-        phone: { id: string | number; name: string }[];
-        zoomExtensionNumber: { id: string | number; name: string }[];
-    } | null>(null);
-    const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+    const [emailDupMatches, setEmailDupMatches] = useState<DuplicateMatch[]>([]);
+    const [phoneDupMatches, setPhoneDupMatches] = useState<DuplicateMatch[]>([]);
+    const [zoomDupMatches, setZoomDupMatches] = useState<DuplicateMatch[]>([]);
     const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const emailDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+    const phoneDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+    const zoomDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
+
+    const normalizedEmail = useMemo(() => formData.email.trim().toLowerCase(), [formData.email]);
+    const normalizedPhone = useMemo(() => formData.phone.trim(), [formData.phone]);
+    const normalizedPhoneDigits = useMemo(() => normalizedPhone.replace(/\D/g, ''), [normalizedPhone]);
+    const normalizedZoomExt = useMemo(
+        () => formData.zoomExtensionNumber.replace(/\D/g, '').trim(),
+        [formData.zoomExtensionNumber]
+    );
+
+    const isEmailValid = useMemo(() => isValidEmail(normalizedEmail), [normalizedEmail]);
+    const isPhoneValid = useMemo(() => isValidPhone(normalizedPhone), [normalizedPhone]);
+    const isZoomExtValid = useMemo(
+        () => normalizedZoomExt === '' || /^\d+$/.test(normalizedZoomExt),
+        [normalizedZoomExt]
+    );
 
     useEffect(() => {
         const load = async () => {
@@ -1319,95 +1461,143 @@ function EditUserModal({
     }, [formData.officeId, formData.teamId, teams]);
 
     useEffect(() => {
-        const controller = new AbortController();
-        const { email, phone, zoomExtensionNumber } = formData;
-        const normEmail = (email || '').trim().toLowerCase();
-        const normPhone = (phone || '').replace(/\D/g, '').trim();
-        const normZoomExt = (zoomExtensionNumber || '').replace(/\D/g, '').trim();
-
-        if (!normEmail && !normPhone && !normZoomExt) {
-            setDuplicateWarning(null);
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedEmail || !isEmailValid) {
+            setEmailDupMatches([]);
             setEmailStatus('idle');
-            setPhoneStatus('idle');
-            setZoomExtStatus('idle');
-            return;
+            return () => {
+                isCancelled = true;
+            };
         }
-
-        if (normEmail) setEmailStatus('checking');
-        if (normPhone) setPhoneStatus('checking');
-        if (normZoomExt) setZoomExtStatus('checking');
-
-        const timeout = setTimeout(async () => {
+        const cacheKey = duplicateCacheKey('email', String(user.id), normalizedEmail);
+        const cached = emailDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setEmailDupMatches(cached);
+            setEmailStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
             try {
-                setCheckingDuplicates(true);
+                setEmailStatus('checking');
                 const params = new URLSearchParams();
-                if (normEmail) params.set('email', normEmail);
-                if (normPhone) params.set('phone', normPhone);
-                if (normZoomExt) params.set('zoomExtensionNumber', normZoomExt);
-                params.set('excludeId', user.id);
-
-                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`, {
-                    method: 'GET',
-                    signal: controller.signal,
-                });
-
-                if (!res.ok) {
-                    setDuplicateWarning(null);
-                    if (normEmail) setEmailStatus('idle');
-                    if (normPhone) setPhoneStatus('idle');
-                    if (normZoomExt) setZoomExtStatus('idle');
-                    return;
-                }
-
+                params.set('email', normalizedEmail);
+                params.set('excludeId', String(user.id));
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
                 const data = await res.json();
-                if (data.success && data.duplicates) {
-                    const {
-                        email: dupEmail = [],
-                        phone: dupPhone = [],
-                        zoomExtensionNumber: dupZoomExt = [],
-                    } = data.duplicates;
-
-                    if (normEmail) {
-                        setEmailStatus((dupEmail.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else setEmailStatus('idle');
-                    if (normPhone) {
-                        setPhoneStatus((dupPhone.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else setPhoneStatus('idle');
-                    if (normZoomExt) {
-                        setZoomExtStatus((dupZoomExt.length ?? 0) > 0 ? 'duplicate' : 'ok');
-                    } else setZoomExtStatus('idle');
-
-                    if (
-                        (dupEmail.length ?? 0) > 0 ||
-                        (dupPhone.length ?? 0) > 0 ||
-                        (dupZoomExt.length ?? 0) > 0
-                    ) {
-                        setDuplicateWarning({
-                            email: dupEmail,
-                            phone: dupPhone,
-                            zoomExtensionNumber: dupZoomExt,
-                        });
-                    } else setDuplicateWarning(null);
-                } else {
-                    setDuplicateWarning(null);
-                    if (normEmail) setEmailStatus('idle');
-                    if (normPhone) setPhoneStatus('idle');
-                    if (normZoomExt) setZoomExtStatus('idle');
+                if (isCancelled) return;
+                const matches = data.success && data.duplicates ? (data.duplicates.email ?? []) : [];
+                emailDupResponseCache.current.set(cacheKey, matches);
+                setEmailDupMatches(matches);
+                setEmailStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setEmailDupMatches([]);
+                    setEmailStatus('idle');
                 }
-            } catch (err) {
-                if ((err as Error).name !== 'AbortError') {
-                    console.error('Error checking user duplicates:', err);
-                }
-            } finally {
-                setCheckingDuplicates(false);
             }
-        }, 500);
-
-        return () => {
-            controller.abort();
-            clearTimeout(timeout);
         };
-    }, [formData.email, formData.phone, formData.zoomExtensionNumber, user.id]);
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedEmail, isEmailValid, user.id]);
+
+    useEffect(() => {
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedPhoneDigits || !isPhoneValid) {
+            setPhoneDupMatches([]);
+            setPhoneStatus('idle');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const cacheKey = duplicateCacheKey('phone', String(user.id), normalizedPhoneDigits);
+        const cached = phoneDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setPhoneDupMatches(cached);
+            setPhoneStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
+            try {
+                setPhoneStatus('checking');
+                const params = new URLSearchParams();
+                params.set('phone', normalizedPhoneDigits);
+                params.set('excludeId', String(user.id));
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
+                const data = await res.json();
+                if (isCancelled) return;
+                const matches = data.success && data.duplicates ? (data.duplicates.phone ?? []) : [];
+                phoneDupResponseCache.current.set(cacheKey, matches);
+                setPhoneDupMatches(matches);
+                setPhoneStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setPhoneDupMatches([]);
+                    setPhoneStatus('idle');
+                }
+            }
+        };
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedPhoneDigits, isPhoneValid, user.id]);
+
+    useEffect(() => {
+        let timeoutId: number | undefined;
+        let isCancelled = false;
+        if (!normalizedZoomExt || !isZoomExtValid) {
+            setZoomDupMatches([]);
+            setZoomExtStatus('idle');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const cacheKey = duplicateCacheKey('zoom', String(user.id), normalizedZoomExt);
+        const cached = zoomDupResponseCache.current.get(cacheKey);
+        if (cached) {
+            setZoomDupMatches(cached);
+            setZoomExtStatus(cached.length > 0 ? 'duplicate' : 'ok');
+            return () => {
+                isCancelled = true;
+            };
+        }
+        const runCheck = async () => {
+            try {
+                setZoomExtStatus('checking');
+                const params = new URLSearchParams();
+                params.set('zoomExtensionNumber', normalizedZoomExt);
+                params.set('excludeId', String(user.id));
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`);
+                const data = await res.json();
+                if (isCancelled) return;
+                const matches =
+                    data.success && data.duplicates ? (data.duplicates.zoomExtensionNumber ?? []) : [];
+                zoomDupResponseCache.current.set(cacheKey, matches);
+                setZoomDupMatches(matches);
+                setZoomExtStatus(matches.length > 0 ? 'duplicate' : 'ok');
+            } catch {
+                if (!isCancelled) {
+                    setZoomDupMatches([]);
+                    setZoomExtStatus('idle');
+                }
+            }
+        };
+        timeoutId = window.setTimeout(runCheck, 600);
+        return () => {
+            isCancelled = true;
+            if (timeoutId) window.clearTimeout(timeoutId);
+        };
+    }, [normalizedZoomExt, isZoomExtValid, user.id]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target as HTMLInputElement;
@@ -1415,11 +1605,44 @@ function EditUserModal({
             const checked = (e.target as HTMLInputElement).checked;
             setFormData((prev) => ({ ...prev, [name]: checked }));
         } else {
-            setFormData((prev) => ({ ...prev, [name]: value }));
+            let nextValue = value;
+            if (name === 'phone' || name === 'phone2') {
+                nextValue = formatPhoneNumber(value);
+            }
+            if (name === 'zoomExtensionNumber') {
+                nextValue = value.replace(/\D/g, '');
+            }
+            setFormData((prev) => ({ ...prev, [name]: nextValue }));
         }
     };
 
     const officeTeamRequired = ['recruiter', 'candidate'].includes(formData.userType);
+    const isFormValid = useMemo(() => {
+        const requiredIdentity =
+            formData.firstName.trim() !== '' &&
+            formData.lastName.trim() !== '' &&
+            formData.userType.trim() !== '' &&
+            isEmailValid;
+        if (!requiredIdentity) return false;
+        if (!isPhoneValid || !isZoomExtValid) return false;
+        if (officeTeamRequired && (!formData.officeId.trim() || !formData.teamId.trim())) return false;
+        if (emailStatus === 'checking' || phoneStatus === 'checking' || zoomExtStatus === 'checking') return false;
+        if (emailStatus === 'duplicate' || phoneStatus === 'duplicate' || zoomExtStatus === 'duplicate') return false;
+        return true;
+    }, [
+        formData.firstName,
+        formData.lastName,
+        formData.userType,
+        formData.officeId,
+        formData.teamId,
+        officeTeamRequired,
+        isEmailValid,
+        isPhoneValid,
+        isZoomExtValid,
+        emailStatus,
+        phoneStatus,
+        zoomExtStatus
+    ]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1427,6 +1650,14 @@ function EditUserModal({
 
         if (!formData.firstName || !formData.lastName || !formData.email) {
             setError('First name, last name, and email are required');
+            return;
+        }
+        if (!isEmailValid) {
+            setError('Enter a valid email address.');
+            return;
+        }
+        if (!isPhoneValid) {
+            setError('Enter a valid US phone number in format (###) ###-####.');
             return;
         }
         if (emailStatus === 'duplicate' || phoneStatus === 'duplicate' || zoomExtStatus === 'duplicate') {
@@ -1441,11 +1672,13 @@ function EditUserModal({
         setLoading(true);
         try {
             const zoomExtDigits = (formData.zoomExtensionNumber || '').replace(/\D/g, '').trim();
+            const phoneDigits = phoneDigitsOnly(formData.phone);
+            const phone2Digits = phoneDigitsOnly(formData.phone2);
             const body = {
                 name: `${formData.firstName} ${formData.lastName}`.trim(),
                 email: formData.email,
-                phone: formData.phone || null,
-                phone2: formData.phone2 || null,
+                phone: phoneDigits || null,
+                phone2: phone2Digits || null,
                 title: formData.title || null,
                 idNumber: formData.idNumber || null,
                 officeId: formData.officeId || null,
@@ -1480,7 +1713,7 @@ function EditUserModal({
                 <div className="flex justify-between items-center bg-gray-100 p-4 border-b shrink-0">
                     <h2 className="text-lg font-semibold">Edit User</h2>
                     <button type="button" onClick={onClose} className="p-1 rounded hover:bg-gray-200">
-                        <FiX size={20} />
+                        <X size={20} />
                     </button>
                 </div>
 
@@ -1490,43 +1723,11 @@ function EditUserModal({
                             {error}
                         </div>
                     )}
-                    {duplicateWarning && (
-                        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">
-                            <p className="font-semibold mb-1">
-                                Possible duplicate user(s) detected (excluding this user).
-                            </p>
-                            {(duplicateWarning.email?.length ?? 0) > 0 && (
-                                <ul className="list-disc list-inside">
-                                    {duplicateWarning.email.map((u) => (
-                                        <li key={`e-${u.id}`}>{u.name} (email)</li>
-                                    ))}
-                                </ul>
-                            )}
-                            {(duplicateWarning.phone?.length ?? 0) > 0 && (
-                                <ul className="list-disc list-inside">
-                                    {duplicateWarning.phone.map((u) => (
-                                        <li key={`p-${u.id}`}>{u.name} (phone)</li>
-                                    ))}
-                                </ul>
-                            )}
-                            {(duplicateWarning.zoomExtensionNumber?.length ?? 0) > 0 && (
-                                <ul className="list-disc list-inside">
-                                    {duplicateWarning.zoomExtensionNumber.map((u) => (
-                                        <li key={`z-${u.id}`}>{u.name} (Zoom ext.)</li>
-                                    ))}
-                                </ul>
-                            )}
-                            {checkingDuplicates && (
-                                <p className="mt-1 text-xs text-yellow-700">Re-checking…</p>
-                            )}
-                        </div>
-                    )}
-
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    First Name <span className="text-red-500">*</span>
+                                    First Name <ValidationIndicator valid={formData.firstName.trim() !== ''} />
                                 </label>
                                 <input
                                     type="text"
@@ -1539,7 +1740,7 @@ function EditUserModal({
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Last Name <span className="text-red-500">*</span>
+                                    Last Name <ValidationIndicator valid={formData.lastName.trim() !== ''} />
                                 </label>
                                 <input
                                     type="text"
@@ -1553,7 +1754,7 @@ function EditUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Email <span className="text-red-500">*</span>
+                                    Email <ValidationIndicator valid={isEmailValid} />
                                 </label>
                                 <div className="relative">
                                     <input
@@ -1575,6 +1776,23 @@ function EditUserModal({
                                         </span>
                                     )}
                                 </div>
+                                {emailStatus === 'checking' && isEmailValid && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {!isEmailValid && formData.email.trim() !== '' && (
+                                    <p className="mt-2 text-xs text-red-600">Enter a valid email address.</p>
+                                )}
+                                {emailDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same email:</div>
+                                        <ul className="list-disc list-inside">
+                                            {emailDupMatches.map((u) => (
+                                                <li key={`e-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1585,6 +1803,7 @@ function EditUserModal({
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
+                                        placeholder="(123) 456-7890"
                                         className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                     {phoneStatus === 'ok' && (
@@ -1598,6 +1817,25 @@ function EditUserModal({
                                         </span>
                                     )}
                                 </div>
+                                {phoneStatus === 'checking' && isPhoneValid && normalizedPhoneDigits !== '' && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {!isPhoneValid && normalizedPhoneDigits !== '' && (
+                                    <p className="mt-2 text-xs text-red-600">
+                                        Invalid phone. Use (###) ###-#### with valid US area/exchange code.
+                                    </p>
+                                )}
+                                {phoneDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same phone number:</div>
+                                        <ul className="list-disc list-inside">
+                                            {phoneDupMatches.map((u) => (
+                                                <li key={`p-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1637,6 +1875,20 @@ function EditUserModal({
                                         </span>
                                     )}
                                 </div>
+                                {zoomExtStatus === 'checking' && normalizedZoomExt !== '' && (
+                                    <p className="mt-2 text-xs text-gray-500">Checking for duplicates…</p>
+                                )}
+                                {zoomDupMatches.length > 0 && (
+                                    <div className="mt-2 p-3 border border-yellow-300 bg-yellow-50 rounded text-xs text-yellow-900">
+                                        <div className="font-semibold mb-1">Possible duplicate user(s) detected</div>
+                                        <div className="font-medium">Same Zoom extension:</div>
+                                        <ul className="list-disc list-inside">
+                                            {zoomDupMatches.map((u) => (
+                                                <li key={`z-${u.id}`}>{u.name}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
 
                             <div>
@@ -1652,7 +1904,7 @@ function EditUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Office {officeTeamRequired && <span className="text-red-500">*</span>}
+                                    Office {officeTeamRequired && <ValidationIndicator valid={formData.officeId.trim() !== ''} />}
                                 </label>
                                 <select
                                     name="officeId"
@@ -1675,7 +1927,7 @@ function EditUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Team {officeTeamRequired && <span className="text-red-500">*</span>}
+                                    Team {officeTeamRequired && <ValidationIndicator valid={formData.teamId.trim() !== ''} />}
                                 </label>
                                 <select
                                     name="teamId"
@@ -1725,7 +1977,7 @@ function EditUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    User type <span className="text-red-500">*</span>
+                                    User type <ValidationIndicator valid={formData.userType.trim() !== ''} />
                                 </label>
                                 <select
                                     name="userType"
@@ -1772,10 +2024,18 @@ function EditUserModal({
                             </button>
                             <button
                                 type="submit"
-                                disabled={loading}
-                                className="px-4 py-2 text-white bg-blue-500 hover:bg-blue-600 rounded-md disabled:opacity-60"
+                                disabled={loading || !isFormValid}
+                                className="px-4 py-2 text-white bg-blue-500 hover:bg-blue-600 rounded-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center"
                             >
-                                {loading ? 'Saving…' : 'Save changes'}
+                                {loading ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Saving...
+                                    </>
+                                ) : 'Save changes'}
                             </button>
                         </div>
                     </form>
