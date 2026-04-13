@@ -3277,14 +3277,13 @@ export default function OrganizationView() {
       );
     }
     if (panelId === "websiteJobs") {
-      const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
       const websiteUrl = organization?.website;
       const hasValidWebsite = websiteUrl && websiteUrl !== "https://example.com";
 
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
-            title="Open Jobs from Website:"
+            title="Jobs from Website:"
             onEdit={() => {
               setIsEditingWebsiteUrl(true);
               setTempWebsiteUrl(organization?.website || "");
@@ -3372,18 +3371,18 @@ export default function OrganizationView() {
       );
     }
     if (panelId === "ourJobs") {
-      const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
+      const activeJobs = jobs.filter((j: any) => !j.archived_at);
       return (
         <SortablePanel key={panelId} id={panelId}>
-          <PanelWithHeader title="Our Open Jobs:">
+          <PanelWithHeader title="Our Jobs:">
             <div className="border border-gray-200 rounded">
               {isLoadingJobs ? (
                 <div className="flex justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
                 </div>
-              ) : openJobs.length > 0 ? (
+              ) : activeJobs.length > 0 ? (
                 <div className="divide-y divide-gray-200">
-                  {openJobs.slice(0, 5).map((job: any) => (
+                  {activeJobs.slice(0, 5).map((job: any) => (
                     <div
                       key={job.id}
                       className="p-3 hover:bg-gray-50 cursor-pointer"
@@ -3395,18 +3394,18 @@ export default function OrganizationView() {
                       <div className="text-xs text-gray-500">{job.worksite_location || job.category || ""}</div>
                     </div>
                   ))}
-                  {openJobs.length > 5 && (
+                  {activeJobs.length > 5 && (
                     <button
                       onClick={() => setActiveTab("jobs")}
                       className="w-full p-2 text-blue-500 text-sm hover:underline"
                     >
-                      View all {openJobs.length} jobs
+                      View all {activeJobs.length} jobs
                     </button>
                   )}
                 </div>
               ) : (
                 <div className="p-2">
-                  <p className="text-gray-500 italic">No open jobs</p>
+                  <p className="text-gray-500 italic">No jobs found</p>
                 </div>
               )}
             </div>

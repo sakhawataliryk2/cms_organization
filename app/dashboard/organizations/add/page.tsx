@@ -12,6 +12,7 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
+import { normalizeDateInputToIso } from "@/lib/dateNormalize";
 
 
 interface CustomFieldDefinition {
@@ -336,9 +337,11 @@ export default function AddOrganization() {
             // Contract fields
             "Contract Signed on File": org.contract_on_file || "No",
             "Contract Signed By": org.contract_signed_by || "",
-            "Date Contract Signed": org.date_contract_signed
-              ? org.date_contract_signed.split("T")[0]
-              : "",
+            "Date Contract Signed": (() => {
+              if (!org.date_contract_signed) return "";
+              const base = String(org.date_contract_signed).trim().split("T")[0];
+              return normalizeDateInputToIso(base) ?? base;
+            })(),
             // Year founded
             "Year Founded": org.year_founded || "",
             // Overview

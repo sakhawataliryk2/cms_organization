@@ -10,6 +10,11 @@ import {
   resolveInitialValueFromDefinition,
   resolveSentinelForSubmission,
 } from "@/lib/custom-field-auto-defaults";
+import {
+  formatPartsToDisplayMMDDYYYY,
+  normalizeDateInputToIso,
+  parseFlexibleDateStringToParts,
+} from "@/lib/dateNormalize";
 
 interface CustomFieldDefinition {
   id: string;
@@ -247,15 +252,8 @@ export default function CustomFieldRenderer({
   const formatDateToMMDDYYYY = React.useCallback((dateStr: string): string => {
     if (!dateStr || dateStr.trim() === "") return "";
     try {
-      // Check if it's already in mm/dd/yyyy format
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-        return dateStr;
-      }
-      // Convert from YYYY-MM-DD to mm/dd/yyyy
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        const [year, month, day] = dateStr.split("-");
-        return `${month}/${day}/${year}`;
-      }
+      const parts = parseFlexibleDateStringToParts(dateStr);
+      if (parts) return formatPartsToDisplayMMDDYYYY(parts);
       return dateStr;
     } catch {
       return dateStr;
@@ -266,16 +264,8 @@ export default function CustomFieldRenderer({
   const formatDateToYYYYMMDD = React.useCallback((dateStr: string): string => {
     if (!dateStr || dateStr.trim() === "") return "";
     try {
-      // Check if it's already in YYYY-MM-DD format
-      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        return dateStr;
-      }
-      // Convert from mm/dd/yyyy to YYYY-MM-DD
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-        const [month, day, year] = dateStr.split("/");
-        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-      }
-      return dateStr;
+      const iso = normalizeDateInputToIso(dateStr);
+      return iso ?? dateStr;
     } catch {
       return dateStr;
     }
@@ -1258,24 +1248,42 @@ export default function CustomFieldRenderer({
       const [currentMonth, setCurrentMonth] = React.useState(new Date());
       const calendarRef = React.useRef<HTMLDivElement>(null);
 
-      // Parse current value to Date object
+      // Parse current value to Date object (avoid `new Date("1/6/69")` → invalid → today)
       const getCurrentDate = React.useMemo(() => {
         if (!value || value === "") {
           return new Date();
         }
         try {
-          let dateStr = String(value);
-          // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
-          if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-            const [month, day, year] = dateStr.split("/");
-            dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+          const parts = parseFlexibleDateStringToParts(String(value));
+          if (parts) {
+            return new Date(parts.y, parts.m - 1, parts.d);
           }
-          const date = new Date(dateStr);
-          return isNaN(date.getTime()) ? new Date() : date;
+          return new Date();
         } catch {
           return new Date();
         }
       }, [value]);
+
+      // One-shot: coerce imported / legacy M/D/YY strings to ISO in form state
+      React.useEffect(() => {
+        if (readOnly || isDisabledByDependency) return;
+        const v = String(value ?? "").trim();
+        if (!v) return;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+        const iso = normalizeDateInputToIso(v);
+        if (!iso) return;
+        const completeAlt =
+          /^\d{1,2}\/\d{1,2}\/\d{2}$/.test(v) ||
+          /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v);
+        if (!completeAlt || v === iso) return;
+        onChange(field.field_name, iso);
+      }, [
+        value,
+        readOnly,
+        isDisabledByDependency,
+        field.field_name,
+        onChange,
+      ]);
 
       // Format date value for display (mm/dd/yyyy)
       const displayValue = React.useMemo(() => {
@@ -1876,19 +1884,14 @@ export function isCustomFieldValueValid(field: CustomFieldDefinition, value: any
       return true;
     }
 
-    let dateToValidate = trimmed;
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-      const [month, day, year] = trimmed.split("/");
-      dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateToValidate)) return false;
-    const date = new Date(dateToValidate);
+    const parts = parseFlexibleDateStringToParts(trimmed);
+    if (!parts) return false;
+    const date = new Date(parts.y, parts.m - 1, parts.d);
     if (isNaN(date.getTime())) return false;
-    const [year, month, day] = dateToValidate.split("-");
     if (
-      date.getUTCFullYear() !== parseInt(year) ||
-      date.getUTCMonth() + 1 !== parseInt(month) ||
-      date.getUTCDate() !== parseInt(day)
+      date.getFullYear() !== parts.y ||
+      date.getMonth() !== parts.m - 1 ||
+      date.getDate() !== parts.d
     )
       return false;
     return true;
