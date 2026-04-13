@@ -6,12 +6,13 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useMultipleAdd } from "@/contexts/MultipleAddContext";
-import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import AddressGroupRenderer, {
+  getAddressFields,
+} from "@/components/AddressGroupRenderer";
 
 // Define field type for typesafety
 interface FormField {
@@ -19,14 +20,14 @@ interface FormField {
   name: string;
   label: string;
   type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number";
+  | "text"
+  | "email"
+  | "tel"
+  | "date"
+  | "select"
+  | "textarea"
+  | "file"
+  | "number";
   required: boolean;
   visible: boolean;
   options?: string[]; // For select fields
@@ -88,6 +89,20 @@ export default function AddLead() {
   } = useCustomFields("leads", { applyAutoCurrentDefaults: !leadId });
 
   const { isMultipleAddMode } = useMultipleAdd();
+
+  const sortedCustomFields = useMemo(
+    () => [...customFields].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [customFields]
+  );
+
+  const addressFields = useMemo(
+    () => getAddressFields(customFields as any, "leads"),
+    [customFields]
+  );
+  const addressAnchorId = useMemo(
+    () => (addressFields.length ? addressFields[0].id : null),
+    [addressFields]
+  );
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -212,52 +227,6 @@ export default function AddLead() {
     setCustomFieldValues,
   ]);
 
-  // Auto-populate Field_8 (Owner) with logged-in user's name
-  useEffect(() => {
-    // Wait for customFields to load
-    if (customFieldsLoading || customFields.length === 0) return;
-
-    // Find Field_8 specifically
-    const ownerField = customFields.find(
-      (f) =>
-        f.field_name === "Field_8" ||
-        f.field_name === "field_8" ||
-        f.field_name?.toLowerCase() === "field_8"
-    );
-
-    if (ownerField) {
-      const currentValue = customFieldValues[ownerField.field_name];
-      // Only auto-populate if field is empty (works in both create and edit mode)
-      if (!currentValue || currentValue.trim() === "") {
-        try {
-          const userDataStr = getCookie("user");
-          if (userDataStr) {
-            const userData = JSON.parse(userDataStr as string);
-            if (userData.name) {
-              setCustomFieldValues((prev) => ({
-                ...prev,
-                [ownerField.field_name]: userData.name,
-              }));
-              console.log(
-                "Auto-populated Field_8 (Owner) with current user:",
-                userData.name
-              );
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
-        }
-      }
-    }
-  }, [
-    customFields,
-    customFieldsLoading,
-    customFieldValues,
-    setCustomFieldValues,
-  ]);
-
-  // Removed fetchCustomFields - now using useCustomFields hook
-
   const fetchLead = async (id: string) => {
     setIsLoading(true);
     setError(null);
@@ -312,7 +281,7 @@ export default function AddLead() {
 
       // Map custom fields: first from existing custom_fields, then from standard fields (same pattern as jobs)
       const mappedCustomFieldValues: Record<string, any> = {};
-      
+
       // First, map any existing custom field values from the database
       if (customFields.length > 0 && Object.keys(existingCustomFieldValues).length > 0) {
         customFields.forEach((field) => {
@@ -384,47 +353,6 @@ export default function AddLead() {
       [name]: value,
     }));
   };
-
-  // Removed handleCustomFieldChange - now using handleCustomFieldChange from useCustomFields hook
-
-  // const validateForm = () => {
-    
-  //   if (!formData.firstName.trim()) {
-  //     setError("First name is required");
-  //     return false;
-  //   }
-  //   if (!formData.lastName.trim()) {
-  //     setError("Last name is required");
-  //     return false;
-  //   }
-  //   if (!formData.email.trim()) {
-  //     setError("Email is required");
-  //     return false;
-  //   }
-
-    
-  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  //   if (!emailRegex.test(formData.email)) {
-  //     setError("Invalid email format");
-  //     return false;
-  //   }
-
-    
-  //   if (formData.email2 && !emailRegex.test(formData.email2)) {
-  //     setError("Invalid format for second email");
-  //     return false;
-  //   }
-
-    
-  //   for (const field of customFields) {
-  //     if (field.required && !field.value.trim()) {
-  //       setError(`${field.label} is required`);
-  //       return false;
-  //     }
-  //   }
-
-  //   return true;
-  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -639,405 +567,104 @@ export default function AddLead() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            
-            {/* <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">First Name:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  name="firstName"
-                  value={formData.firstName}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  required
-                />
-                <span className="absolute text-red-500 left-[-10px] top-2">
-                  *
-                </span>
-              </div>
-            </div> */}
+            {/* Custom Fields Section */}
+            {customFields.length > 0 && (
+              <div className="mt-8">
+                {sortedCustomFields.map((field) => {
+                  // Don't render hidden fields
+                  if (field.is_hidden) return null;
 
-            
-            {/* <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Last Name:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  name="lastName"
-                  value={formData.lastName}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  required
-                />
-                <span className="absolute text-red-500 left-[-10px] top-2">
-                  *
-                </span>
-              </div>
-            </div>
+                  if (
+                    addressFields.length > 0 &&
+                    addressAnchorId &&
+                    field.id === addressAnchorId
+                  ) {
+                    return (
+                      <div
+                        key="address-group"
+                        className="flex items-start mb-3"
+                      >
+                        <label className="w-48 font-medium flex items-center mt-4">
+                          Address:
+                        </label>
 
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Status:</label>
-              <div className="flex-1 relative">
-                <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                  required
-                >
-                  <option value="New Lead">New Lead</option>
-                  <option value="Contacted">Contacted</option>
-                  <option value="Qualified">Qualified</option>
-                  <option value="Converted">Converted</option>
-                  <option value="Dead">Dead</option>
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                  <svg
-                    className="fill-current h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                  </svg>
-                </div>
-                <span className="absolute text-red-500 left-[-10px] top-2">
-                  *
-                </span>
-              </div>
-            </div>
+                        <div className="flex-1">
+                          <AddressGroupRenderer
+                            fields={addressFields}
+                            values={customFieldValues}
+                            onChange={handleCustomFieldChange}
+                            isEditMode={isEditMode}
+                            entityType="leads"
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
 
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Nickname:</label>
-              <input
-                type="text"
-                name="nickname"
-                value={formData.nickname}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+                  const addressFieldIds = addressFields.map((f) => f.id);
+                  if (addressFieldIds.includes(field.id)) {
+                    return null;
+                  }
 
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Title:</label>
-              <input
-                type="text"
-                name="title"
-                value={formData.title}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+                  const fieldValue = customFieldValues[field.field_name] || "";
 
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Organization:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  name="organizationId"
-                  value={formData.organizationId}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  placeholder="Organization name or ID"
-                />
-                <button type="button" className="absolute right-2 top-2">
-                  <Image
-                    src="/search.svg"
-                    alt="Search"
-                    width={16}
-                    height={16}
-                  />
-                </button>
-              </div>
-            </div>
+                  return (
+                    <div key={field.id} className="flex items-center gap-4 mb-3">
+                      <label className="w-48 font-medium flex items-center">
+                        {field.field_label}:
+                      </label>
 
-           
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Department:</label>
-              <div className="flex-1 relative">
-                <select
-                  name="department"
-                  value={formData.department}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                >
-                  <option value="Accounting">Accounting</option>
-                  <option value="IT">IT</option>
-                  <option value="HR">HR</option>
-                  <option value="Finance">Finance</option>
-                  <option value="Sales">Sales</option>
-                  <option value="Marketing">Marketing</option>
-                  <option value="Operations">Operations</option>
-                  <option value="Legal">Legal</option>
-                  <option value="Customer Service">Customer Service</option>
-                  <option value="R&D">R&D</option>
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                  <svg
-                    className="fill-current h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Reports to:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  name="reportsTo"
-                  value={formData.reportsTo}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                />
-                <button type="button" className="absolute right-2 top-2">
-                  <Image
-                    src="/search.svg"
-                    alt="Search"
-                    width={16}
-                    height={16}
-                  />
-                </button>
-              </div>
-            </div>
-
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Owner:</label>
-              <div className="flex-1 relative">
-                <select
-                  name="owner"
-                  value={formData.owner}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                >
-                  <option value="">Select Owner</option>
-                  {activeUsers.map((user) => (
-                    <option key={user.id} value={user.name}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                  <svg
-                    className="fill-current h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            
-            <div className="flex items-center gap-4">
-              <label className="w-48 font-medium">Secondary Owners:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  name="secondaryOwners"
-                  value={formData.secondaryOwners}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                />
-                <button type="button" className="absolute right-2 top-2">
-                  <Image
-                    src="/search.svg"
-                    alt="Search"
-                    width={16}
-                    height={16}
-                  />
-                </button>
-              </div>
-            </div> */}
-          </div>
-
-          {/* Contact Information Section */}
-          {/* <div className="mt-8">
-            <div className="bg-gray-100 p-2 mb-4">
-              <h2 className="font-medium flex items-center">
-                <Image
-                  src="/file.svg"
-                  alt="Contact"
-                  width={16}
-                  height={16}
-                  className="mr-2"
-                />
-                Contact Information
-              </h2>
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Email 1:</label>
-              <div className="flex-1 relative">
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  required
-                />
-                <span className="absolute text-red-500 left-[-10px] top-2">
-                  *
-                </span>
-              </div>
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Email 2:</label>
-              <input
-                type="email"
-                name="email2"
-                value={formData.email2}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Phone:</label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="(123) 456-7890"
-              />
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Mobile Phone:</label>
-              <input
-                type="tel"
-                name="mobilePhone"
-                value={formData.mobilePhone}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="(123) 456-7890"
-              />
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Direct Line:</label>
-              <input
-                type="tel"
-                name="directLine"
-                value={formData.directLine}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="(123) 456-7890"
-              />
-            </div>
-
-            
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">LinkedIn URL:</label>
-              <input
-                type="url"
-                name="linkedinUrl"
-                value={formData.linkedinUrl}
-                onChange={handleChange}
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="https://linkedin.com/in/username"
-              />
-            </div>
-
-           
-            <div className="flex items-center mt-4">
-              <label className="w-48 font-medium">Address:</label>
-              <textarea
-                name="address"
-                value={formData.address}
-                onChange={handleChange}
-                className="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                rows={3}
-                placeholder="Street address, City, State, ZIP"
-              />
-            </div>
-          </div> */}
-
-          {/* Custom Fields Section */}
-          {customFields.length > 0 && (
-            <div className="mt-8">
-              {customFields.map((field) => {
-                // Don't render hidden fields
-                if (field.is_hidden) return null;
-
-                const fieldValue = customFieldValues[field.field_name] || "";
-
-                return (
-                  <div key={field.id} className="flex items-center gap-4 mb-3">
-                    <label className="w-48 font-medium flex items-center">
-                      {field.field_label}:
-                    </label>
-
-                    <div className="flex-1 relative">
-                      <CustomFieldRenderer
-                        field={field}
-                        value={fieldValue}
-                        onChange={handleCustomFieldChange}
-                        allFields={customFields}
-                        values={customFieldValues}
-                        validationIndicator={
-                          field.is_required
-                            ? isCustomFieldValueValid(field, fieldValue)
-                              ? "valid"
-                              : "required"
-                            : undefined
-                        }
-                      />
+                      <div className="flex-1 relative">
+                        <CustomFieldRenderer
+                          field={field}
+                          value={fieldValue}
+                          onChange={handleCustomFieldChange}
+                          allFields={customFields}
+                          values={customFieldValues}
+                          validationIndicator={
+                            field.is_required
+                              ? isCustomFieldValueValid(field, fieldValue)
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
 
-          <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex items-center justify-end space-x-4">
-            {
-              process.env.NODE_ENV === "development" && (
-                !isFormValid && (
-                  <div className="flex-1 text-sm text-red-600 font-medium">
-                    Debug: {formValidation.message || "Form is invalid"}
-                  </div>
-                ) 
-              )
-            }
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
+            <div className="h-20" aria-hidden="true" />
+            <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex items-center justify-end space-x-4">
+              {
+                process.env.NODE_ENV === "development" && (
+                  !isFormValid && (
+                    <div className="flex-1 text-sm text-red-600 font-medium">
+                      Debug: {formValidation.message || "Form is invalid"}
+                    </div>
+                  )
+                )
+              }
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isFormValid}
+                className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
-            >
-              {isEditMode ? "Update" : "Save"}
-            </button>
+                  }`}
+              >
+                {isEditMode ? "Update" : "Save"}
+              </button>
+            </div>
           </div>
         </form>
       </div>
