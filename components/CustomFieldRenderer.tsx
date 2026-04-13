@@ -1658,15 +1658,33 @@ export default function CustomFieldRenderer({
         </div>
       );
       return withValidationWrapper(fileField, validationIndicator);
-    case "lookup":
-      const lookupField = readOnly || isDisabledByDependency ? (
+    case "lookup": {
+      const lookupFilterByParam = (() => {
+        if (field.lookup_type !== "hiring-managers" && (field as any).lookup_type !== "contacts")
+          return undefined;
+        const orgId =
+          context?.organizationIdOnlyForBillingContacts != null
+            ? isBillingContactLookupField(field)
+              ? context.organizationIdOnlyForBillingContacts
+              : undefined
+            : context?.organizationId;
+        return orgId ? { key: "organization_id", value: orgId } : undefined;
+      })();
+      const lookupField = isDisabledByDependency ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
-          {isDisabledByDependency
-            ? "— (select dependent field first)"
-            : value && String(value).trim() !== ""
-              ? String(value)
-              : "—"}
+          — (select dependent field first)
         </div>
+      ) : readOnly ? (
+        <LookupField
+          value={value || ""}
+          onChange={() => {}}
+          lookupType={field.lookup_type || "organizations"}
+          placeholder={field.placeholder || "Select an option"}
+          required={false}
+          className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
+          disabled
+          filterByParam={lookupFilterByParam}
+        />
       ) : (
         <LookupField
           value={value || ""}
@@ -1675,17 +1693,12 @@ export default function CustomFieldRenderer({
           placeholder={field.placeholder || "Select an option"}
           required={field.is_required}
           className={className}
-          disabled={readOnly || isDisabledByDependency}
-          filterByParam={(() => {
-            if (field.lookup_type !== "hiring-managers" && (field as any).lookup_type !== "contacts") return undefined;
-            const orgId = context?.organizationIdOnlyForBillingContacts != null
-              ? (isBillingContactLookupField(field) ? context.organizationIdOnlyForBillingContacts : undefined)
-              : context?.organizationId;
-            return orgId ? { key: "organization_id", value: orgId } : undefined;
-          })()}
+          disabled={false}
+          filterByParam={lookupFilterByParam}
         />
       );
       return withValidationWrapper(lookupField, validationIndicator);
+    }
     case "multiselect_lookup":
       const multiSelectLookupField =
         readOnly || isDisabledByDependency ? (

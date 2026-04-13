@@ -111,6 +111,9 @@ interface CustomFieldDefinition {
 }
 
 const JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME = "Field_3";
+/** Admin stable names for org / hiring-manager lookups (URL prefill + read-only lock). */
+const JOB_ORG_LOOKUP_FIELD_NAME = "Field_2";
+const JOB_HIRING_MANAGER_LOOKUP_FIELD_NAME = "Field_22";
 
 function valueFromSubmissionByLabel(
   submission: Record<string, unknown>,
@@ -564,18 +567,45 @@ export default function AddJob() {
   const { isMultipleAddMode } = useMultipleAdd();
 
   const hiringManagerCustomField = useMemo(() => {
+    const stable = fieldDefByStableName(
+      customFields as CustomFieldDefinition[],
+      JOB_HIRING_MANAGER_LOOKUP_FIELD_NAME
+    );
+    if (stable) return stable;
     return customFields.find((f) => {
       const label = String(f.field_label || "").trim().toLowerCase();
       return label === "hiring manager" || label.includes("hiring manager");
     });
   }, [customFields]);
 
-  // Resolve the Organization custom field once (prefer label match, fallback to legacy Field_3)
+  // Organization field for sync / prefill: prefer admin Field_2 (org lookup), then label, then legacy Field_3
   const organizationField = useMemo(
     () =>
+      fieldDefByStableName(
+        customFields as CustomFieldDefinition[],
+        JOB_ORG_LOOKUP_FIELD_NAME
+      ) ||
       customFields.find(
         (f) => String(f.field_label || "").trim().toLowerCase() === "organization"
-      ) || customFields.find((f) => f.field_name === "Field_3"),
+      ) ||
+      customFields.find((f) => f.field_name === "Field_3"),
+    [customFields]
+  );
+
+  const orgLookupFieldStable = useMemo(
+    () =>
+      fieldDefByStableName(
+        customFields as CustomFieldDefinition[],
+        JOB_ORG_LOOKUP_FIELD_NAME
+      ),
+    [customFields]
+  );
+  const hmLookupFieldStable = useMemo(
+    () =>
+      fieldDefByStableName(
+        customFields as CustomFieldDefinition[],
+        JOB_HIRING_MANAGER_LOOKUP_FIELD_NAME
+      ),
     [customFields]
   );
 
@@ -629,15 +659,48 @@ export default function AddJob() {
     };
   }, [customFieldsLoading, customFields.length]);
 
-  // Pre-populate hiring manager from URL when redirected from jobs/add (org flow)
+  // Pre-populate org / hiring-manager lookup fields from URL using admin definitions (field_name Field_2 / Field_22).
   useEffect(() => {
-    if (!jobId && hiringManagerIdFromUrl && hiringManagerCustomField) {
-      setCustomFieldValues((prev) => {
-        if (prev[hiringManagerCustomField.field_name] === hiringManagerIdFromUrl) return prev;
-        return { ...prev, [hiringManagerCustomField.field_name]: hiringManagerIdFromUrl };
-      });
+    if (jobId || customFieldsLoading || customFields.length === 0) return;
+
+    const orgFn = orgLookupFieldStable?.field_name;
+    const hmFn = hmLookupFieldStable?.field_name;
+
+    setCustomFieldValues((prev) => {
+      let next = { ...prev };
+      let changed = false;
+
+      if (organizationIdFromUrl && orgFn) {
+        if (prev[orgFn] !== organizationIdFromUrl) {
+          next[orgFn] = organizationIdFromUrl;
+          changed = true;
+        }
+      }
+
+      if (hiringManagerIdFromUrl && hmFn) {
+        if (prev[hmFn] !== hiringManagerIdFromUrl) {
+          next[hmFn] = hiringManagerIdFromUrl;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+
+    if (organizationIdFromUrl && currentOrganizationId !== organizationIdFromUrl) {
+      setCurrentOrganizationId(organizationIdFromUrl);
     }
-  }, [jobId, hiringManagerIdFromUrl, hiringManagerCustomField, setCustomFieldValues]);
+  }, [
+    jobId,
+    organizationIdFromUrl,
+    hiringManagerIdFromUrl,
+    customFieldsLoading,
+    customFields.length,
+    setCustomFieldValues,
+    currentOrganizationId,
+    orgLookupFieldStable?.field_name,
+    hmLookupFieldStable?.field_name,
+  ]);
 
   // From organization view (Add Job in dropdown): require HM first, then type selection. No modal.
   const fromOrganizationAddJob = Boolean(organizationIdFromUrl && !jobId);
@@ -727,8 +790,6 @@ export default function AddJob() {
     currentOrganizationId,
     organizationIdFromUrl,
   ]);
-
-
 
   // Sort custom fields by sort_order
   const sortedCustomFields = useMemo(
@@ -2236,8 +2297,15 @@ export default function AddJob() {
 
 
                     if (field.is_hidden) return null;
-                    
+
+                    const fn = field.field_name ?? "";
+                    const fnLower = fn.toLowerCase();
+                    const isHmStableField =
+                      !!hmLookupFieldStable &&
+                      (field.id === hmLookupFieldStable.id ||
+                        fnLower === hmLookupFieldStable.field_name.toLowerCase());
                     const isHiringManagerField =
+                      isHmStableField ||
                       field.field_label === "Hiring Manager" ||
                       (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
                     if (isHiringManagerField && !isEditMode && requireHiringManagerFromUrl) {
@@ -2280,8 +2348,6 @@ export default function AddJob() {
                     }
 
                     const fieldValue = customFieldValues[field.field_name] || "";
-                    const fn = field.field_name ?? "";
-                    const fnLower = fn.toLowerCase();
                     const isReferenceDuplicateField =
                       fn === JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME ||
                       fnLower === JOB_DUPLICATE_REFERENCE_NUMBER_FIELD_NAME.toLowerCase();
@@ -2307,6 +2373,19 @@ export default function AddJob() {
                       }
                     };
 
+                    const orgLockName = orgLookupFieldStable?.field_name ?? "";
+                    const hmLockName = hmLookupFieldStable?.field_name ?? "";
+                    const isAutoFilledOrg =
+                      !!orgLockName &&
+                      fnLower === orgLockName.toLowerCase() &&
+                      !!organizationIdFromUrl &&
+                      !isEditMode;
+                    const isAutoFilledHM =
+                      !!hmLockName &&
+                      fnLower === hmLockName.toLowerCase() &&
+                      !!hiringManagerIdFromUrl &&
+                      !isEditMode;
+
                     return (
                       <div key={field.id} className="flex items-center gap-4 mb-3">
                         <label className="w-48 font-medium flex items-center">
@@ -2324,6 +2403,7 @@ export default function AddJob() {
                         <div className="flex-1 relative">
                           <CustomFieldRenderer
                             field={field}
+                            forceReadOnly={isAutoFilledOrg || isAutoFilledHM}
                             value={fieldValue}
                             onChange={isClientBillRateField ? handleFieldChange : handleCustomFieldChange}
                             allFields={customFields}
