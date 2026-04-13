@@ -4877,7 +4877,7 @@ export default function OrganizationView() {
     { id: "history", label: "History" },
     { id: "quotes", label: "Quotes" },
     { id: "invoices", label: "Invoices" },
-    { id: "contacts", label: `Contacts ${hiringManagers.length}` },
+    { id: "contacts", label: `Contacts ( ${hiringManagers.length} )` },
     { id: "docs", label: "Docs" },
     { id: "opportunities", label: "Opportunities" },
   ];
