@@ -692,6 +692,9 @@ export default function OrganizationView() {
   const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
   const [unarchiveReason, setUnarchiveReason] = useState("");
   const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
+  const [isLoadingUnarchiveDependencies, setIsLoadingUnarchiveDependencies] = useState(false);
+  const [unarchiveDependencyCounts, setUnarchiveDependencyCounts] = useState<any>(null);
+  const [includeLinkedUnarchive, setIncludeLinkedUnarchive] = useState(false);
 
   // Summary counts state
   const [summaryCounts, setSummaryCounts] = useState({
@@ -3062,69 +3065,10 @@ export default function OrganizationView() {
         const label = (getContactInfoLabel(key) || "").toLowerCase();
         return k === "phone" || k === "contact_phone" || label === "phone" || label.includes("phone");
       };
-      const isParentOrgField = (key: string) => {
-        const k = (key || "").toLowerCase();
-        const label = (getContactInfoLabel(key) || "").toLowerCase();
-        return k === "parent_organization" || k === "parentorganization" || label.includes("parent organization");
-      };
-      const isStatusField = (key: string) => {
-        const k = (key || "").toLowerCase();
-        const label = (getContactInfoLabel(key) || "").toLowerCase();
-        return k === "status" || label === "status";
-      };
-
       const getContactInfoValue = (key: string): string => {
         if (!organization) return "-";
         const o = organization as any;
         const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-
-        // Special handling for status: prioritize customFields["Status"] (matching Edit mode)
-        const isStatus = isStatusField(key);
-        if (isStatus) {
-          // Find Status field from availableFields (same source as Edit mode uses)
-          const statusFieldFromApi = (availableFields || []).find(
-            (f: any) =>
-              (f.field_label || "").toLowerCase() === "status" ||
-              (f.field_name || "").toLowerCase() === "status"
-          );
-          const statusLabel = statusFieldFromApi?.field_label || "Status";
-
-          console.log("Status retrieval - Field label:", statusLabel);
-          console.log("Status retrieval - customFields:", o.customFields);
-          console.log("Status retrieval - Available options:", statusFieldOptions);
-
-          // PRIORITY 1: Check customFields with exact label from API (matching Edit mode storage)
-          let statusValue = o.customFields?.[statusLabel];
-          if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
-            const valueStr = String(statusValue).trim();
-            console.log("Status retrieval - Found in customFields[statusLabel]:", valueStr);
-            // Ensure the value matches one of the available options
-            if (statusFieldOptions.includes(valueStr)) {
-              console.log("Status retrieval - Value matches options, returning:", valueStr);
-              return valueStr;
-            }
-            // If value doesn't match options, still return it but log warning
-            console.warn("Status value doesn't match options:", valueStr, "Available:", statusFieldOptions);
-            return valueStr;
-          }
-
-          // PRIORITY 2: Check other variations in customFields
-          statusValue = o.customFields?.["Status"] ?? o.customFields?.["status"];
-          if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
-            const valueStr = String(statusValue).trim();
-            console.log("Status retrieval - Found in customFields variations:", valueStr);
-            if (statusFieldOptions.includes(valueStr)) {
-              console.log("Status retrieval - Value matches options, returning:", valueStr);
-              return valueStr;
-            }
-            return valueStr;
-          }
-
-          // PRIORITY 3: Fallback to top-level status (for backward compatibility)
-          const fallbackStatus = String(o.status ?? statusFieldOptions[0] ?? "Active").trim();
-          console.log("Status retrieval - Using fallback:", fallbackStatus);
-          return fallbackStatus;
-        }
 
         let v = o[rawKey];
         if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
@@ -3140,27 +3084,14 @@ export default function OrganizationView() {
       };
 
       const contactKeys = visibleFields.contactInfo || [];
-      const effectiveRows: { key: string; label: string; isParentOrg?: boolean; isPhone?: boolean; isStatus?: boolean; isUrl?: boolean; isName?: boolean }[] = [];
-      let statusRowAdded = false;
+      const effectiveRows: { key: string; label: string; isUrl?: boolean; isName?: boolean }[] = [];
       for (const key of contactKeys) {
-        if (isStatusField(key)) statusRowAdded = true;
         effectiveRows.push({
           key,
           label: getContactInfoLabel(key),
-          isParentOrg: isParentOrgField(key),
-          isPhone: isPhoneField(key),
-          isStatus: isStatusField(key),
           isUrl: isUrlField(key) && getContactInfoValue(key) !== "-",
           isName: isNameField(key),
         });
-      }
-      if (!statusRowAdded) {
-        // Find the actual status field from catalog to use its correct key
-        const statusFieldFromCatalog = contactInfoFieldCatalog.find(
-          (f) => f.label?.toLowerCase() === "status" || f.key?.toLowerCase() === "status"
-        );
-        const statusKey = statusFieldFromCatalog?.key || "status";
-        effectiveRows.push({ key: statusKey, label: "Status", isStatus: true });
       }
 
       return (
@@ -3172,7 +3103,6 @@ export default function OrganizationView() {
             <div className="space-y-0 border border-gray-200 rounded">
               {effectiveRows.map((row) => {
                 const value = getContactInfoValue(row.key);
-                const parentOrgId = (organization as any)?.parentOrganizationId;
                 const catalogEntry = contactInfoFieldCatalog.find((f) => f.key === row.key);
                 const fieldInfo = {
                   key: row.key,
@@ -3207,20 +3137,10 @@ export default function OrganizationView() {
                             ))
                           )}
                         </select>
-                      ) : row.isParentOrg && parentOrgId ? (
-                        <FieldValueRenderer
-                          value={String(parentOrgId)}
-                          fieldInfo={{ ...fieldInfo, fieldType: "lookup", lookupType: "organization" }}
-                          emptyPlaceholder="-"
-                          clickable
-                          lookupFallback={(organization as any)?.parentOrganization || value}
-                          className={row.isName ? "text-blue-600" : ""}
-                          entityType="organizations"
-                        />
                       ) : ( */}
                         <FieldValueRenderer
                           value={value}
-                          fieldInfo={row.isParentOrg && !parentOrgId ? { ...fieldInfo, fieldType: "text" } : fieldInfo}
+                          fieldInfo={fieldInfo}
                           emptyPlaceholder="-"
                           clickable
                           className={row.isName ? "text-blue-600" : ""}
@@ -4171,6 +4091,8 @@ export default function OrganizationView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reason: unarchiveReason.trim(),
+          include_linked_records: includeLinkedUnarchive,
+          linked_dependencies_summary: unarchiveDependencyCounts || {},
           record_number: organization
             ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
             : formatRecordId(organizationId, "organization"),
@@ -4183,6 +4105,8 @@ export default function OrganizationView() {
       toast.success("Unarchive request sent. Payroll will be notified via email.");
       setShowUnarchiveModal(false);
       setUnarchiveReason("");
+      setIncludeLinkedUnarchive(false);
+      setUnarchiveDependencyCounts(null);
     } catch (err) {
       console.error("Error submitting unarchive request:", err);
       toast.error(
@@ -4823,6 +4747,39 @@ export default function OrganizationView() {
 
   const isArchived = !!organization?.archived_at;
 
+  const fetchUnarchiveDependencies = async (orgId: string) => {
+    setIsLoadingUnarchiveDependencies(true);
+    try {
+      const response = await fetch(`/api/organizations/${orgId}/unarchive-dependencies`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        setUnarchiveDependencyCounts(null);
+        return;
+      }
+      setUnarchiveDependencyCounts(data.counts || null);
+    } catch (error) {
+      console.error("Error fetching unarchive dependencies:", error);
+      setUnarchiveDependencyCounts(null);
+    } finally {
+      setIsLoadingUnarchiveDependencies(false);
+    }
+  };
+
+  const openUnarchiveModal = async () => {
+    if (!organizationId) return;
+    setShowUnarchiveModal(true);
+    setIncludeLinkedUnarchive(false);
+    await fetchUnarchiveDependencies(organizationId);
+  };
+
   // Update the actionOptions to remove the edit option since we'll handle it in Modify tab
   const getDeleteLabel = () => {
     if (isArchived) return "Delete (Archived)";
@@ -4849,7 +4806,7 @@ export default function OrganizationView() {
 
   // When archived: only Unarchive is enabled; all other actions disabled
   const actionOptions = isArchived
-    ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
+    ? [{ label: "Unarchive", action: () => openUnarchiveModal() }]
     : [
       { label: "Add Note", action: () => handleActionSelected("add-note") },
       {
@@ -7018,6 +6975,7 @@ export default function OrganizationView() {
         onClose={() => {
           setShowUnarchiveModal(false);
           setUnarchiveReason("");
+          setIncludeLinkedUnarchive(false);
         }}
         modelType="unarchive"
         entityLabel="Organization"
@@ -7030,7 +6988,45 @@ export default function OrganizationView() {
         onReasonChange={setUnarchiveReason}
         onSubmit={handleUnarchiveSubmit}
         isSubmitting={isSubmittingUnarchive}
-      />
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            You can unarchive only this organization, or also unarchive linked records that were archived by this organization cascade.
+          </p>
+          {isLoadingUnarchiveDependencies ? (
+            <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+              Loading linked archived records...
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Hiring Managers</p>
+                  <p className="mt-1 text-2xl font-bold text-indigo-900">{unarchiveDependencyCounts?.hiring_managers || 0}</p>
+                  <p className="mt-1 text-xs text-indigo-800">Archived by this organization cascade</p>
+                </div>
+                <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Jobs</p>
+                  <p className="mt-1 text-2xl font-bold text-cyan-900">{unarchiveDependencyCounts?.jobs || 0}</p>
+                  <p className="mt-1 text-xs text-cyan-800">Archived by this organization cascade</p>
+                </div>
+              </div>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeLinkedUnarchive}
+                  onChange={(e) => setIncludeLinkedUnarchive(e.target.checked)}
+                  className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-800">
+                  Unarchive linked archived records too (only records archived due to this organization cascade).
+                  Records archived independently remain unchanged.
+                </span>
+              </label>
+            </>
+          )}
+        </div>
+      </RequestActionModal>
 
       {/* Delete Request Modal */}
       {showDeleteModal && (
@@ -7094,13 +7090,17 @@ export default function OrganizationView() {
               {deleteActionType === 'cascade' && (
                 <div className="bg-red-50 border border-red-200 rounded p-4">
                   <p className="text-sm text-red-800 mb-3">
-                    <strong>Warning:</strong> You are requesting to delete this organization AND all linked records:
+                    <strong>Warning:</strong> You are requesting cascade archival. Linked records will not all be deleted; dependency rules below will be applied:
                   </p>
                   <ul className="list-disc list-inside text-xs text-red-700 mb-3 space-y-1">
-                    {dependencyCounts?.hiring_managers > 0 && <li>{dependencyCounts.hiring_managers} Hiring Managers</li>}
-                    {dependencyCounts?.jobs > 0 && <li>{dependencyCounts.jobs} Jobs</li>}
-                    {dependencyCounts?.placements > 0 && <li>{dependencyCounts.placements} Placements</li>}
-                    {dependencyCounts?.child_organizations > 0 && <li>{dependencyCounts.child_organizations} Child Organizations</li>}
+                    {dependencyCounts?.hiring_managers > 0 && <li>{dependencyCounts.hiring_managers} Hiring Managers - will be archived.</li>}
+                    {dependencyCounts?.jobs > 0 && <li>{dependencyCounts.jobs} Jobs - will be archived.</li>}
+                    {dependencyCounts?.placements > 0 && <li>{dependencyCounts.placements} Placements - organization link will be cleared where applicable.</li>}
+                    {dependencyCounts?.child_organizations > 0 && <li>{dependencyCounts.child_organizations} Child Organizations - parent organization will be cleared.</li>}
+                    {dependencyCounts?.leads > 0 && <li>{dependencyCounts.leads} Leads - organization link will be cleared where applicable.</li>}
+                    {dependencyCounts?.job_seekers > 0 && <li>{dependencyCounts.job_seekers} Job Seekers - organization lookup will be cleared where applicable.</li>}
+                    {dependencyCounts?.notes > 0 && <li>{dependencyCounts.notes} Notes - retained on the archived organization.</li>}
+                    {dependencyCounts?.documents > 0 && <li>{dependencyCounts.documents} Documents - retained on the archived organization.</li>}
                   </ul>
                   <label className="flex items-start gap-2 cursor-pointer">
                     <input
@@ -7110,7 +7110,7 @@ export default function OrganizationView() {
                       className="mt-1 w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
                     />
                     <span className="text-sm text-red-900">
-                      I understand that this action will delete all linked records and cannot be undone once approved.
+                      I understand this will archive the organization and apply the dependency rules listed above.
                     </span>
                   </label>
                 </div>
@@ -7148,7 +7148,7 @@ export default function OrganizationView() {
               {/* Info Box */}
               <div className="bg-blue-50 border border-blue-200 rounded p-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny it. If approved, the organization is archived and linked records are handled per dependency rules (archive or unlink), not blindly deleted.
                 </p>
               </div>
             </div>
@@ -7223,10 +7223,33 @@ export default function OrganizationView() {
                     </svg>
                   </div>
                   <p className="text-sm text-gray-600">
-                    This organization has linked records. You must either transfer these records to another organization or request a cascade deletion.
+                    This organization has linked records. Choose transfer to move records, or cascade archival to apply per-record dependency rules.
                   </p>
                 </div>
               </div>
+
+              {(dependencyCounts?.notes > 0 || dependencyCounts?.documents > 0) && (
+                <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {dependencyCounts?.notes > 0 && (
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Notes</p>
+                      <p className="mt-1 text-2xl font-bold text-indigo-900">{dependencyCounts.notes}</p>
+                      <p className="mt-1 text-xs text-indigo-800">
+                        State: retained on the archived organization.
+                      </p>
+                    </div>
+                  )}
+                  {dependencyCounts?.documents > 0 && (
+                    <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Documents</p>
+                      <p className="mt-1 text-2xl font-bold text-cyan-900">{dependencyCounts.documents}</p>
+                      <p className="mt-1 text-xs text-cyan-800">
+                        State: retained on the archived organization.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Detailed Records */}
               <div className="space-y-4">
@@ -7237,6 +7260,7 @@ export default function OrganizationView() {
                       <h4 className="text-sm font-semibold text-gray-900">
                         Hiring Managers ({dependencyCounts.details.hiring_managers.length})
                       </h4>
+                      <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: these records will be archived.</p>
                     </div>
                     <div className="divide-y">
                       {dependencyCounts.details.hiring_managers.map((hm: any) => (
@@ -7261,6 +7285,7 @@ export default function OrganizationView() {
                       <h4 className="text-sm font-semibold text-gray-900">
                         Jobs ({dependencyCounts.details.jobs.length})
                       </h4>
+                      <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: these records will be archived.</p>
                     </div>
                     <div className="divide-y">
                       {dependencyCounts.details.jobs.map((job: any) => (
@@ -7285,6 +7310,7 @@ export default function OrganizationView() {
                       <h4 className="text-sm font-semibold text-gray-900">
                         Placements ({dependencyCounts.details.placements.length})
                       </h4>
+                      <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: organization linkage will be cleared where applicable.</p>
                     </div>
                     <div className="divide-y">
                       {dependencyCounts.details.placements.map((placement: any) => (
@@ -7309,6 +7335,7 @@ export default function OrganizationView() {
                       <h4 className="text-sm font-semibold text-gray-900">
                         Child Organizations ({dependencyCounts.details.child_organizations.length})
                       </h4>
+                      <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: parent organization link will be cleared.</p>
                     </div>
                     <div className="divide-y">
                       {dependencyCounts.details.child_organizations.map((org: any) => (
@@ -7350,7 +7377,7 @@ export default function OrganizationView() {
                 }}
                 className="w-full flex justify-center items-center px-4 py-2 border border-red-300 rounded shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
-                Request Cascade Deletion (Delete All)
+                Request Cascade Deletion (Apply Dependency Rules)
               </button>
 
               <button
