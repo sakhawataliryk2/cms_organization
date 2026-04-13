@@ -548,7 +548,14 @@ export default function OrganizationView() {
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
   // Document table columns state
-  const DOCUMENT_DEFAULT_COLUMNS = ["document_name", "document_type", "source", "is_auto_generated", "created_by_name", "created_at"];
+  const DOCUMENT_DEFAULT_COLUMNS = [
+    "document_name",
+    "document_type",
+    // "source",
+    "is_auto_generated",
+    "created_by_name",
+    "created_at",
+  ];
   const [documentColumnFields, setDocumentColumnFields] = useState<string[]>(DOCUMENT_DEFAULT_COLUMNS);
   const [documentColumnSorts, setDocumentColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [documentColumnFilters, setDocumentColumnFilters] = useState<Record<string, ColumnFilterState>>({});
@@ -1994,7 +2001,7 @@ export default function OrganizationView() {
     return [
       { key: "document_name", label: "Document Name", sortable: true, filterType: "text" as const },
       { key: "document_type", label: "Type", sortable: true, filterType: "select" as const },
-      { key: "source", label: "Source", sortable: true, filterType: "text" as const },
+      // { key: "source", label: "Source", sortable: true, filterType: "text" as const },
       { key: "is_auto_generated", label: "Auto-Generated", sortable: true, filterType: "select" as const },
       { key: "created_by_name", label: "Created By", sortable: true, filterType: "text" as const },
       { key: "created_at", label: "Created At", sortable: true, filterType: "text" as const },
@@ -2013,8 +2020,8 @@ export default function OrganizationView() {
         return doc.document_name || "N/A";
       case "document_type":
         return doc.document_type || "N/A";
-      case "source":
-        return doc.source_label || "—";
+      // case "source":
+      //   return doc.source_label || "—";
       case "is_auto_generated":
         return doc.is_auto_generated ? "Yes" : "No";
       case "created_by_name":
