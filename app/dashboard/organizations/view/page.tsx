@@ -1601,6 +1601,7 @@ export default function OrganizationView() {
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        name: String(f.field_name ?? f.field_key ?? f.api_name ?? f.id),
         label: f.field_label || f.field_name || String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         fieldType: (f.field_type || f.type) as string | undefined,
         lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
@@ -3060,11 +3061,7 @@ export default function OrganizationView() {
       };
       const isNameField = (key: string) =>
         key === "name" || contactInfoFieldCatalog.find((f) => f.key === key)?.label?.toLowerCase() === "name";
-      const isPhoneField = (key: string) => {
-        const k = (key || "").toLowerCase();
-        const label = (getContactInfoLabel(key) || "").toLowerCase();
-        return k === "phone" || k === "contact_phone" || label === "phone" || label.includes("phone");
-      };
+
       const getContactInfoValue = (key: string): string => {
         if (!organization) return "-";
         const o = organization as any;
@@ -3107,6 +3104,7 @@ export default function OrganizationView() {
                 const fieldInfo = {
                   key: row.key,
                   label: row.label,
+                  name: catalogEntry?.name ?? row.key,
                   fieldType: catalogEntry?.fieldType,
                   lookupType: catalogEntry?.lookupType,
                   multiSelectLookupType: catalogEntry?.multiSelectLookupType,

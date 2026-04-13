@@ -39,7 +39,7 @@ export const statusMappings: Record<string, string> = {
   "placements-executive-search": "",
   tasks: "Field_3",
   planner: "",
-  leads: "",
+  leads: "Field_4",
   tearsheets: "",
   "goals-quotas": "",
 };

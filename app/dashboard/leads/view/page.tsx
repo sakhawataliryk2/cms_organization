@@ -1059,6 +1059,8 @@ export default function LeadView() {
                   valuesRecord={customObj as any}
                   emptyPlaceholder="-"
                   clickable
+                  entityType="leads"
+                  recordId={lead.id}
                 />
               </div>
             </div>
@@ -1154,6 +1156,8 @@ export default function LeadView() {
                       fieldInfo={fieldInfo as any}
                       emptyPlaceholder="-"
                       clickable
+                      entityType="leads"
+                      recordId={lead.id}
                     />
                   </div>
                 </div>
