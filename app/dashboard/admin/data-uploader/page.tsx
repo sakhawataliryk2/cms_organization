@@ -3,9 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'nextjs-toploader/app';
-import { useSearchParams } from 'next/navigation';
 import { FiX, FiDownload, FiEye, FiTrash2 } from 'react-icons/fi';
-import { useImportQueue } from '@/contexts/ImportQueueContext';
 
 interface CustomFieldDefinition {
     id: string;
@@ -38,19 +36,6 @@ interface ImportSummary {
     errors: Array<{
         row: number;
         errors: string[];
-    }>;
-}
-
-interface ImportJobStatus {
-    id: string;
-    status: 'pending' | 'processing' | 'completed' | 'failed';
-    total_rows: number;
-    processed_rows: number;
-    successful_rows: number;
-    failed_rows: number;
-    errors?: Array<{
-        row_number: number;
-        error_message: string;
     }>;
 }
 
@@ -89,8 +74,88 @@ type ImportLiveProgress = {
     failed: number;
 };
 
-async function wait(ms: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+async function consumeImportNdjsonStream(
+    response: Response,
+    totalInputRows: number,
+    onProgress: (p: ImportLiveProgress) => void
+): Promise<ImportSummary> {
+    if (!response.body) {
+        throw new Error('No response body from import');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let summary: ImportSummary | null = null;
+    let lastUiMs = 0;
+    const maybeProgress = (p: ImportLiveProgress) => {
+        const t = Date.now();
+        if (t - lastUiMs < 100) return;
+        lastUiMs = t;
+        onProgress(p);
+    };
+    const forceProgress = (p: ImportLiveProgress) => {
+        lastUiMs = Date.now();
+        onProgress(p);
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            const msg = JSON.parse(line) as {
+                type: string;
+                scanned?: number;
+                totalInput?: number;
+                successful?: number;
+                failed?: number;
+                summary?: ImportSummary;
+                message?: string;
+            };
+            if (msg.type === 'progress') {
+                maybeProgress({
+                    scanned: msg.scanned ?? 0,
+                    totalInput: msg.totalInput ?? totalInputRows,
+                    successful: msg.successful ?? 0,
+                    failed: msg.failed ?? 0,
+                });
+            } else if (msg.type === 'done' && msg.summary) {
+                summary = msg.summary;
+                forceProgress({
+                    scanned: totalInputRows,
+                    totalInput: totalInputRows,
+                    successful: msg.summary.successful,
+                    failed: msg.summary.failed,
+                });
+            } else if (msg.type === 'error') {
+                throw new Error(msg.message || 'Import failed');
+            }
+        }
+    }
+
+    const tail = buffer.trim();
+    if (tail) {
+        const msg = JSON.parse(tail) as { type: string; summary?: ImportSummary; message?: string };
+        if (msg.type === 'done' && msg.summary) {
+            summary = msg.summary;
+            forceProgress({
+                scanned: totalInputRows,
+                totalInput: totalInputRows,
+                successful: msg.summary.successful,
+                failed: msg.summary.failed,
+            });
+        } else if (msg.type === 'error') {
+            throw new Error(msg.message || 'Import failed');
+        }
+    }
+
+    if (!summary) {
+        throw new Error('Import did not complete');
+    }
+    return summary;
 }
 
 const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
@@ -102,11 +167,10 @@ const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
     'Placement': 'placements',
     'Lead': 'leads'
 };
-const MAX_IMPORT_ROWS_PER_FILE = 50000;
+const MAX_IMPORT_ROWS_PER_FILE = 1000;
 
 export default function DataUploader() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const [currentStep, setCurrentStep] = useState(1);
     const [maxVisitedStep, setMaxVisitedStep] = useState(1);
     const [recordType, setRecordType] = useState('Job Seeker');
@@ -125,7 +189,7 @@ export default function DataUploader() {
     });
     const [isImporting, setIsImporting] = useState(false);
     const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
-    const [mainTab, setMainTab] = useState<'upload' | 'history' | 'queues'>('upload');
+    const [mainTab, setMainTab] = useState<'upload' | 'history'>('upload');
     const [historyItems, setHistoryItems] = useState<ImportHistoryListItem[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [viewHistoryDetail, setViewHistoryDetail] = useState<ImportHistoryDetail | null>(null);
@@ -141,7 +205,6 @@ export default function DataUploader() {
     const importAbortControllerRef = useRef<AbortController | null>(null);
     const currentImportIdRef = useRef<string | null>(null);
     const currentHistoryIdRef = useRef<number | null>(null);
-    const { activeJobs, pendingCount, hasActiveEntityQueue, entityLabelByType, refreshNow } = useImportQueue();
 
     const recordTypes = [
         'Organization',
@@ -153,12 +216,6 @@ export default function DataUploader() {
     ];
 
     const totalSteps = 6;
-
-    useEffect(() => {
-        if (searchParams?.get('tab') === 'queues') {
-            setMainTab('queues');
-        }
-    }, [searchParams]);
 
     // Fetch available fields when record type changes
     useEffect(() => {
@@ -227,9 +284,106 @@ export default function DataUploader() {
         return () => window.clearInterval(timer);
     }, [isImporting, lastStreamProgressAt]);
 
+    useEffect(() => {
+        if (!isImporting) return;
+
+        const warningMessage = 'Import is currently running in this tab. Leaving this page will stop live updates and may interrupt parsing. Do you want to stop import and leave?';
+        const originalPushState = window.history.pushState.bind(window.history);
+        const originalReplaceState = window.history.replaceState.bind(window.history);
+
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (currentImportIdRef.current) {
+                const blob = new Blob(
+                    [JSON.stringify({ importId: currentImportIdRef.current })],
+                    { type: 'application/json' }
+                );
+                navigator.sendBeacon('/api/admin/data-uploader/import/cancel', blob);
+            }
+            event.preventDefault();
+            event.returnValue = warningMessage;
+        };
+
+        const confirmAndMaybeAbort = () => {
+            const userConfirmed = window.confirm(warningMessage);
+            if (!userConfirmed) return false;
+            if (currentImportIdRef.current) {
+                fetch('/api/admin/data-uploader/import/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ importId: currentImportIdRef.current }),
+                    keepalive: true,
+                }).catch(() => undefined);
+            }
+            importAbortControllerRef.current?.abort();
+            return true;
+        };
+
+        const onDocumentClickCapture = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target) return;
+            const anchor = target.closest('a') as HTMLAnchorElement | null;
+            if (!anchor) return;
+            const href = anchor.getAttribute('href');
+            if (!href || href.startsWith('#')) return;
+
+            if (!confirmAndMaybeAbort()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        };
+
+        window.history.pushState = function patchedPushState(
+            data: any,
+            unused: string,
+            url?: string | URL | null
+        ) {
+            if (!confirmAndMaybeAbort()) return;
+            return originalPushState(data, unused, url as any);
+        };
+
+        window.history.replaceState = function patchedReplaceState(
+            data: any,
+            unused: string,
+            url?: string | URL | null
+        ) {
+            if (!confirmAndMaybeAbort()) return;
+            return originalReplaceState(data, unused, url as any);
+        };
+
+        const onPopState = () => {
+            if (!confirmAndMaybeAbort()) {
+                originalPushState(null, '', window.location.href);
+            }
+        };
+
+        window.addEventListener('beforeunload', onBeforeUnload);
+        document.addEventListener('click', onDocumentClickCapture, true);
+        window.addEventListener('popstate', onPopState);
+
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            document.removeEventListener('click', onDocumentClickCapture, true);
+            window.removeEventListener('popstate', onPopState);
+            window.history.pushState = originalPushState;
+            window.history.replaceState = originalReplaceState;
+        };
+    }, [isImporting]);
+
     const confirmStopImport = (): boolean => {
         if (!isImporting) return true;
-        toast.info('Import continues in background queue. You can safely navigate away.');
+        const shouldStop = window.confirm(
+            'Import is still running. Stop import in this tab and continue?'
+        );
+        if (!shouldStop) return false;
+        if (currentImportIdRef.current) {
+            fetch('/api/admin/data-uploader/import/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ importId: currentImportIdRef.current }),
+                keepalive: true,
+            }).catch(() => undefined);
+        }
+        importAbortControllerRef.current?.abort();
         return true;
     };
 
@@ -650,15 +804,6 @@ export default function DataUploader() {
 
     const handleNext = () => {
         if (currentStep === 1) {
-            if (pendingCount >= 10) {
-                toast.warning('Maximum 10 pending/processing queues are allowed. Wait for completion.');
-                return;
-            }
-            const selectedEntityType = RECORD_TYPE_TO_ENTITY_TYPE[recordType];
-            if (selectedEntityType && hasActiveEntityQueue(selectedEntityType)) {
-                toast.warning(`${entityLabelByType(selectedEntityType)} queue is already pending/processing.`);
-                return;
-            }
             // Step 1: Record type selection - no file required yet
             setCurrentStep(2);
             setMaxVisitedStep((prev) => Math.max(prev, 2));
@@ -824,70 +969,20 @@ export default function DataUploader() {
                 }),
             });
 
-            const createData = await response.json().catch(() => ({}));
-            if (!response.ok || !createData?.job?.id) {
-                throw new Error(createData.message || 'Import job creation failed');
-            }
-            await refreshNow();
-            const jobId = String(createData.job.id);
-
-            let finalStatus: ImportJobStatus | null = null;
-            while (true) {
-                if (importAbortControllerRef.current?.signal.aborted) {
-                    throw new DOMException('Import aborted', 'AbortError');
-                }
-                await fetch('/api/admin/data-uploader/import/drain', {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}` },
-                }).catch(() => undefined);
-                const statusRes = await fetch(`/api/admin/data-uploader/import/${jobId}`, {
-                    method: 'GET',
-                    headers: { Authorization: `Bearer ${token}` },
-                    cache: 'no-store',
-                });
-                const statusData = await statusRes.json().catch(() => ({}));
-                if (!statusRes.ok || !statusData?.job) {
-                    throw new Error(statusData.message || 'Failed to fetch import job status');
-                }
-                const job = statusData.job as ImportJobStatus;
-                setImportLiveProgress({
-                    scanned: job.processed_rows ?? 0,
-                    totalInput: job.total_rows ?? importData.length,
-                    successful: job.successful_rows ?? 0,
-                    failed: job.failed_rows ?? 0,
-                });
-                setLastStreamProgressAt(Date.now());
-                setIsLiveStreamPaused(false);
-                if (job.status === 'completed' || job.status === 'failed') {
-                    finalStatus = job;
-                    break;
-                }
-                await wait(900);
-            }
-            await refreshNow();
-
-            if (!finalStatus) {
-                throw new Error('Import job did not complete');
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || 'Import failed');
             }
 
-            let errors: ImportSummary['errors'] = [];
-            if (finalStatus.failed_rows > 0) {
-                const errorsRes = await fetch(`/api/admin/data-uploader/import/${jobId}?includeErrors=true`, {
-                    cache: 'no-store',
-                });
-                const errorsData = await errorsRes.json().catch(() => ({}));
-                const rawErrors = (errorsData?.job?.errors || []) as Array<{ row_number: number; error_message: string }>;
-                errors = rawErrors.map((e) => ({
-                    row: e.row_number,
-                    errors: [e.error_message],
-                }));
-            }
-            const summary: ImportSummary = {
-                totalRows: finalStatus.total_rows,
-                successful: finalStatus.successful_rows,
-                failed: finalStatus.failed_rows,
-                errors,
-            };
+            const summary = await consumeImportNdjsonStream(
+                response,
+                importData.length,
+                (progress) => {
+                    setImportLiveProgress(progress);
+                    setLastStreamProgressAt(Date.now());
+                    setIsLiveStreamPaused(false);
+                }
+            );
 
             const durationMs = Date.now() - startedAt;
             setLastImportDurationMs(durationMs);
@@ -944,7 +1039,6 @@ export default function DataUploader() {
             importAbortControllerRef.current = null;
             currentImportIdRef.current = null;
             currentHistoryIdRef.current = null;
-            await refreshNow();
         }
     };
 
@@ -1122,16 +1216,6 @@ export default function DataUploader() {
                             >
                                 History
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => setMainTab('queues')}
-                                className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${mainTab === 'queues'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                                    }`}
-                            >
-                                Queues {pendingCount > 0 ? `(${pendingCount})` : ''}
-                            </button>
                         </div>
                         {mainTab === 'upload' && (
                             <div className="text-sm text-gray-400 text-right">
@@ -1192,52 +1276,7 @@ export default function DataUploader() {
 
                 {/* Step Content */}
                 <div className="min-h-[400px]">
-                    {mainTab === 'queues' ? (
-                        <div className="space-y-4">
-                            <h2 className="text-xl font-semibold text-gray-800">Live queues</h2>
-                            <p className="text-sm text-gray-600">
-                                Pending or processing imports continue even if you leave this page.
-                            </p>
-                            {activeJobs.length === 0 ? (
-                                <div className="py-12 text-center text-gray-500 border border-dashed border-gray-200 rounded-lg">
-                                    No pending queues right now.
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                        <thead className="bg-gray-50">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Category</th>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Status</th>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Progress</th>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Success</th>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Failed</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-white divide-y divide-gray-100">
-                                            {activeJobs.map((job) => {
-                                                const pct = job.total_rows > 0 ? Math.round((job.processed_rows / job.total_rows) * 100) : 0;
-                                                return (
-                                                    <tr key={job.id}>
-                                                        <td className="px-3 py-2">{entityLabelByType(job.entity_type)}</td>
-                                                        <td className="px-3 py-2 capitalize">{job.status}</td>
-                                                        <td className="px-3 py-2">
-                                                            {job.processed_rows}/{job.total_rows} ({pct}%)
-                                                        </td>
-                                                        <td className="px-3 py-2 text-green-700 font-medium">{job.successful_rows}</td>
-                                                        <td className="px-3 py-2 text-red-600 font-medium">{job.failed_rows}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                            <p className="text-xs text-gray-500">
-                                Maximum 10 queues allowed. Same category cannot start another queue while pending/processing.
-                            </p>
-                        </div>
-                    ) : mainTab === 'history' ? (
+                    {mainTab === 'history' ? (
                         <div className="space-y-4">
                             <h2 className="text-xl font-semibold text-gray-800">Import history</h2>
                             <p className="text-sm text-gray-600">
@@ -1384,7 +1423,7 @@ export default function DataUploader() {
                                         </p>
                                         <p className="text-xs text-gray-500 mt-1">or click to browse</p>
                                     </div>
-                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls (max 50,000 data rows per file)</p>
+                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls (max 1000 data rows per file)</p>
                                     {selectedFile && (
                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 shadow-sm">
                                             <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1811,15 +1850,6 @@ export default function DataUploader() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                         {mainTab === 'history' && (
-                            <button
-                                type="button"
-                                onClick={() => setMainTab('upload')}
-                                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                            >
-                                Return to upload
-                            </button>
-                        )}
-                        {mainTab === 'queues' && (
                             <button
                                 type="button"
                                 onClick={() => setMainTab('upload')}
