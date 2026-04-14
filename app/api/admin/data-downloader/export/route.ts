@@ -246,14 +246,14 @@ export async function POST(request: NextRequest) {
                 const firstItem = moduleData[0];
                 const listLooksFull = firstItem && typeof firstItem === 'object' &&
                     (Object.keys(firstItem).length > 8 || 'custom_fields' in firstItem);
-                // Always fetch by ID for organizations when exporting selected fields so we get full record + custom_fields from getById
-                const forcePerIdForOrganizations = moduleId === 'organizations' && wantsFullRecords;
-                const needsFullRecords = wantsFullRecords && (forcePerIdForOrganizations || !listLooksFull);
+                // Do not force per-ID fetch for organizations at scale (e.g. 44k rows).
+                // It can trigger tens of thousands of requests and cause timeouts.
+                // Prefer list endpoint with full=1, and only fallback to per-ID when list is clearly partial.
+                const needsFullRecords = wantsFullRecords && !listLooksFull;
 
                 if (isDebug) {
                     (debugInfo as any).listLooksFull = listLooksFull;
                     (debugInfo as any).wantsFullRecords = wantsFullRecords;
-                    (debugInfo as any).forcePerIdForOrganizations = forcePerIdForOrganizations;
                     (debugInfo as any).didPerIdFetch = needsFullRecords;
                 }
 
