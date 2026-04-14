@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { normalizeDateInputToIso } from '@/lib/dateNormalize';
+import { clearImportCancellation, isImportCancelled } from './state';
 
 // Mirror the exact same label→backend-column mappings used by the individual add pages.
 // Every field ALWAYS goes into custom_fields (keyed by field_label).
@@ -214,7 +215,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [] } = body;
+        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [], importId } = body;
 
         if (!entityType || !records || !Array.isArray(records)) {
             return NextResponse.json(
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest) {
                     writeLine({ type: 'progress', scanned, totalInput, successful, failed });
                 };
                 const throwIfAborted = () => {
-                    if (request.signal.aborted) {
+                    if (request.signal.aborted || isImportCancelled(importId)) {
                         throw new Error('Import cancelled by user');
                     }
                 };
@@ -594,6 +595,7 @@ export async function POST(request: NextRequest) {
                         message: streamErr instanceof Error ? streamErr.message : 'Internal server error',
                     });
                 } finally {
+                    clearImportCancellation(importId);
                     controller.close();
                 }
             },
