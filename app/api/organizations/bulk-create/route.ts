@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+const BULK_CREATE_TIMEOUT_MS = 45_000;
+
 export async function POST(request: NextRequest) {
     try {
         const cookieStore = await cookies();
@@ -24,14 +26,22 @@ export async function POST(request: NextRequest) {
         }
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/organizations/bulk-create`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ items, maxBatch }),
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), BULK_CREATE_TIMEOUT_MS);
+        let response: Response;
+        try {
+            response = await fetch(`${apiUrl}/api/organizations/bulk-create`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ items, maxBatch }),
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
 
         const data = await response.json().catch(() => ({}));
 
