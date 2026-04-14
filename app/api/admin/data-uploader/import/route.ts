@@ -162,6 +162,9 @@ function buildPayload(
     fieldNameToLabel: Record<string, string>,
     fieldDefByName?: Map<string, FieldDefinition>
 ): Record<string, any> {
+    // Performance mode for organizations: keep custom_fields as source of truth
+    // and only mirror critical top-level columns.
+    const orgCustomFieldPrimaryMode = entityType === 'organizations';
     const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
     const topLevel: Record<string, any> = {};
     const customFields: Record<string, any> = {};
@@ -183,7 +186,11 @@ function buildPayload(
 
         const backendCol = labelMap[label];
         if (backendCol) {
-            topLevel[backendCol] = v;
+            // Keep only required/critical top-level fields for organizations.
+            // This reduces payload size and DB write overhead for bulk imports.
+            if (!orgCustomFieldPrimaryMode || backendCol === 'name') {
+                topLevel[backendCol] = v;
+            }
         }
     }
 
