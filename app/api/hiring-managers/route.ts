@@ -33,6 +33,18 @@ export async function GET(request: NextRequest) {
             backendUrl = `${apiUrl}/api/hiring-managers/organization/${organizationIdNumeric}`;
         }
 
+        // Forward pagination/sorting/search params to backend when provided
+        const passthroughKeys = ["page", "limit", "offset", "q", "search", "sort", "order"];
+        const qs = new URLSearchParams();
+        for (const key of passthroughKeys) {
+            const value = searchParams.get(key);
+            if (value !== null && value !== "") qs.set(key, value);
+        }
+        const queryString = qs.toString();
+        if (queryString) {
+            backendUrl = `${backendUrl}?${queryString}`;
+        }
+
         const response = await fetch(backendUrl, {
             method: 'GET',
             headers: {

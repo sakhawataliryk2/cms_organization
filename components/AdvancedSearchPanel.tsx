@@ -244,6 +244,16 @@ export interface AdvancedSearchPanelProps {
   initialCriteria?: AdvancedSearchCriterion[];
   /** Anchor element for dropdown positioning */
   anchorEl?: HTMLElement | null;
+  /** Optional loading indicator shown in panel header */
+  isLoading?: boolean;
+  /** Optional results count shown in panel header */
+  resultsCount?: number | null;
+  /** Optional total count across all records */
+  totalResultsCount?: number | null;
+  /** Optional count currently displayed after client-side filters */
+  displayedResultsCount?: number | null;
+  /** Optional singular/plural label, default "records" */
+  resultsLabel?: string;
 }
 
 export default function AdvancedSearchPanel({
@@ -254,6 +264,11 @@ export default function AdvancedSearchPanel({
   recentStorageKey,
   initialCriteria = [],
   anchorEl,
+  isLoading = false,
+  resultsCount = null,
+  totalResultsCount = null,
+  displayedResultsCount = null,
+  resultsLabel = "records",
 }: AdvancedSearchPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<"search" | "recent">("search");
@@ -268,6 +283,18 @@ export default function AdvancedSearchPanel({
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>(
     { top: 0, left: 0, width: 900 }
   );
+
+  const resolvedTotalCount = totalResultsCount ?? resultsCount;
+  const resolvedDisplayedCount =
+    displayedResultsCount != null ? displayedResultsCount : resultsCount;
+  const showCount =
+    resolvedTotalCount != null || resolvedDisplayedCount != null;
+  const countText =
+    resolvedTotalCount != null &&
+    resolvedDisplayedCount != null &&
+    resolvedDisplayedCount !== resolvedTotalCount
+      ? `${resolvedDisplayedCount} shown / ${resolvedTotalCount} total`
+      : `${resolvedTotalCount ?? resolvedDisplayedCount} ${resultsLabel} found`;
 
   // Mount/unmount with fade animation
   useEffect(() => {
@@ -509,37 +536,62 @@ export default function AdvancedSearchPanel({
         maxHeight: "80vh",
       }}
     >
-      {/* Header row: tabs + close */}
+      {/* Header row: tabs + status + close */}
       <div className="flex items-center justify-between border-b border-gray-200 px-4">
-        <div className="flex">
+        <div className="flex items-center gap-3">
+          <div className="flex">
+            <button
+              onClick={() => setActiveTab("search")}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "search"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              Search
+            </button>
+            <button
+              onClick={() => setActiveTab("recent")}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "recent"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              Recent
+            </button>
+          </div>
+          {showCount && (
+            <div className="hidden sm:flex items-center gap-2 text-xs text-gray-600 whitespace-nowrap">
+              {isLoading && (
+                <span
+                  className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"
+                  aria-label="Loading"
+                />
+              )}
+              <span>{countText}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {showCount && (
+            <div className="sm:hidden flex items-center gap-2 text-xs text-gray-600 whitespace-nowrap">
+              {isLoading && (
+                <span
+                  className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"
+                  aria-label="Loading"
+                />
+              )}
+              <span>{resolvedTotalCount ?? resolvedDisplayedCount}</span>
+            </div>
+          )}
           <button
-            onClick={() => setActiveTab("search")}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "search"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
+            onClick={onClose}
+            className="p-2 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            title="Close"
+            aria-label="Close"
           >
-            Search
-          </button>
-          <button
-            onClick={() => setActiveTab("recent")}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "recent"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-          >
-            Recent
+            <FiX className="w-5 h-5" />
           </button>
         </div>
-
-        <button
-          onClick={onClose}
-          className="p-2 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-          title="Close"
-          aria-label="Close"
-        >
-          <FiX className="w-5 h-5" />
-        </button>
       </div>
 
       {/* Content */}
