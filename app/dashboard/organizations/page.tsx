@@ -858,6 +858,25 @@ export default function OrganizationList() {
     (totalPages != null ? currentPage < totalPages : organizations.length === pageSize) &&
     !isPageLoading &&
     !isLoading;
+  const paginationItems = useMemo<(number | "...")[]>(() => {
+    if (totalPages == null || totalPages <= 1) return [1];
+
+    const pages = new Set<number>();
+    pages.add(1);
+    pages.add(totalPages);
+    for (let p = currentPage - 1; p <= currentPage + 1; p += 1) {
+      if (p > 1 && p < totalPages) pages.add(p);
+    }
+
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const items: (number | "...")[] = [];
+    for (let i = 0; i < sorted.length; i += 1) {
+      const value = sorted[i];
+      if (i > 0 && value - sorted[i - 1] > 1) items.push("...");
+      items.push(value);
+    }
+    return items;
+  }, [currentPage, totalPages]);
   // Find custom field definitions for individual row actions
   const findFieldByLabel = (label: string) => {
     return availableFields.find(f => {
@@ -1755,23 +1774,64 @@ export default function OrganizationList() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))}
+              onClick={() => setCurrentPage(1)}
               disabled={!canGoPrev}
               className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
+              First
+            </button>
+            <button
+              type="button"
+              onClick={() => canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={!canGoPrev}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center gap-1"
+            >
+              <span aria-hidden="true">‹</span>
               Previous
             </button>
-            <span className="text-sm text-gray-600 min-w-[90px] text-center">
-              Page {currentPage}
-              {totalPages != null ? ` of ${totalPages}` : ""}
-            </span>
+            <div className="flex items-center gap-1">
+              {paginationItems.map((item, idx) =>
+                item === "..." ? (
+                  <span
+                    key={`ellipsis-${idx}`}
+                    className="px-2 py-1 text-sm text-gray-500 select-none"
+                  >
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setCurrentPage(item)}
+                    disabled={isLoading || isPageLoading || item === currentPage}
+                    className={`min-w-[2.4rem] px-3 py-1.5 border rounded text-sm font-medium transition-colors ${
+                      item === currentPage
+                        ? "border-gray-300 bg-white text-gray-900 shadow-sm"
+                        : "border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+                    } disabled:cursor-not-allowed`}
+                    aria-current={item === currentPage ? "page" : undefined}
+                  >
+                    {item}
+                  </button>
+                )
+              )}
+            </div>
             <button
               type="button"
               onClick={() => canGoNext && setCurrentPage((p) => p + 1)}
               disabled={!canGoNext}
-              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center gap-1"
             >
               Next
+              <span aria-hidden="true">›</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => totalPages != null && setCurrentPage(totalPages)}
+              disabled={totalPages == null || !canGoNext}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
+              Last
             </button>
           </div>
         </div>
