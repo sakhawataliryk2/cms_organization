@@ -23,6 +23,14 @@ type ImportQueueContextValue = {
 };
 
 const ImportQueueContext = createContext<ImportQueueContextValue | null>(null);
+const FALLBACK_QUEUE_CONTEXT: ImportQueueContextValue = {
+  activeJobs: [],
+  pendingCount: 0,
+  isLoading: false,
+  hasActiveEntityQueue: () => false,
+  entityLabelByType: (entityType: string) => ENTITY_LABEL_BY_TYPE[entityType] || entityType,
+  refreshNow: async () => undefined,
+};
 
 const ENTITY_LABEL_BY_TYPE: Record<string, string> = {
   organizations: "Organization",
@@ -85,8 +93,5 @@ export function ImportQueueProvider({ children }: { children: React.ReactNode })
 
 export function useImportQueue() {
   const ctx = useContext(ImportQueueContext);
-  if (!ctx) {
-    throw new Error("useImportQueue must be used within ImportQueueProvider");
-  }
-  return ctx;
+  return ctx || FALLBACK_QUEUE_CONTEXT;
 }
