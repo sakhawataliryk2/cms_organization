@@ -4,6 +4,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -788,6 +789,14 @@ export default function ArchivedOrganizationsList() {
     return result;
   }, [organizations, columnFilters, columnSorts, searchTerm]);
 
+  const showTableSkeleton = isLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    columnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = 12;
+
   const handleBackToOrganizations = () => {
     router.push("/dashboard/organizations");
   };
@@ -863,10 +872,6 @@ export default function ArchivedOrganizationsList() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading archived organizations..." />;
-  }
-
   if (isDeleting) {
     return <LoadingScreen message="Deleting organizations..." />;
   }
@@ -895,10 +900,15 @@ export default function ArchivedOrganizationsList() {
                 <input
                   type="text"
                   placeholder="Search archived organizations..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                {isLoading && (
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  </div>
+                )}
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1189,7 +1199,12 @@ export default function ArchivedOrganizationsList() {
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedOrganizations.length > 0 ? (
+                {showTableSkeleton ? (
+                  <TableSkeletonRows
+                    rowCount={skeletonRowCount}
+                    columnCount={skeletonColumnCount}
+                  />
+                ) : filteredAndSortedOrganizations.length > 0 ? (
                   filteredAndSortedOrganizations.map((org) => (
                     <tr
                       key={org.id}
@@ -1307,7 +1322,7 @@ export default function ArchivedOrganizationsList() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3 + columnFields.length}
+                      colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm
@@ -1333,19 +1348,23 @@ export default function ArchivedOrganizationsList() {
           </div>
           <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
-                </span>{" "}
-                of{" "}
-                <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
-                </span>{" "}
-                results
-              </p>
+              {showTableSkeleton ? (
+                <p className="text-sm text-gray-500">Loading results…</p>
+              ) : (
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">1</span> to{" "}
+                  <span className="font-medium">
+                    {filteredAndSortedOrganizations.length}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-medium">
+                    {filteredAndSortedOrganizations.length}
+                  </span>{" "}
+                  results
+                </p>
+              )}
             </div>
-            {filteredAndSortedOrganizations.length > 0 && (
+            {!showTableSkeleton && filteredAndSortedOrganizations.length > 0 && (
               <div>
                 <nav
                   className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"

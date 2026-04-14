@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -821,6 +822,14 @@ export default function PlacementList() {
     return result;
   }, [placements, searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
 
+  const showTableSkeleton = isLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    placementColumnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = 12;
+
   // Email handlers for single placement (kept for potential bulk or future use)
   const handleEmailCandidates = async (placementId: string) => {
     const emailSet = new Set<string>();
@@ -1139,10 +1148,6 @@ export default function PlacementList() {
   };
 
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading archived placements..." />;
-  }
-
   if (isDeleting) {
     return <LoadingScreen message="Deleting placement..." />;
   }
@@ -1169,10 +1174,15 @@ export default function PlacementList() {
                 <input
                   type="text"
                   placeholder="Search archived placements..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                {isLoading && (
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  </div>
+                )}
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1515,7 +1525,12 @@ export default function PlacementList() {
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedPlacements.length > 0 ? (
+                {showTableSkeleton ? (
+                  <TableSkeletonRows
+                    rowCount={skeletonRowCount}
+                    columnCount={skeletonColumnCount}
+                  />
+                ) : filteredAndSortedPlacements.length > 0 ? (
                   filteredAndSortedPlacements.map((placement) => (
                     <tr
                       key={placement.id}
@@ -1594,7 +1609,7 @@ export default function PlacementList() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3 + columnFields.length}
+                      colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 text-center text-gray-500"
                     >
                       {searchTerm
@@ -1621,19 +1636,23 @@ export default function PlacementList() {
         </div>
         <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">
-                {filteredAndSortedPlacements.length}
-              </span>{" "}
-              of{" "}
-              <span className="font-medium">
-                {filteredAndSortedPlacements.length}
-              </span>{" "}
-              results
-            </p>
+            {showTableSkeleton ? (
+              <p className="text-sm text-gray-500">Loading results…</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">
+                  {filteredAndSortedPlacements.length}
+                </span>{" "}
+                of{" "}
+                <span className="font-medium">
+                  {filteredAndSortedPlacements.length}
+                </span>{" "}
+                results
+              </p>
+            )}
           </div>
-          {filteredAndSortedPlacements.length > 0 && (
+          {!showTableSkeleton && filteredAndSortedPlacements.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"

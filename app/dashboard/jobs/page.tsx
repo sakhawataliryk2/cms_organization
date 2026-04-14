@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "nextjs-toploader/app";
 import Image from "next/image";
-import LoadingScreen from "@/components/LoadingScreen";
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -949,11 +949,12 @@ export default function JobList() {
       : totalJobsCount != null
         ? Math.max(1, Math.ceil(totalJobsCount / pageSize))
         : null;
-  const canGoPrev = currentPage > 1 && !isPageLoading;
+  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
   const canGoNext =
     !isAdvancedFullMode &&
     (totalPages != null ? currentPage < totalPages : jobs.length === pageSize) &&
-    !isPageLoading;
+    !isPageLoading &&
+    !isLoading;
   const filteredAndSortedJobs = useMemo(() => {
     // Exclude archived jobs from main listing (same as Organization)
     const sourceJobs = isAdvancedFullMode ? (advancedJobsDataset ?? []) : jobs;
@@ -1050,6 +1051,14 @@ export default function JobList() {
     totalJobsCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
       ? totalJobsCount
       : filteredAndSortedJobs.length;
+
+  const showTableSkeleton = isLoading || isPageLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    columnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1619,10 +1628,6 @@ export default function JobList() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading jobs..." />;
-  }
-
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
@@ -1641,10 +1646,10 @@ export default function JobList() {
                   onChange={(e) => setSearchInput(e.target.value)}
                 />
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
-                {(isPageLoading || isAdvancedDatasetLoading) && (
+                {(isLoading || isPageLoading || isAdvancedDatasetLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                   )}
-                  <span>{visibleResultsCount} found</span>
+                  <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
                 </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1842,7 +1847,7 @@ export default function JobList() {
         recentStorageKey="jobsAdvancedSearchRecent"
         initialCriteria={advancedSearchCriteria}
         anchorEl={advancedSearchButtonRef.current}
-        isLoading={isPageLoading || isAdvancedDatasetLoading}
+        isLoading={isLoading || isPageLoading || isAdvancedDatasetLoading}
         resultsCount={visibleResultsCount}
         resultsLabel="records"
       />
@@ -1895,7 +1900,12 @@ export default function JobList() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedJobs.length > 0 ? (
+                {showTableSkeleton ? (
+                  <TableSkeletonRows
+                    rowCount={skeletonRowCount}
+                    columnCount={skeletonColumnCount}
+                  />
+                ) : filteredAndSortedJobs.length > 0 ? (
                   filteredAndSortedJobs.map((job) => (
                     <tr
                       key={job.id}
@@ -2007,7 +2017,7 @@ export default function JobList() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3 + columnFields.length}
+                      colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm
@@ -2024,36 +2034,40 @@ export default function JobList() {
         {/* Pagination */}
         <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
           <div>
-            <p className="text-sm text-gray-700">
-              Showing{" "}
-              <span className="font-medium">
-                {isAdvancedFullMode
-                  ? (filteredAndSortedJobs.length === 0 ? 0 : 1)
-                  : (totalJobsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium">
-                {isAdvancedFullMode
-                  ? filteredAndSortedJobs.length
-                  : (currentPage - 1) * pageSize + jobs.length}
-              </span>{" "}
-              of{" "}
-              {isAdvancedFullMode ? (
-                <span className="font-medium">{filteredAndSortedJobs.length}</span>
-              ) : totalJobsCount != null ? (
-                <span className="font-medium">{totalJobsCount}</span>
-              ) : (
-                <span className="font-medium">{jobs.length}</span>
-              )}{" "}
-              jobs
-              {!isAdvancedFullMode && filteredAndSortedJobs.length !== jobs.length ? (
-                <>
-                  {" "}(
-                  <span className="font-medium">{filteredAndSortedJobs.length}</span> shown
-                  after filters)
-                </>
-              ) : null}
-            </p>
+            {showTableSkeleton && !isAdvancedFullMode ? (
+              <p className="text-sm text-gray-500">Loading results…</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Showing{" "}
+                <span className="font-medium">
+                  {isAdvancedFullMode
+                    ? (filteredAndSortedJobs.length === 0 ? 0 : 1)
+                    : (totalJobsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
+                </span>{" "}
+                to{" "}
+                <span className="font-medium">
+                  {isAdvancedFullMode
+                    ? filteredAndSortedJobs.length
+                    : (currentPage - 1) * pageSize + jobs.length}
+                </span>{" "}
+                of{" "}
+                {isAdvancedFullMode ? (
+                  <span className="font-medium">{filteredAndSortedJobs.length}</span>
+                ) : totalJobsCount != null ? (
+                  <span className="font-medium">{totalJobsCount}</span>
+                ) : (
+                  <span className="font-medium">{jobs.length}</span>
+                )}{" "}
+                jobs
+                {!isAdvancedFullMode && filteredAndSortedJobs.length !== jobs.length ? (
+                  <>
+                    {" "}(
+                    <span className="font-medium">{filteredAndSortedJobs.length}</span> shown
+                    after filters)
+                  </>
+                ) : null}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="jobs-page-size" className="text-sm text-gray-600">
@@ -2062,13 +2076,14 @@ export default function JobList() {
             <select
               id="jobs-page-size"
               value={pageSize}
+              disabled={showTableSkeleton}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
                 setSelectedJobs([]);
                 setSelectAll(false);
               }}
-              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
