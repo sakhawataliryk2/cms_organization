@@ -203,6 +203,8 @@ export default function DataUploader() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const importAbortControllerRef = useRef<AbortController | null>(null);
+    const currentImportIdRef = useRef<string | null>(null);
+    const currentHistoryIdRef = useRef<number | null>(null);
 
     const recordTypes = [
         'Organization',
@@ -290,6 +292,13 @@ export default function DataUploader() {
         const originalReplaceState = window.history.replaceState.bind(window.history);
 
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (currentImportIdRef.current) {
+                const blob = new Blob(
+                    [JSON.stringify({ importId: currentImportIdRef.current })],
+                    { type: 'application/json' }
+                );
+                navigator.sendBeacon('/api/admin/data-uploader/import/cancel', blob);
+            }
             event.preventDefault();
             event.returnValue = warningMessage;
         };
@@ -297,6 +306,14 @@ export default function DataUploader() {
         const confirmAndMaybeAbort = () => {
             const userConfirmed = window.confirm(warningMessage);
             if (!userConfirmed) return false;
+            if (currentImportIdRef.current) {
+                fetch('/api/admin/data-uploader/import/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ importId: currentImportIdRef.current }),
+                    keepalive: true,
+                }).catch(() => undefined);
+            }
             importAbortControllerRef.current?.abort();
             return true;
         };
@@ -358,6 +375,14 @@ export default function DataUploader() {
             'Import is still running. Stop import in this tab and continue?'
         );
         if (!shouldStop) return false;
+        if (currentImportIdRef.current) {
+            fetch('/api/admin/data-uploader/import/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ importId: currentImportIdRef.current }),
+                keepalive: true,
+            }).catch(() => undefined);
+        }
         importAbortControllerRef.current?.abort();
         return true;
     };
@@ -397,7 +422,36 @@ export default function DataUploader() {
         return record;
     };
 
-    const persistImportHistory = async (params: {
+    const createImportHistoryEntry = async (params: {
+        entityType: string;
+        totalRows: number;
+    }) => {
+        const fileName = selectedFile?.name?.trim() || 'unknown.csv';
+        const res = await fetch('/api/admin/data-upload-import-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                entity_type: params.entityType,
+                category_label: recordType,
+                file_name: fileName,
+                total_rows: params.totalRows,
+                succeeded: 0,
+                failed: 0,
+                duration_ms: 0,
+                first_row_number: null,
+                last_row_number: null,
+                first_row_data: {},
+                last_row_data: {},
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.message || 'Failed to create import history entry');
+        }
+        return Number(data?.item?.id || 0) || null;
+    };
+
+    const updateImportHistoryEntry = async (historyId: number, params: {
         entityType: string;
         summary: ImportSummary;
         durationMs: number;
@@ -415,14 +469,11 @@ export default function DataUploader() {
             });
             return out;
         };
-        const fileName = selectedFile?.name?.trim() || 'unknown.csv';
-        const res = await fetch('/api/admin/data-upload-import-history', {
-            method: 'POST',
+        const res = await fetch(`/api/admin/data-upload-import-history/${historyId}`, {
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 entity_type: params.entityType,
-                category_label: recordType,
-                file_name: fileName,
                 total_rows: params.summary.totalRows,
                 succeeded: params.summary.successful,
                 failed: params.summary.failed,
@@ -837,6 +888,8 @@ export default function DataUploader() {
     const handleImport = async () => {
         setIsImporting(true);
         importAbortControllerRef.current = new AbortController();
+        const importId = crypto.randomUUID();
+        currentImportIdRef.current = importId;
         setIsLiveStreamPaused(false);
         setLastStreamProgressAt(Date.now());
         const startedAt = Date.now();
@@ -890,6 +943,14 @@ export default function DataUploader() {
                 successful: 0,
                 failed: 0,
             });
+            try {
+                currentHistoryIdRef.current = await createImportHistoryEntry({
+                    entityType,
+                    totalRows: importData.length,
+                });
+            } catch (historyErr) {
+                console.error('Initial history create failed:', historyErr);
+            }
 
             const response = await fetch('/api/admin/data-uploader/import', {
                 method: 'POST',
@@ -901,6 +962,7 @@ export default function DataUploader() {
                 body: JSON.stringify({
                     entityType,
                     records: importData,
+                    importId,
                     options: importOptions,
                     fieldNameToLabel,
                     fieldDefinitions, // Pass full field defs so server can resolve lookup types
@@ -935,23 +997,25 @@ export default function DataUploader() {
             const firstRowData = csvRows.length > 0 ? buildMappedImportRecord(csvRows[firstIdx]) : {};
             const lastRowData = csvRows.length > 0 ? buildMappedImportRecord(csvRows[lastIdx]) : {};
 
-            try {
-                await persistImportHistory({
-                    entityType,
-                    summary,
-                    durationMs,
-                    firstRowNumber,
-                    lastRowNumber,
-                    firstRowData,
-                    lastRowData,
-                });
-            } catch (histErr) {
-                console.error('Import history save failed:', histErr);
-                toast.warning(
-                    histErr instanceof Error
-                        ? `Import finished, but history was not saved: ${histErr.message}`
-                        : 'Import finished, but history was not saved.'
-                );
+            if (currentHistoryIdRef.current) {
+                try {
+                    await updateImportHistoryEntry(currentHistoryIdRef.current, {
+                        entityType,
+                        summary,
+                        durationMs,
+                        firstRowNumber,
+                        lastRowNumber,
+                        firstRowData,
+                        lastRowData,
+                    });
+                } catch (histErr) {
+                    console.error('Import history save failed:', histErr);
+                    toast.warning(
+                        histErr instanceof Error
+                            ? `Import finished, but history was not saved: ${histErr.message}`
+                            : 'Import finished, but history was not saved.'
+                    );
+                }
             }
 
             setCurrentStep(6);
@@ -973,6 +1037,8 @@ export default function DataUploader() {
             setIsLiveStreamPaused(false);
             setIsImporting(false);
             importAbortControllerRef.current = null;
+            currentImportIdRef.current = null;
+            currentHistoryIdRef.current = null;
         }
     };
 
@@ -992,6 +1058,8 @@ export default function DataUploader() {
         setImportLiveProgress(null);
         setLastStreamProgressAt(null);
         setIsLiveStreamPaused(false);
+        currentImportIdRef.current = null;
+        currentHistoryIdRef.current = null;
         setViewHistoryDetail(null);
         setViewHistoryLoading(false);
         setImportOptions({
