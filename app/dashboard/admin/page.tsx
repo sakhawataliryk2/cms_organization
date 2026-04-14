@@ -160,6 +160,17 @@ export default function AdminCenter() {
 
             // Fetch status options
             try {
+                // Avoid fetching very large organization list just to build status dropdown.
+                if (selectedModule === 'organizations') {
+                    setStatusOptions([
+                        { label: 'Active', value: 'Active' },
+                        { label: 'Archived', value: 'Archived' },
+                    ]);
+                    setModuleFieldConfigs(configs);
+                    setIsLoadingFields(false);
+                    return;
+                }
+
                 const token = document.cookie.replace(
                     /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
                     "$1"
