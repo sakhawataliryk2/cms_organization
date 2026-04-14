@@ -201,6 +201,35 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
 
 /** Organizations per backend bulk-create call (backend max is 500). */
 const ORG_BULK_CHUNK_SIZE = 500;
+/** Parallel organization chunk uploads to improve throughput. */
+const ORG_BULK_CONCURRENCY = 3;
+/** Timeout for backend import requests. */
+const IMPORT_REQUEST_TIMEOUT_MS = 45_000;
+/** Retry attempts for transient bulk failures. */
+const IMPORT_BULK_RETRIES = 1;
+
+async function fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number = IMPORT_REQUEST_TIMEOUT_MS
+): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+    if (size <= 0) return [arr];
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+        chunks.push(arr.slice(i, i + size));
+    }
+    return chunks;
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -316,33 +345,43 @@ export async function POST(request: NextRequest) {
                     writeProgress(0, 0, 0, records.length, true);
 
         const opts = options ?? {};
+        // Duplicate uniqueness checks are currently disabled below (uniqueChecks stays empty),
+        // so forcing per-row duplicate mode only slows imports without changing behavior.
+        const duplicateChecksEnabled = false;
         const needsDupCheck =
-            !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
+            duplicateChecksEnabled && !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
         const useOrgBulkCreate = entityType === 'organizations' && !needsDupCheck;
 
-        const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
-
-        const flushOrganizationBulkChunk = async () => {
-            if (orgBulkPending.length === 0) return;
-            throwIfAborted();
-            const chunk = orgBulkPending.splice(0, orgBulkPending.length);
+        const createOrganizationChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
             try {
-                const createRes = await fetch(`${apiUrl}/api/organizations/bulk-create`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                        items: chunk.map((c) => c.payload),
-                        maxBatch: ORG_BULK_CHUNK_SIZE,
-                    }),
-                });
-                const createData = await createRes.json().catch(() => ({}));
+                let createRes: Response | null = null;
+                let createData: any = {};
+                let lastErr: unknown = null;
 
-                if (!createRes.ok) {
+                for (let attempt = 0; attempt <= IMPORT_BULK_RETRIES; attempt++) {
+                    try {
+                        createRes = await fetchWithTimeout(`${apiUrl}/api/organizations/bulk-create`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                                items: chunk.map((c) => c.payload),
+                                maxBatch: ORG_BULK_CHUNK_SIZE,
+                            }),
+                        });
+                        createData = await createRes.json().catch(() => ({}));
+                        if (createRes.ok) break;
+                    } catch (err) {
+                        lastErr = err;
+                    }
+                }
+
+                if (!createRes || !createRes.ok) {
                     const msg =
-                        createData.message ??
+                        (lastErr instanceof Error ? lastErr.message : undefined) ??
+                        createData?.message ??
                         (typeof createData === 'string' ? createData : 'Bulk create failed');
                     for (const c of chunk) {
                         summary.failed++;
@@ -387,6 +426,24 @@ export async function POST(request: NextRequest) {
             writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
         };
 
+        const flushOrganizationBulkChunksConcurrently = async (
+            pending: Array<{ row: number; payload: Record<string, any> }>
+        ) => {
+            if (pending.length === 0) return;
+            const chunks = chunkArray(pending, ORG_BULK_CHUNK_SIZE);
+            for (let i = 0; i < chunks.length; i += ORG_BULK_CONCURRENCY) {
+                throwIfAborted();
+                const batch = chunks.slice(i, i + ORG_BULK_CONCURRENCY);
+                await Promise.all(batch.map((chunk) => createOrganizationChunk(chunk)));
+            }
+        };
+
+        const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
+        const entityLabelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
+        const lookupFields = (fieldDefinitions as FieldDefinition[]).filter(
+            (fd) => fd.field_name && fd.lookup_type && LOOKUP_TYPE_CONFIG[fd.lookup_type]
+        );
+
         for (let i = 0; i < records.length; i++) {
             throwIfAborted();
             const record = records[i];
@@ -404,15 +461,13 @@ export async function POST(request: NextRequest) {
                 // For every field that has a lookup_type, extract the record_number from
                 // the CSV value, find the matching record's PK id, and replace the value
                 // in custom_fields (and top-level if applicable) with that id.
-                for (const [fieldName, rawValue] of Object.entries(record)) {
+                for (const fieldDef of lookupFields) {
                     throwIfAborted();
+                    const fieldName = fieldDef.field_name;
+                    const rawValue = record[fieldName];
                     if (!rawValue || String(rawValue).trim() === '') continue;
 
-                    const fieldDef = fieldDefByName.get(fieldName);
-                    if (!fieldDef?.lookup_type) continue;
-
-                    const lookupType = fieldDef.lookup_type;
-                    if (!LOOKUP_TYPE_CONFIG[lookupType]) continue;
+                    const lookupType = fieldDef.lookup_type!;
 
                     const recordNum = extractRecordNumber(String(rawValue));
                     if (recordNum === null) continue;
@@ -425,8 +480,7 @@ export async function POST(request: NextRequest) {
                         // Replace in custom_fields
                         payload.custom_fields[label] = resolvedId;
                         // Also replace at top level if this label maps to a backend column
-                        const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
-                        const backendCol = labelMap[label];
+                        const backendCol = entityLabelMap[label];
                         if (backendCol && payload[backendCol] !== undefined) {
                             payload[backendCol] = resolvedId;
                         }
@@ -435,7 +489,7 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Ensure custom_fields is always a plain serialisable object
-                payload.custom_fields = JSON.parse(JSON.stringify(payload.custom_fields ?? {}));
+                payload.custom_fields = { ...(payload.custom_fields ?? {}) };
 
                 // ── Hiring manager model uses camelCase "customFields" not "custom_fields" ──
                 // Rename the key so the model picks it up correctly
@@ -545,11 +599,12 @@ export async function POST(request: NextRequest) {
                 throwIfAborted();
                 if (useOrgBulkCreate) {
                     orgBulkPending.push({ row: rowNumber, payload });
-                    if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE) {
-                        await flushOrganizationBulkChunk();
+                    if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY) {
+                        const batchToFlush = orgBulkPending.splice(0, ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY);
+                        await flushOrganizationBulkChunksConcurrently(batchToFlush);
                     }
                 } else {
-                    const createRes = await fetch(`${apiUrl}/api/${endpoint}`, {
+                    const createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -582,7 +637,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (useOrgBulkCreate) {
-            await flushOrganizationBulkChunk();
+            await flushOrganizationBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
         }
 
         writeProgress(records.length, summary.successful, summary.failed, records.length, true);

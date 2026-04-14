@@ -1660,7 +1660,15 @@ export default function DataUploader() {
                                         )}
                                         {isLiveStreamPaused && (
                                             <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                                                Live updates are temporarily paused in this tab (likely due to tab/page rendering or navigation). Import can still be running on the server and rows may still be added.
+                                                Resuming from last known progress: parsed{' '}
+                                                <span className="font-semibold tabular-nums">
+                                                    {importLiveProgress?.scanned ?? 0}
+                                                </span>
+                                                {' / '}
+                                                <span className="font-semibold tabular-nums">
+                                                    {importLiveProgress?.totalInput ?? csvRows.length}
+                                                </span>
+                                                . The import is still running and this view updates automatically when the next server chunk arrives.
                                             </div>
                                         )}
                                         <p className="text-xs text-blue-800 mt-1">
