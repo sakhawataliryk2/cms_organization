@@ -50,6 +50,11 @@ export function ImportQueueProvider({ children }: { children: React.ReactNode })
     setIsLoading(true);
     try {
       const prev = activeJobs;
+      // Advance one queue chunk globally so imports continue even if user leaves uploader page.
+      await fetch("/api/admin/data-uploader/import/drain", {
+        method: "POST",
+        cache: "no-store",
+      }).catch(() => undefined);
       const res = await fetch("/api/admin/data-uploader/import/jobs?limit=100", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       const jobs = (data?.jobs || []) as ActiveImportJob[];
