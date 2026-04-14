@@ -259,6 +259,11 @@ export async function POST(request: NextRequest) {
                     lastProgressAt = now;
                     writeLine({ type: 'progress', scanned, totalInput, successful, failed });
                 };
+                const throwIfAborted = () => {
+                    if (request.signal.aborted) {
+                        throw new Error('Import cancelled by user');
+                    }
+                };
                 let lastScannedForBulk = 0;
 
                 try {
@@ -318,6 +323,7 @@ export async function POST(request: NextRequest) {
 
         const flushOrganizationBulkChunk = async () => {
             if (orgBulkPending.length === 0) return;
+            throwIfAborted();
             const chunk = orgBulkPending.splice(0, orgBulkPending.length);
             try {
                 const createRes = await fetch(`${apiUrl}/api/organizations/bulk-create`, {
@@ -381,6 +387,7 @@ export async function POST(request: NextRequest) {
         };
 
         for (let i = 0; i < records.length; i++) {
+            throwIfAborted();
             const record = records[i];
             const rowNumber = i + 1;
             lastScannedForBulk = i + 1;
@@ -397,6 +404,7 @@ export async function POST(request: NextRequest) {
                 // the CSV value, find the matching record's PK id, and replace the value
                 // in custom_fields (and top-level if applicable) with that id.
                 for (const [fieldName, rawValue] of Object.entries(record)) {
+                    throwIfAborted();
                     if (!rawValue || String(rawValue).trim() === '') continue;
 
                     const fieldDef = fieldDefByName.get(fieldName);
@@ -533,6 +541,7 @@ export async function POST(request: NextRequest) {
 
                 if (!foundDuplicate) {
                 // ── Create new record ─────────────────────────────────────────────────
+                throwIfAborted();
                 if (useOrgBulkCreate) {
                     orgBulkPending.push({ row: rowNumber, payload });
                     if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE) {

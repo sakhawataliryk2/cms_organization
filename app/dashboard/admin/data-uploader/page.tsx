@@ -167,6 +167,7 @@ const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
     'Placement': 'placements',
     'Lead': 'leads'
 };
+const MAX_IMPORT_ROWS_PER_FILE = 1000;
 
 export default function DataUploader() {
     const router = useRouter();
@@ -199,6 +200,7 @@ export default function DataUploader() {
     const [importLiveProgress, setImportLiveProgress] = useState<ImportLiveProgress | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const importAbortControllerRef = useRef<AbortController | null>(null);
 
     const recordTypes = [
         'Organization',
@@ -261,8 +263,55 @@ export default function DataUploader() {
                 clearInterval(importTimerRef.current);
                 importTimerRef.current = null;
             }
+            if (importAbortControllerRef.current) {
+                importAbortControllerRef.current.abort();
+                importAbortControllerRef.current = null;
+            }
         };
     }, []);
+
+    useEffect(() => {
+        if (!isImporting) return;
+
+        const warningMessage = 'Import is currently running. Leaving now may stop parsing midway and cause incomplete data. Do you want to stop import and leave this page?';
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = warningMessage;
+        };
+        const onDocumentClickCapture = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target) return;
+            const anchor = target.closest('a') as HTMLAnchorElement | null;
+            if (!anchor) return;
+            const href = anchor.getAttribute('href');
+            if (!href || href.startsWith('#')) return;
+
+            const userConfirmed = window.confirm(warningMessage);
+            if (!userConfirmed) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            importAbortControllerRef.current?.abort();
+        };
+
+        window.addEventListener('beforeunload', onBeforeUnload);
+        document.addEventListener('click', onDocumentClickCapture, true);
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            document.removeEventListener('click', onDocumentClickCapture, true);
+        };
+    }, [isImporting]);
+
+    const confirmStopImport = (): boolean => {
+        if (!isImporting) return true;
+        const shouldStop = window.confirm(
+            'Import is still running. Stopping now can leave partial imported data (already committed rows remain). Stop import and continue?'
+        );
+        if (!shouldStop) return false;
+        importAbortControllerRef.current?.abort();
+        return true;
+    };
 
     const loadHistory = useCallback(async () => {
         setHistoryLoading(true);
@@ -348,6 +397,14 @@ export default function DataUploader() {
             if (text) {
                 const { headers, rows } = parseCSV(text);
                 if (headers.length > 0) {
+                    if (rows.length > MAX_IMPORT_ROWS_PER_FILE) {
+                        toast.error(
+                            `File has ${rows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
+                        );
+                        setCsvHeaders([]);
+                        setCsvRows([]);
+                        return;
+                    }
                     setCsvHeaders(headers);
                     setCsvRows(rows);
                     setCurrentStep(2);
@@ -572,6 +629,16 @@ export default function DataUploader() {
                 toast.error('File appears to be empty or invalid');
                 return;
             }
+            if (parsedRows.length > MAX_IMPORT_ROWS_PER_FILE) {
+                toast.error(
+                    `File has ${parsedRows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
+                );
+                setCsvHeaders([]);
+                setCsvRows([]);
+                setValidationErrors([]);
+                setFieldMappings({});
+                return;
+            }
 
             setCsvHeaders(parsedHeaders);
             setCsvRows(parsedRows);
@@ -651,6 +718,12 @@ export default function DataUploader() {
                 toast.error('Please upload a valid CSV file');
                 return;
             }
+            if (csvRows.length > MAX_IMPORT_ROWS_PER_FILE) {
+                toast.error(
+                    `This file has ${csvRows.length} rows. Please keep it to ${MAX_IMPORT_ROWS_PER_FILE} rows maximum per import.`
+                );
+                return;
+            }
             setCurrentStep(3);
             setMaxVisitedStep((prev) => Math.max(prev, 3));
             return;
@@ -676,6 +749,7 @@ export default function DataUploader() {
     };
 
     const handleBack = () => {
+        if (!confirmStopImport()) return;
         if (currentStep > 1) {
             setCurrentStep(currentStep - 1);
         }
@@ -713,6 +787,7 @@ export default function DataUploader() {
 
     const handleImport = async () => {
         setIsImporting(true);
+        importAbortControllerRef.current = new AbortController();
         const startedAt = Date.now();
         setImportElapsedMs(0);
         if (importTimerRef.current) {
@@ -771,6 +846,7 @@ export default function DataUploader() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
+                signal: importAbortControllerRef.current.signal,
                 body: JSON.stringify({
                     entityType,
                     records: importData,
@@ -827,7 +903,11 @@ export default function DataUploader() {
             toast.success(`Import finished in ${formatDurationMs(durationMs)}`);
         } catch (err) {
             console.error('Error importing data:', err);
-            toast.error(err instanceof Error ? err.message : 'Failed to import data');
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                toast.info('Import was stopped. Already committed rows were kept; remaining rows were not parsed.');
+            } else {
+                toast.error(err instanceof Error ? err.message : 'Failed to import data');
+            }
         } finally {
             if (importTimerRef.current) {
                 clearInterval(importTimerRef.current);
@@ -835,10 +915,12 @@ export default function DataUploader() {
             }
             setImportLiveProgress(null);
             setIsImporting(false);
+            importAbortControllerRef.current = null;
         }
     };
 
     const handleReset = () => {
+        if (!confirmStopImport()) return;
         setCurrentStep(1);
         setMainTab('upload');
         setSelectedFile(null);
@@ -1209,7 +1291,7 @@ export default function DataUploader() {
                                         </p>
                                         <p className="text-xs text-gray-500 mt-1">or click to browse</p>
                                     </div>
-                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls</p>
+                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls (max 1000 data rows per file)</p>
                                     {selectedFile && (
                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 shadow-sm">
                                             <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
