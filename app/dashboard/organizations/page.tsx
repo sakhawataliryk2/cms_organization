@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
@@ -67,6 +67,8 @@ type OrganizationFavorite = {
   advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
+
+const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -453,10 +455,21 @@ export default function OrganizationList() {
   }, [favoritesMenuOpen]);
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isPageLoading, setIsPageLoading] = useState<boolean>(false);
+  const [totalOrganizationsCount, setTotalOrganizationsCount] = useState<number | null>(null);
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [advancedOrganizationsDataset, setAdvancedOrganizationsDataset] = useState<Organization[] | null>(null);
+  const [isAdvancedDatasetLoading, setIsAdvancedDatasetLoading] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const latestRequestIdRef = useRef(0);
+  const organizationsQueryCacheRef = useRef<Map<string, { organizations: Organization[]; total: number | null }>>(new Map());
+  const advancedOrganizationsCacheRef = useRef<Map<string, Organization[]>>(new Map());
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -641,37 +654,185 @@ export default function OrganizationList() {
     return matchesAdvancedValue(raw, fieldType, c);
   };
 
-  // Fetch organizations on component mount
-  useEffect(() => {
-    fetchOrganizations();
-  }, []);
-
-  const fetchOrganizations = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/organizations");
-
-      if (!response.ok) {
-        // console.log('response', response)
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch organizations");
+  const fetchOrganizations = useCallback(
+    async (page: number) => {
+      const normalizedSearch = searchTerm.trim().toLowerCase();
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}`;
+      const cached = organizationsQueryCacheRef.current.get(cacheKey);
+      if (cached) {
+        setOrganizations(cached.organizations);
+        setTotalOrganizationsCount(cached.total);
+        setIsLoading(false);
+        setIsPageLoading(false);
+        return;
       }
 
-      const data = await response.json();
-      setOrganizations(data.organizations || []);
-    } catch (err) {
-      console.error("Error fetching organizations:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching organizations"
-      );
-    } finally {
-      setIsLoading(false);
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
+
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
+        setError(null);
+      } else {
+        setIsPageLoading(true);
+      }
+
+      try {
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(pageSize),
+        });
+        if (normalizedSearch !== "") {
+          query.set("search", searchTerm.trim());
+        }
+
+        const response = await fetch(`/api/organizations?${query.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to fetch organizations");
+        }
+
+        const data = await response.json();
+        if (requestId !== latestRequestIdRef.current) return;
+
+        const incomingOrganizations: Organization[] = Array.isArray(data?.organizations)
+          ? data.organizations
+          : [];
+        const total =
+          typeof data?.total === "number"
+            ? data.total
+            : typeof data?.count === "number"
+              ? data.count
+              : typeof data?.pagination?.total === "number"
+                ? data.pagination.total
+                : null;
+        setTotalOrganizationsCount(total);
+
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const pageOrganizations =
+          incomingOrganizations.length > pageSize
+            ? incomingOrganizations.slice(start, end)
+            : incomingOrganizations;
+        setOrganizations(pageOrganizations);
+        organizationsQueryCacheRef.current.set(cacheKey, {
+          organizations: pageOrganizations,
+          total,
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Error fetching organizations:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching organizations"
+        );
+      } finally {
+        if (requestId !== latestRequestIdRef.current) return;
+        hasLoadedOnceRef.current = true;
+        setIsLoading(false);
+        setIsPageLoading(false);
+      }
+    },
+    [pageSize, searchTerm]
+  );
+
+  const isAdvancedFullMode = advancedSearchCriteria.length > 0;
+
+  useEffect(() => {
+    if (isAdvancedFullMode) return;
+    void fetchOrganizations(currentPage);
+  }, [currentPage, fetchOrganizations, isAdvancedFullMode]);
+
+  useEffect(() => {
+    return () => {
+      activeFetchControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
+
+  useEffect(() => {
+    if (!isAdvancedFullMode) {
+      setAdvancedOrganizationsDataset(null);
+      setIsAdvancedDatasetLoading(false);
+      return;
     }
-  };
+
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const cacheKey = normalizedSearch;
+    const cached = advancedOrganizationsCacheRef.current.get(cacheKey);
+    if (cached) {
+      setAdvancedOrganizationsDataset(cached);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAllOrganizations = async () => {
+      setIsAdvancedDatasetLoading(true);
+      try {
+        const limit = 500;
+        let page = 1;
+        let total: number | null = null;
+        const all: Organization[] = [];
+
+        while (true) {
+          const query = new URLSearchParams({
+            page: String(page),
+            limit: String(limit),
+          });
+          if (normalizedSearch !== "") {
+            query.set("search", searchTerm.trim());
+          }
+
+          const response = await fetch(`/api/organizations?${query.toString()}`);
+          if (!response.ok) throw new Error("Failed to fetch organizations for advanced search");
+          const data = await response.json();
+          const batch: Organization[] = Array.isArray(data?.organizations) ? data.organizations : [];
+          total =
+            typeof data?.total === "number"
+              ? data.total
+              : typeof data?.count === "number"
+                ? data.count
+                : typeof data?.pagination?.total === "number"
+                  ? data.pagination.total
+                  : null;
+          all.push(...batch);
+
+          if (batch.length < limit) break;
+          if (total != null && all.length >= total) break;
+          page += 1;
+        }
+
+        if (!cancelled) {
+          advancedOrganizationsCacheRef.current.set(cacheKey, all);
+          setAdvancedOrganizationsDataset(all);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Error loading full organizations dataset for advanced search:", err);
+          setAdvancedOrganizationsDataset([]);
+        }
+      } finally {
+        if (!cancelled) setIsAdvancedDatasetLoading(false);
+      }
+    };
+
+    void loadAllOrganizations();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdvancedFullMode, searchTerm]);
 
   // Get unique status values for filter dropdown
   const statusOptions = useMemo(() => {
@@ -682,6 +843,19 @@ export default function OrganizationList() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [organizations]);
 
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const shouldApplyClientGlobalSearch = totalOrganizationsCount == null;
+  const totalPages =
+    isAdvancedFullMode
+      ? 1
+      : totalOrganizationsCount != null
+        ? Math.max(1, Math.ceil(totalOrganizationsCount / pageSize))
+        : null;
+  const canGoPrev = currentPage > 1 && !isPageLoading;
+  const canGoNext =
+    !isAdvancedFullMode &&
+    (totalPages != null ? currentPage < totalPages : organizations.length === pageSize) &&
+    !isPageLoading;
   // Find custom field definitions for individual row actions
   const findFieldByLabel = (label: string) => {
     return availableFields.find(f => {
@@ -696,11 +870,13 @@ export default function OrganizationList() {
   const statusField = findFieldByLabel('Status');
 
   const handleIndividualActionSuccess = () => {
+    organizationsQueryCacheRef.current.clear();
+    advancedOrganizationsCacheRef.current.clear();
     setShowOwnershipModal(false);
     setShowStatusModal(false);
     setShowTearsheetModal(false);
     setSelectedOrgId(null);
-    fetchOrganizations();
+    void fetchOrganizations(currentPage);
   };
 
   const applyFavorite = (fav: OrganizationFavorite) => {
@@ -776,13 +952,16 @@ export default function OrganizationList() {
 
   // Apply per-column filtering and sorting (exclude archived in main overview)
   const filteredAndSortedOrganizations = useMemo(() => {
-    let result = organizations.filter(
+    const sourceOrganizations = isAdvancedFullMode
+      ? (advancedOrganizationsDataset ?? [])
+      : organizations;
+    let result = sourceOrganizations.filter(
       (org) => org.status !== "Archived" && !org.archived_at
     );
 
     // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
+    if (shouldApplyClientGlobalSearch && deferredSearchTerm.trim() !== "") {
+      const term = deferredSearchTerm.toLowerCase();
       result = result.filter((org) =>
         (org.name || "").toLowerCase().includes(term) ||
         String(org.id || "").toLowerCase().includes(term) ||
@@ -848,7 +1027,11 @@ export default function OrganizationList() {
     }
 
     return result;
-  }, [organizations, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
+  }, [organizations, advancedOrganizationsDataset, isAdvancedFullMode, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  const visibleResultsCount =
+    totalOrganizationsCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
+      ? totalOrganizationsCount
+      : filteredAndSortedOrganizations.length;
 
   const handleViewArchived = () => {
     router.push("/dashboard/organizations/archived");
@@ -914,7 +1097,9 @@ export default function OrganizationList() {
         throw new Error(`Failed to delete ${failures.length} organizations`);
       }
 
-      await fetchOrganizations();
+      organizationsQueryCacheRef.current.clear();
+      advancedOrganizationsCacheRef.current.clear();
+      await fetchOrganizations(currentPage);
       setSelectedOrganizations([]);
       setSelectAll(false);
     } catch (err) {
@@ -998,10 +1183,16 @@ export default function OrganizationList() {
                 <input
                   type="text"
                   placeholder="Search organizations..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                {(isPageLoading || isAdvancedDatasetLoading) && (
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  )}
+                  <span>{visibleResultsCount} found</span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1140,7 +1331,9 @@ export default function OrganizationList() {
                 entityIds={selectedOrganizations}
                 availableFields={availableFields}
                 onSuccess={() => {
-                  fetchOrganizations();
+                  organizationsQueryCacheRef.current.clear();
+                  advancedOrganizationsCacheRef.current.clear();
+                  void fetchOrganizations(currentPage);
                   setSelectedOrganizations([]);
                   setSelectAll(false);
                 }}
@@ -1254,7 +1447,9 @@ export default function OrganizationList() {
               entityIds={selectedOrganizations}
               availableFields={availableFields}
               onSuccess={() => {
-                fetchOrganizations();
+                organizationsQueryCacheRef.current.clear();
+                advancedOrganizationsCacheRef.current.clear();
+                void fetchOrganizations(currentPage);
                 setSelectedOrganizations([]);
                 setSelectAll(false);
               }}
@@ -1486,73 +1681,82 @@ export default function OrganizationList() {
         </div>
 
         {/* Pagination */}
-        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+        <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
+          <div>
+            <p className="text-sm text-gray-700">
+              Showing{" "}
+              <span className="font-medium">
+                {isAdvancedFullMode
+                  ? (filteredAndSortedOrganizations.length === 0 ? 0 : 1)
+                  : (totalOrganizationsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium">
+                {isAdvancedFullMode
+                  ? filteredAndSortedOrganizations.length
+                  : (currentPage - 1) * pageSize + organizations.length}
+              </span>{" "}
+              of{" "}
+              {isAdvancedFullMode ? (
+                <span className="font-medium">{filteredAndSortedOrganizations.length}</span>
+              ) : totalOrganizationsCount != null ? (
+                <span className="font-medium">{totalOrganizationsCount}</span>
+              ) : (
+                <span className="font-medium">{organizations.length}</span>
+              )}{" "}
+              organizations
+              {!isAdvancedFullMode && filteredAndSortedOrganizations.length !== organizations.length ? (
+                <>
+                  {" "}(
+                  <span className="font-medium">{filteredAndSortedOrganizations.length}</span> shown
+                  after filters)
+                </>
+              ) : null}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="organizations-page-size" className="text-sm text-gray-600">
+              Rows per page
+            </label>
+            <select
+              id="organizations-page-size"
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+                setSelectedOrganizations([]);
+                setSelectAll(false);
+              }}
+              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={!canGoPrev}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
               Previous
             </button>
-            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            <span className="text-sm text-gray-600 min-w-[90px] text-center">
+              Page {currentPage}
+              {totalPages != null ? ` of ${totalPages}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => canGoNext && setCurrentPage((p) => p + 1)}
+              disabled={!canGoNext}
+              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            >
               Next
             </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
-                </span>{" "}
-                of{" "}
-                <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
-                </span>{" "}
-                results
-              </p>
-            </div>
-            {filteredAndSortedOrganizations.length > 0 && (
-              <div>
-                <nav
-                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                  aria-label="Pagination"
-                >
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Previous</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    1
-                  </button>
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Next</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                </nav>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1748,6 +1952,9 @@ export default function OrganizationList() {
         recentStorageKey="organizationAdvancedSearchRecent"
         initialCriteria={advancedSearchCriteria}
         anchorEl={advancedSearchButtonRef.current}
+        isLoading={isPageLoading || isAdvancedDatasetLoading}
+        resultsCount={visibleResultsCount}
+        resultsLabel="records"
       />
     </div>
   );

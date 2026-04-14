@@ -1020,10 +1020,16 @@ export default function TaskList() {
                 <input
                   type="text"
                   placeholder="Search tasks..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                  {isLoading && (
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  )}
+                  <span>{filteredAndSortedTasks.length} found</span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1273,6 +1279,9 @@ export default function TaskList() {
         recentStorageKey="tasksAdvancedSearchRecent"
         initialCriteria={advancedSearchCriteria}
         anchorEl={advancedSearchButtonRef.current}
+        isLoading={isLoading}
+        resultsCount={filteredAndSortedTasks.length}
+        resultsLabel="records"
       />
 
       {/* Tasks Table */}

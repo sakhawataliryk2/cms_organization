@@ -15,9 +15,19 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // Forward pagination/sorting/search params to backend when provided
+        const incomingParams = request.nextUrl.searchParams;
+        const passthroughKeys = ["page", "limit", "offset", "q", "search", "sort", "order"];
+        const qs = new URLSearchParams();
+        for (const key of passthroughKeys) {
+            const value = incomingParams.get(key);
+            if (value !== null && value !== "") qs.set(key, value);
+        }
+        const queryString = qs.toString();
+
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/leads`, {
+        const response = await fetch(`${apiUrl}/api/leads${queryString ? `?${queryString}` : ""}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

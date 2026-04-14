@@ -64,7 +64,7 @@ type JobsFavorite = {
   createdAt: number;
 };
 
-const PAGE_SIZE_OPTIONS = [50, 100, 150, 200] as const;
+const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -321,9 +321,13 @@ export default function JobList() {
   const [totalJobsCount, setTotalJobsCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [advancedJobsDataset, setAdvancedJobsDataset] = useState<Job[] | null>(null);
+  const [isAdvancedDatasetLoading, setIsAdvancedDatasetLoading] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const activeFetchControllerRef = useRef<AbortController | null>(null);
   const latestRequestIdRef = useRef(0);
+  const jobsQueryCacheRef = useRef<Map<string, { jobs: Job[]; total: number | null }>>(new Map());
+  const advancedJobsCacheRef = useRef<Map<string, Job[]>>(new Map());
 
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -572,6 +576,17 @@ export default function JobList() {
 
   const fetchJobs = useCallback(
     async (page: number) => {
+      const normalizedSearch = searchTerm.trim().toLowerCase();
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}`;
+      const cached = jobsQueryCacheRef.current.get(cacheKey);
+      if (cached) {
+        setJobs(cached.jobs);
+        setTotalJobsCount(cached.total);
+        setIsLoading(false);
+        setIsPageLoading(false);
+        return;
+      }
+
       const requestId = latestRequestIdRef.current + 1;
       latestRequestIdRef.current = requestId;
       if (activeFetchControllerRef.current) {
@@ -592,7 +607,7 @@ export default function JobList() {
           page: String(page),
           limit: String(pageSize),
         });
-        if (searchTerm.trim() !== "") {
+        if (normalizedSearch !== "") {
           query.set("search", searchTerm.trim());
         }
 
@@ -639,6 +654,7 @@ export default function JobList() {
             : incomingJobs;
 
         setJobs(pageJobs);
+        jobsQueryCacheRef.current.set(cacheKey, { jobs: pageJobs, total });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           return;
@@ -661,10 +677,13 @@ export default function JobList() {
     [pageSize, searchTerm]
   );
 
+  const isAdvancedFullMode = advancedSearchCriteria.length > 0;
+
   // Fetch page whenever page number or size changes
   useEffect(() => {
+    if (isAdvancedFullMode) return;
     void fetchJobs(currentPage);
-  }, [currentPage, fetchJobs]);
+  }, [currentPage, fetchJobs, isAdvancedFullMode]);
 
   useEffect(() => {
     return () => {
@@ -676,6 +695,78 @@ export default function JobList() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
+
+  useEffect(() => {
+    if (!isAdvancedFullMode) {
+      setAdvancedJobsDataset(null);
+      setIsAdvancedDatasetLoading(false);
+      return;
+    }
+
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const cacheKey = normalizedSearch;
+    const cached = advancedJobsCacheRef.current.get(cacheKey);
+    if (cached) {
+      setAdvancedJobsDataset(cached);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAllJobs = async () => {
+      setIsAdvancedDatasetLoading(true);
+      try {
+        const limit = 500;
+        let page = 1;
+        let total: number | null = null;
+        const all: Job[] = [];
+
+        while (true) {
+          const query = new URLSearchParams({
+            page: String(page),
+            limit: String(limit),
+          });
+          if (normalizedSearch !== "") {
+            query.set("search", searchTerm.trim());
+          }
+
+          const response = await fetch(`/api/jobs?${query.toString()}`);
+          if (!response.ok) throw new Error("Failed to fetch jobs for advanced search");
+          const data = await response.json();
+          const batch: Job[] = Array.isArray(data?.jobs) ? data.jobs : [];
+          total =
+            typeof data?.total === "number"
+              ? data.total
+              : typeof data?.count === "number"
+                ? data.count
+                : typeof data?.pagination?.total === "number"
+                  ? data.pagination.total
+                  : null;
+          all.push(...batch);
+
+          if (batch.length < limit) break;
+          if (total != null && all.length >= total) break;
+          page += 1;
+        }
+
+        if (!cancelled) {
+          advancedJobsCacheRef.current.set(cacheKey, all);
+          setAdvancedJobsDataset(all);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Error loading full jobs dataset for advanced search:", err);
+          setAdvancedJobsDataset([]);
+        }
+      } finally {
+        if (!cancelled) setIsAdvancedDatasetLoading(false);
+      }
+    };
+
+    void loadAllJobs();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdvancedFullMode, searchTerm]);
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -853,15 +944,20 @@ export default function JobList() {
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const shouldApplyClientGlobalSearch = totalJobsCount == null;
   const totalPages =
-    totalJobsCount != null ? Math.max(1, Math.ceil(totalJobsCount / pageSize)) : null;
+    isAdvancedFullMode
+      ? 1
+      : totalJobsCount != null
+        ? Math.max(1, Math.ceil(totalJobsCount / pageSize))
+        : null;
   const canGoPrev = currentPage > 1 && !isPageLoading;
   const canGoNext =
+    !isAdvancedFullMode &&
     (totalPages != null ? currentPage < totalPages : jobs.length === pageSize) &&
     !isPageLoading;
-
   const filteredAndSortedJobs = useMemo(() => {
     // Exclude archived jobs from main listing (same as Organization)
-    let result = jobs.filter((job) => job.status !== "Archived" && !job.archived_at);
+    const sourceJobs = isAdvancedFullMode ? (advancedJobsDataset ?? []) : jobs;
+    let result = sourceJobs.filter((job) => job.status !== "Archived" && !job.archived_at);
 
     const matchesAdvancedCriterion = (
       job: Job,
@@ -949,7 +1045,11 @@ export default function JobList() {
     }
 
     return result;
-  }, [jobs, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  }, [jobs, advancedJobsDataset, isAdvancedFullMode, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  const visibleResultsCount =
+    totalJobsCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
+      ? totalJobsCount
+      : filteredAndSortedJobs.length;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1187,6 +1287,8 @@ export default function JobList() {
   };
 
   const handleIndividualActionSuccess = () => {
+    jobsQueryCacheRef.current.clear();
+    advancedJobsCacheRef.current.clear();
     void fetchJobs(currentPage);
     setSelectedJobId(null);
     setShowOwnershipModal(false);
@@ -1487,6 +1589,8 @@ export default function JobList() {
         errors: allErrors,
       });
       if (totalCreated > 0) {
+        jobsQueryCacheRef.current.clear();
+        advancedJobsCacheRef.current.clear();
         setCurrentPage(1);
         void fetchJobs(1);
         toast.success(`Imported ${totalCreated} job(s).`);
@@ -1532,10 +1636,16 @@ export default function JobList() {
                 <input
                   type="text"
                   placeholder="Search jobs..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                 />
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                {(isPageLoading || isAdvancedDatasetLoading) && (
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  )}
+                  <span>{visibleResultsCount} found</span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1636,6 +1746,8 @@ export default function JobList() {
               entityIds={selectedJobs}
               availableFields={availableFields}
               onSuccess={() => {
+                jobsQueryCacheRef.current.clear();
+                advancedJobsCacheRef.current.clear();
                 void fetchJobs(currentPage);
                 setSelectedJobs([]);
                 setSelectAll(false);
@@ -1687,6 +1799,8 @@ export default function JobList() {
               entityIds={selectedJobs}
               availableFields={availableFields}
               onSuccess={() => {
+                jobsQueryCacheRef.current.clear();
+                advancedJobsCacheRef.current.clear();
                 void fetchJobs(currentPage);
                 setSelectedJobs([]);
                 setSelectAll(false);
@@ -1728,6 +1842,9 @@ export default function JobList() {
         recentStorageKey="jobsAdvancedSearchRecent"
         initialCriteria={advancedSearchCriteria}
         anchorEl={advancedSearchButtonRef.current}
+        isLoading={isPageLoading || isAdvancedDatasetLoading}
+        resultsCount={visibleResultsCount}
+        resultsLabel="records"
       />
 
       <div className="w-full max-w-full overflow-x-hidden">
@@ -1910,20 +2027,26 @@ export default function JobList() {
             <p className="text-sm text-gray-700">
               Showing{" "}
               <span className="font-medium">
-                {totalJobsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+                {isAdvancedFullMode
+                  ? (filteredAndSortedJobs.length === 0 ? 0 : 1)
+                  : (totalJobsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
               </span>{" "}
               to{" "}
               <span className="font-medium">
-                {(currentPage - 1) * pageSize + jobs.length}
+                {isAdvancedFullMode
+                  ? filteredAndSortedJobs.length
+                  : (currentPage - 1) * pageSize + jobs.length}
               </span>{" "}
               of{" "}
-              {totalJobsCount != null ? (
+              {isAdvancedFullMode ? (
+                <span className="font-medium">{filteredAndSortedJobs.length}</span>
+              ) : totalJobsCount != null ? (
                 <span className="font-medium">{totalJobsCount}</span>
               ) : (
                 <span className="font-medium">{jobs.length}</span>
               )}{" "}
               jobs
-              {filteredAndSortedJobs.length !== jobs.length ? (
+              {!isAdvancedFullMode && filteredAndSortedJobs.length !== jobs.length ? (
                 <>
                   {" "}(
                   <span className="font-medium">{filteredAndSortedJobs.length}</span> shown
