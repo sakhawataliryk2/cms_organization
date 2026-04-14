@@ -198,6 +198,8 @@ export default function DataUploader() {
     const [lastImportDurationMs, setLastImportDurationMs] = useState<number | null>(null);
     const [lastImportCompletedAt, setLastImportCompletedAt] = useState<Date | null>(null);
     const [importLiveProgress, setImportLiveProgress] = useState<ImportLiveProgress | null>(null);
+    const [lastStreamProgressAt, setLastStreamProgressAt] = useState<number | null>(null);
+    const [isLiveStreamPaused, setIsLiveStreamPaused] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const importAbortControllerRef = useRef<AbortController | null>(null);
@@ -272,12 +274,33 @@ export default function DataUploader() {
 
     useEffect(() => {
         if (!isImporting) return;
+        const timer = window.setInterval(() => {
+            if (!lastStreamProgressAt) return;
+            const stalledMs = Date.now() - lastStreamProgressAt;
+            setIsLiveStreamPaused(stalledMs > 15000);
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [isImporting, lastStreamProgressAt]);
 
-        const warningMessage = 'Import is currently running. Leaving now may stop parsing midway and cause incomplete data. Do you want to stop import and leave this page?';
+    useEffect(() => {
+        if (!isImporting) return;
+
+        const warningMessage = 'Import is currently running in this tab. Leaving this page will stop live updates and may interrupt parsing. Do you want to stop import and leave?';
+        const originalPushState = window.history.pushState.bind(window.history);
+        const originalReplaceState = window.history.replaceState.bind(window.history);
+
         const onBeforeUnload = (event: BeforeUnloadEvent) => {
             event.preventDefault();
             event.returnValue = warningMessage;
         };
+
+        const confirmAndMaybeAbort = () => {
+            const userConfirmed = window.confirm(warningMessage);
+            if (!userConfirmed) return false;
+            importAbortControllerRef.current?.abort();
+            return true;
+        };
+
         const onDocumentClickCapture = (event: MouseEvent) => {
             const target = event.target as HTMLElement | null;
             if (!target) return;
@@ -286,27 +309,53 @@ export default function DataUploader() {
             const href = anchor.getAttribute('href');
             if (!href || href.startsWith('#')) return;
 
-            const userConfirmed = window.confirm(warningMessage);
-            if (!userConfirmed) {
+            if (!confirmAndMaybeAbort()) {
                 event.preventDefault();
                 event.stopPropagation();
-                return;
             }
-            importAbortControllerRef.current?.abort();
+        };
+
+        window.history.pushState = function patchedPushState(
+            data: any,
+            unused: string,
+            url?: string | URL | null
+        ) {
+            if (!confirmAndMaybeAbort()) return;
+            return originalPushState(data, unused, url as any);
+        };
+
+        window.history.replaceState = function patchedReplaceState(
+            data: any,
+            unused: string,
+            url?: string | URL | null
+        ) {
+            if (!confirmAndMaybeAbort()) return;
+            return originalReplaceState(data, unused, url as any);
+        };
+
+        const onPopState = () => {
+            if (!confirmAndMaybeAbort()) {
+                originalPushState(null, '', window.location.href);
+            }
         };
 
         window.addEventListener('beforeunload', onBeforeUnload);
         document.addEventListener('click', onDocumentClickCapture, true);
+        window.addEventListener('popstate', onPopState);
+
         return () => {
             window.removeEventListener('beforeunload', onBeforeUnload);
             document.removeEventListener('click', onDocumentClickCapture, true);
+            window.removeEventListener('popstate', onPopState);
+            window.history.pushState = originalPushState;
+            window.history.replaceState = originalReplaceState;
         };
     }, [isImporting]);
 
     const confirmStopImport = (): boolean => {
         if (!isImporting) return true;
         const shouldStop = window.confirm(
-            'Import is still running. Stopping now can leave partial imported data (already committed rows remain). Stop import and continue?'
+            'Import is still running. Stop import in this tab and continue?'
         );
         if (!shouldStop) return false;
         importAbortControllerRef.current?.abort();
@@ -788,6 +837,8 @@ export default function DataUploader() {
     const handleImport = async () => {
         setIsImporting(true);
         importAbortControllerRef.current = new AbortController();
+        setIsLiveStreamPaused(false);
+        setLastStreamProgressAt(Date.now());
         const startedAt = Date.now();
         setImportElapsedMs(0);
         if (importTimerRef.current) {
@@ -864,7 +915,11 @@ export default function DataUploader() {
             const summary = await consumeImportNdjsonStream(
                 response,
                 importData.length,
-                setImportLiveProgress
+                (progress) => {
+                    setImportLiveProgress(progress);
+                    setLastStreamProgressAt(Date.now());
+                    setIsLiveStreamPaused(false);
+                }
             );
 
             const durationMs = Date.now() - startedAt;
@@ -914,6 +969,8 @@ export default function DataUploader() {
                 importTimerRef.current = null;
             }
             setImportLiveProgress(null);
+            setLastStreamProgressAt(null);
+            setIsLiveStreamPaused(false);
             setIsImporting(false);
             importAbortControllerRef.current = null;
         }
@@ -933,6 +990,8 @@ export default function DataUploader() {
         setLastImportCompletedAt(null);
         setImportElapsedMs(0);
         setImportLiveProgress(null);
+        setLastStreamProgressAt(null);
+        setIsLiveStreamPaused(false);
         setViewHistoryDetail(null);
         setViewHistoryLoading(false);
         setImportOptions({
@@ -984,6 +1043,7 @@ export default function DataUploader() {
     };
 
     const handleClose = () => {
+        if (!confirmStopImport()) return;
         handleReset();
         router.push('/dashboard/admin');
     };
@@ -1165,6 +1225,7 @@ export default function DataUploader() {
                                     <table className="min-w-full divide-y divide-gray-200 text-sm">
                                         <thead className="bg-gray-50">
                                             <tr>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">File Name</th>
                                                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Total</th>
                                                 <th className="px-3 py-2 text-left font-semibold text-gray-600">OK</th>
                                                 <th className="px-3 py-2 text-left font-semibold text-gray-600">Fail</th>
@@ -1178,6 +1239,9 @@ export default function DataUploader() {
                                         <tbody className="bg-white divide-y divide-gray-100">
                                             {historyItems.map((h) => (
                                                 <tr key={h.id} className="hover:bg-gray-50">
+                                                    <td className="px-3 py-2 max-w-[240px] truncate" title={h.file_name}>
+                                                        {h.file_name || '—'}
+                                                    </td>
                                                     <td className="px-3 py-2 whitespace-nowrap">{h.total_rows}</td>
                                                     <td className="px-3 py-2 whitespace-nowrap text-green-700 font-medium">{h.succeeded}</td>
                                                     <td className="px-3 py-2 whitespace-nowrap text-red-600 font-medium">{h.failed}</td>
@@ -1525,6 +1589,11 @@ export default function DataUploader() {
                                                 {' · '}
                                                 <span className="text-red-800">Failed {importLiveProgress.failed}</span>
                                             </p>
+                                        )}
+                                        {isLiveStreamPaused && (
+                                            <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                                                Live updates are temporarily paused in this tab (likely due to tab/page rendering or navigation). Import can still be running on the server and rows may still be added.
+                                            </div>
                                         )}
                                         <p className="text-xs text-blue-800 mt-1">
                                             Updates stream over the same request (lightly throttled for smooth UI). Bulk organization imports refresh OK/Failed after each batch is written.
