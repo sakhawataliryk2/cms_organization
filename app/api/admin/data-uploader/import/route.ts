@@ -240,6 +240,28 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+                const writeLine = (obj: object) => {
+                    controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+                };
+                let lastProgressAt = 0;
+                const writeProgress = (
+                    scanned: number,
+                    successful: number,
+                    failed: number,
+                    totalInput: number,
+                    force = false
+                ) => {
+                    const now = Date.now();
+                    if (!force && now - lastProgressAt < 160) return;
+                    lastProgressAt = now;
+                    writeLine({ type: 'progress', scanned, totalInput, successful, failed });
+                };
+                let lastScannedForBulk = 0;
+
+                try {
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
 
         // Build a map of field_name → FieldDefinition for quick lookup
@@ -285,6 +307,7 @@ export async function POST(request: NextRequest) {
             failed: 0,
             errors: [] as Array<{ row: number; errors: string[] }>,
         };
+                    writeProgress(0, 0, 0, records.length, true);
 
         const opts = options ?? {};
         const needsDupCheck =
@@ -318,6 +341,7 @@ export async function POST(request: NextRequest) {
                         summary.failed++;
                         summary.errors.push({ row: c.row, errors: [String(msg)] });
                     }
+                    writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
                     return;
                 }
 
@@ -353,18 +377,17 @@ export async function POST(request: NextRequest) {
                     summary.errors.push({ row: c.row, errors: [msg] });
                 }
             }
+            writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
         };
 
         for (let i = 0; i < records.length; i++) {
             const record = records[i];
             const rowNumber = i + 1;
+            lastScannedForBulk = i + 1;
 
-            // Always skip completely empty rows regardless of import options
             if (!record || Object.values(record).every(v => v === null || v === undefined || String(v).trim() === '')) {
                 summary.totalRows--;
-                continue;
-            }
-
+            } else {
             try {
                 // Build payload the same way individual add pages do
                 const payload = buildPayload(entityType, record, fieldNameToLabel, fieldDefByName);
@@ -508,8 +531,7 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                if (foundDuplicate) continue;
-
+                if (!foundDuplicate) {
                 // ── Create new record ─────────────────────────────────────────────────
                 if (useOrgBulkCreate) {
                     orgBulkPending.push({ row: rowNumber, payload });
@@ -537,6 +559,7 @@ export async function POST(request: NextRequest) {
                         summary.successful++;
                     }
                 }
+                }
             } catch (err) {
                 summary.failed++;
                 summary.errors.push({
@@ -544,15 +567,37 @@ export async function POST(request: NextRequest) {
                     errors: [err instanceof Error ? err.message : 'Unknown error'],
                 });
             }
+            }
+            writeProgress(i + 1, summary.successful, summary.failed, records.length);
         }
 
         if (useOrgBulkCreate) {
             await flushOrganizationBulkChunk();
         }
 
-        return NextResponse.json({ success: true, summary });
+        writeProgress(records.length, summary.successful, summary.failed, records.length, true);
+                    writeLine({ type: 'done', success: true, summary });
+                } catch (streamErr) {
+                    console.error('Import stream error:', streamErr);
+                    writeLine({
+                        type: 'error',
+                        success: false,
+                        message: streamErr instanceof Error ? streamErr.message : 'Internal server error',
+                    });
+                } finally {
+                    controller.close();
+                }
+            },
+        });
+
+        return new Response(stream, {
+            headers: {
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
+                'Cache-Control': 'no-store',
+            },
+        });
     } catch (error) {
-        console.error('Error processing CSV import:', error);
+        console.error('CSV import route setup error:', error);
         return NextResponse.json(
             { success: false, message: error instanceof Error ? error.message : 'Internal server error' },
             { status: 500 }

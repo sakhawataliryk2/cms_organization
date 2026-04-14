@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
 import LoadingScreen from "@/components/LoadingScreen";
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
@@ -851,11 +852,12 @@ export default function OrganizationList() {
       : totalOrganizationsCount != null
         ? Math.max(1, Math.ceil(totalOrganizationsCount / pageSize))
         : null;
-  const canGoPrev = currentPage > 1 && !isPageLoading;
+  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
   const canGoNext =
     !isAdvancedFullMode &&
     (totalPages != null ? currentPage < totalPages : organizations.length === pageSize) &&
-    !isPageLoading;
+    !isPageLoading &&
+    !isLoading;
   // Find custom field definitions for individual row actions
   const findFieldByLabel = (label: string) => {
     return availableFields.find(f => {
@@ -1033,6 +1035,14 @@ export default function OrganizationList() {
       ? totalOrganizationsCount
       : filteredAndSortedOrganizations.length;
 
+  const showTableSkeleton = isLoading || isPageLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    columnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = Math.min(pageSize, 12);
+
   const handleViewArchived = () => {
     router.push("/dashboard/organizations/archived");
   };
@@ -1160,10 +1170,6 @@ export default function OrganizationList() {
     URL.revokeObjectURL(url);
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading organizations..." />;
-  }
-
   if (isDeleting) {
     return <LoadingScreen message="Deleting organizations..." />;
   }
@@ -1188,10 +1194,10 @@ export default function OrganizationList() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
-                {(isPageLoading || isAdvancedDatasetLoading) && (
+                {(isLoading || isPageLoading || isAdvancedDatasetLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                   )}
-                  <span>{visibleResultsCount} found</span>
+                  <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
                 </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1554,7 +1560,12 @@ export default function OrganizationList() {
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedOrganizations.length > 0 ? (
+                {showTableSkeleton ? (
+                  <TableSkeletonRows
+                    rowCount={skeletonRowCount}
+                    columnCount={skeletonColumnCount}
+                  />
+                ) : filteredAndSortedOrganizations.length > 0 ? (
                   filteredAndSortedOrganizations.map((org) => {
                     const orgViewHref = `/dashboard/organizations/view?id=${org.id}`;
                     return (
@@ -1666,7 +1677,7 @@ export default function OrganizationList() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3 + columnFields.length}
+                      colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm || Object.keys(columnFilters).length > 0 || advancedSearchCriteria.length > 0
@@ -1683,36 +1694,40 @@ export default function OrganizationList() {
         {/* Pagination */}
         <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
           <div>
-            <p className="text-sm text-gray-700">
-              Showing{" "}
-              <span className="font-medium">
-                {isAdvancedFullMode
-                  ? (filteredAndSortedOrganizations.length === 0 ? 0 : 1)
-                  : (totalOrganizationsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium">
-                {isAdvancedFullMode
-                  ? filteredAndSortedOrganizations.length
-                  : (currentPage - 1) * pageSize + organizations.length}
-              </span>{" "}
-              of{" "}
-              {isAdvancedFullMode ? (
-                <span className="font-medium">{filteredAndSortedOrganizations.length}</span>
-              ) : totalOrganizationsCount != null ? (
-                <span className="font-medium">{totalOrganizationsCount}</span>
-              ) : (
-                <span className="font-medium">{organizations.length}</span>
-              )}{" "}
-              organizations
-              {!isAdvancedFullMode && filteredAndSortedOrganizations.length !== organizations.length ? (
-                <>
-                  {" "}(
-                  <span className="font-medium">{filteredAndSortedOrganizations.length}</span> shown
-                  after filters)
-                </>
-              ) : null}
-            </p>
+            {showTableSkeleton && !isAdvancedFullMode ? (
+              <p className="text-sm text-gray-500">Loading results…</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Showing{" "}
+                <span className="font-medium">
+                  {isAdvancedFullMode
+                    ? (filteredAndSortedOrganizations.length === 0 ? 0 : 1)
+                    : (totalOrganizationsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
+                </span>{" "}
+                to{" "}
+                <span className="font-medium">
+                  {isAdvancedFullMode
+                    ? filteredAndSortedOrganizations.length
+                    : (currentPage - 1) * pageSize + organizations.length}
+                </span>{" "}
+                of{" "}
+                {isAdvancedFullMode ? (
+                  <span className="font-medium">{filteredAndSortedOrganizations.length}</span>
+                ) : totalOrganizationsCount != null ? (
+                  <span className="font-medium">{totalOrganizationsCount}</span>
+                ) : (
+                  <span className="font-medium">{organizations.length}</span>
+                )}{" "}
+                organizations
+                {!isAdvancedFullMode && filteredAndSortedOrganizations.length !== organizations.length ? (
+                  <>
+                    {" "}(
+                    <span className="font-medium">{filteredAndSortedOrganizations.length}</span> shown
+                    after filters)
+                  </>
+                ) : null}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="organizations-page-size" className="text-sm text-gray-600">
@@ -1721,13 +1736,14 @@ export default function OrganizationList() {
             <select
               id="organizations-page-size"
               value={pageSize}
+              disabled={showTableSkeleton}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
                 setSelectedOrganizations([]);
                 setSelectAll(false);
               }}
-              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>

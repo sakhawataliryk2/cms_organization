@@ -4,7 +4,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
-import LoadingScreen from '@/components/LoadingScreen';
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
@@ -836,6 +836,14 @@ export default function ArchivedHiringManagersList() {
     return result;
   }, [hiringManagers, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
+  const showTableSkeleton = isLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    hmColumnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = 12;
+
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
   };
@@ -948,10 +956,6 @@ export default function ArchivedHiringManagersList() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading archived hiring managers..." />;
-  }
-
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
@@ -974,10 +978,15 @@ export default function ArchivedHiringManagersList() {
                 <input
                   type="text"
                   placeholder="Search archived hiring managers..."
-                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                {isLoading && (
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  </div>
+                )}
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1166,7 +1175,12 @@ export default function ArchivedHiringManagersList() {
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedHiringManagers.length > 0 ? (
+              {showTableSkeleton ? (
+                <TableSkeletonRows
+                  rowCount={skeletonRowCount}
+                  columnCount={skeletonColumnCount}
+                />
+              ) : filteredAndSortedHiringManagers.length > 0 ? (
                 filteredAndSortedHiringManagers.map((hm) => (
                   <tr
                     key={hm.id}
@@ -1282,7 +1296,7 @@ export default function ArchivedHiringManagersList() {
               ) : (
                 <tr>
                   <td
-                    colSpan={3 + columnFields.length}
+                    colSpan={3 + visibleTableColumnKeys.length}
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                   >
                     {Object.keys(columnFilters).length > 0
@@ -1310,15 +1324,19 @@ export default function ArchivedHiringManagersList() {
         </div>
         <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
-              of{" "}
-              <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
-              results
-            </p>
+            {showTableSkeleton ? (
+              <p className="text-sm text-gray-500">Loading results…</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
+                of{" "}
+                <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
+                results
+              </p>
+            )}
           </div>
-          {filteredAndSortedHiringManagers.length > 0 && (
+          {!showTableSkeleton && filteredAndSortedHiringManagers.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"

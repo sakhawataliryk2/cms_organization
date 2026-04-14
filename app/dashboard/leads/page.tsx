@@ -4,7 +4,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, use
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Image from "next/image";
-import LoadingScreen from "@/components/LoadingScreen";
+import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
@@ -875,14 +875,23 @@ export default function LeadList() {
 
   const totalPages =
     totalLeadsCount != null ? Math.max(1, Math.ceil(totalLeadsCount / pageSize)) : null;
-  const canGoPrev = currentPage > 1 && !isPageLoading;
+  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
   const canGoNext =
     (totalPages != null ? currentPage < totalPages : leads.length === pageSize) &&
-    !isPageLoading;
+    !isPageLoading &&
+    !isLoading;
   const visibleResultsCount =
     totalLeadsCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
       ? totalLeadsCount
       : filteredAndSortedLeads.length;
+
+  const showTableSkeleton = isLoading || isPageLoading;
+  const visibleTableColumnKeys = columnFields.filter((k) =>
+    columnsCatalog.some((c) => c.key === k)
+  );
+  const skeletonColumnCount =
+    visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleViewLead = (id: string) => {
     router.push(`/dashboard/leads/view?id=${id}`);
@@ -954,10 +963,6 @@ export default function LeadList() {
     setShowNoteModal(false);
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading leads..." />;
-  }
-
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
@@ -976,10 +981,10 @@ export default function LeadList() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
-                  {isPageLoading && (
+                  {(isLoading || isPageLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                   )}
-                  <span>{visibleResultsCount} found</span>
+                  <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
                 </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1280,7 +1285,7 @@ export default function LeadList() {
         recentStorageKey="leadsAdvancedSearchRecent"
         initialCriteria={advancedSearchCriteria}
         anchorEl={advancedSearchButtonRef.current}
-        isLoading={isPageLoading}
+        isLoading={isLoading || isPageLoading}
         resultsCount={visibleResultsCount}
         resultsLabel="records"
       />
@@ -1337,7 +1342,12 @@ export default function LeadList() {
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedLeads.length > 0 ? (
+                {showTableSkeleton ? (
+                  <TableSkeletonRows
+                    rowCount={skeletonRowCount}
+                    columnCount={skeletonColumnCount}
+                  />
+                ) : filteredAndSortedLeads.length > 0 ? (
                   filteredAndSortedLeads.map((lead) => (
                     <tr
                       key={lead.id}
@@ -1451,7 +1461,7 @@ export default function LeadList() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={3 + columnFields.length}
+                      colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm
@@ -1468,30 +1478,34 @@ export default function LeadList() {
         {/* Pagination */}
         <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
           <div>
-            <p className="text-sm text-gray-700">
-              Showing{" "}
-              <span className="font-medium">
-                {totalLeadsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium">
-                {(currentPage - 1) * pageSize + leads.length}
-              </span>{" "}
-              of{" "}
-              {totalLeadsCount != null ? (
-                <span className="font-medium">{totalLeadsCount}</span>
-              ) : (
-                <span className="font-medium">{leads.length}</span>
-              )}{" "}
-              leads
-              {filteredAndSortedLeads.length !== leads.length ? (
-                <>
-                  {" "}(
-                  <span className="font-medium">{filteredAndSortedLeads.length}</span> shown
-                  after filters)
-                </>
-              ) : null}
-            </p>
+            {showTableSkeleton ? (
+              <p className="text-sm text-gray-500">Loading results…</p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                Showing{" "}
+                <span className="font-medium">
+                  {totalLeadsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+                </span>{" "}
+                to{" "}
+                <span className="font-medium">
+                  {(currentPage - 1) * pageSize + leads.length}
+                </span>{" "}
+                of{" "}
+                {totalLeadsCount != null ? (
+                  <span className="font-medium">{totalLeadsCount}</span>
+                ) : (
+                  <span className="font-medium">{leads.length}</span>
+                )}{" "}
+                leads
+                {filteredAndSortedLeads.length !== leads.length ? (
+                  <>
+                    {" "}(
+                    <span className="font-medium">{filteredAndSortedLeads.length}</span> shown
+                    after filters)
+                  </>
+                ) : null}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="leads-page-size" className="text-sm text-gray-600">
@@ -1500,13 +1514,14 @@ export default function LeadList() {
             <select
               id="leads-page-size"
               value={pageSize}
+              disabled={showTableSkeleton}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
                 setSelectedLeads([]);
                 setSelectAll(false);
               }}
-              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>

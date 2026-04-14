@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'nextjs-toploader/app';
-import { FiX, FiDownload } from 'react-icons/fi';
-import LoadingScreen from '@/components/LoadingScreen';
+import { FiX, FiDownload, FiEye, FiTrash2 } from 'react-icons/fi';
 
 interface CustomFieldDefinition {
     id: string;
@@ -40,6 +39,125 @@ interface ImportSummary {
     }>;
 }
 
+interface ImportHistoryListItem {
+    id: number;
+    entity_type: string;
+    category_label: string;
+    file_name: string;
+    total_rows: number;
+    succeeded: number;
+    failed: number;
+    duration_ms: number;
+    imported_by_user_id: number | null;
+    imported_by_name: string | null;
+    imported_at: string;
+}
+
+interface ImportHistoryDetail extends ImportHistoryListItem {
+    first_row_number: number | null;
+    last_row_number: number | null;
+    first_row_data: Record<string, string> | null;
+    last_row_data: Record<string, string> | null;
+}
+
+function formatDurationMs(ms: number): string {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+type ImportLiveProgress = {
+    scanned: number;
+    totalInput: number;
+    successful: number;
+    failed: number;
+};
+
+async function consumeImportNdjsonStream(
+    response: Response,
+    totalInputRows: number,
+    onProgress: (p: ImportLiveProgress) => void
+): Promise<ImportSummary> {
+    if (!response.body) {
+        throw new Error('No response body from import');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let summary: ImportSummary | null = null;
+    let lastUiMs = 0;
+    const maybeProgress = (p: ImportLiveProgress) => {
+        const t = Date.now();
+        if (t - lastUiMs < 100) return;
+        lastUiMs = t;
+        onProgress(p);
+    };
+    const forceProgress = (p: ImportLiveProgress) => {
+        lastUiMs = Date.now();
+        onProgress(p);
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            const msg = JSON.parse(line) as {
+                type: string;
+                scanned?: number;
+                totalInput?: number;
+                successful?: number;
+                failed?: number;
+                summary?: ImportSummary;
+                message?: string;
+            };
+            if (msg.type === 'progress') {
+                maybeProgress({
+                    scanned: msg.scanned ?? 0,
+                    totalInput: msg.totalInput ?? totalInputRows,
+                    successful: msg.successful ?? 0,
+                    failed: msg.failed ?? 0,
+                });
+            } else if (msg.type === 'done' && msg.summary) {
+                summary = msg.summary;
+                forceProgress({
+                    scanned: totalInputRows,
+                    totalInput: totalInputRows,
+                    successful: msg.summary.successful,
+                    failed: msg.summary.failed,
+                });
+            } else if (msg.type === 'error') {
+                throw new Error(msg.message || 'Import failed');
+            }
+        }
+    }
+
+    const tail = buffer.trim();
+    if (tail) {
+        const msg = JSON.parse(tail) as { type: string; summary?: ImportSummary; message?: string };
+        if (msg.type === 'done' && msg.summary) {
+            summary = msg.summary;
+            forceProgress({
+                scanned: totalInputRows,
+                totalInput: totalInputRows,
+                successful: msg.summary.successful,
+                failed: msg.summary.failed,
+            });
+        } else if (msg.type === 'error') {
+            throw new Error(msg.message || 'Import failed');
+        }
+    }
+
+    if (!summary) {
+        throw new Error('Import did not complete');
+    }
+    return summary;
+}
+
 const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
     'Contact': 'organizations',
     'Organization': 'organizations',
@@ -70,7 +188,17 @@ export default function DataUploader() {
     });
     const [isImporting, setIsImporting] = useState(false);
     const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+    const [mainTab, setMainTab] = useState<'upload' | 'history'>('upload');
+    const [historyItems, setHistoryItems] = useState<ImportHistoryListItem[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [viewHistoryDetail, setViewHistoryDetail] = useState<ImportHistoryDetail | null>(null);
+    const [viewHistoryLoading, setViewHistoryLoading] = useState(false);
+    const [importElapsedMs, setImportElapsedMs] = useState(0);
+    const [lastImportDurationMs, setLastImportDurationMs] = useState<number | null>(null);
+    const [lastImportCompletedAt, setLastImportCompletedAt] = useState<Date | null>(null);
+    const [importLiveProgress, setImportLiveProgress] = useState<ImportLiveProgress | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const recordTypes = [
         'Organization',
@@ -126,6 +254,92 @@ export default function DataUploader() {
             }
         }
     }, []);
+
+    useEffect(() => {
+        return () => {
+            if (importTimerRef.current) {
+                clearInterval(importTimerRef.current);
+                importTimerRef.current = null;
+            }
+        };
+    }, []);
+
+    const loadHistory = useCallback(async () => {
+        setHistoryLoading(true);
+        try {
+            const res = await fetch('/api/admin/data-upload-import-history?limit=200', {
+                cache: 'no-store',
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to load import history');
+            }
+            setHistoryItems(Array.isArray(data.items) ? data.items : []);
+        } catch (e) {
+            console.error(e);
+            toast.error(e instanceof Error ? e.message : 'Failed to load import history');
+            setHistoryItems([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (mainTab === 'history') {
+            void loadHistory();
+        }
+    }, [mainTab, loadHistory]);
+
+    const buildMappedImportRecord = (row: CSVRow): Record<string, string> => {
+        const record: Record<string, string> = {};
+        Object.keys(fieldMappings).forEach((fieldName) => {
+            const csvColumn = fieldMappings[fieldName];
+            record[fieldName] = row[csvColumn]?.trim() || '';
+        });
+        return record;
+    };
+
+    const persistImportHistory = async (params: {
+        entityType: string;
+        summary: ImportSummary;
+        durationMs: number;
+        firstRowNumber: number;
+        lastRowNumber: number;
+        firstRowData: Record<string, string>;
+        lastRowData: Record<string, string>;
+    }) => {
+        const toLabeledRow = (data: Record<string, string>) => {
+            const out: Record<string, string> = {};
+            Object.entries(data).forEach(([name, val]) => {
+                const f = availableFields.find((x) => x.field_name === name);
+                const key = f?.field_label || name;
+                out[key] = val;
+            });
+            return out;
+        };
+        const fileName = selectedFile?.name?.trim() || 'unknown.csv';
+        const res = await fetch('/api/admin/data-upload-import-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                entity_type: params.entityType,
+                category_label: recordType,
+                file_name: fileName,
+                total_rows: params.summary.totalRows,
+                succeeded: params.summary.successful,
+                failed: params.summary.failed,
+                duration_ms: params.durationMs,
+                first_row_number: params.firstRowNumber,
+                last_row_number: params.lastRowNumber,
+                first_row_data: toLabeledRow(params.firstRowData),
+                last_row_data: toLabeledRow(params.lastRowData),
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.message || 'Failed to save import history');
+        }
+    };
 
     const handleFileSelectForData = (file: File) => {
         const reader = new FileReader();
@@ -499,8 +713,20 @@ export default function DataUploader() {
 
     const handleImport = async () => {
         setIsImporting(true);
+        const startedAt = Date.now();
+        setImportElapsedMs(0);
+        if (importTimerRef.current) {
+            clearInterval(importTimerRef.current);
+        }
+        importTimerRef.current = setInterval(() => {
+            setImportElapsedMs(Date.now() - startedAt);
+        }, 100);
+
         try {
             const entityType = RECORD_TYPE_TO_ENTITY_TYPE[recordType];
+            if (!entityType) {
+                throw new Error('Invalid record type');
+            }
             const token = document.cookie.replace(
                 /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
                 "$1"
@@ -532,6 +758,13 @@ export default function DataUploader() {
                 return record;
             });
 
+            setImportLiveProgress({
+                scanned: 0,
+                totalInput: importData.length,
+                successful: 0,
+                failed: 0,
+            });
+
             const response = await fetch('/api/admin/data-uploader/import', {
                 method: 'POST',
                 headers: {
@@ -547,35 +780,79 @@ export default function DataUploader() {
                 }),
             });
 
-            const data = await response.json();
-
             if (!response.ok) {
-                throw new Error(data.message || 'Import failed');
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || 'Import failed');
             }
 
-            setImportSummary(data.summary || {
-                totalRows: csvRows.length,
-                successful: 0,
-                failed: csvRows.length,
-                errors: [],
-            });
+            const summary = await consumeImportNdjsonStream(
+                response,
+                importData.length,
+                setImportLiveProgress
+            );
+
+            const durationMs = Date.now() - startedAt;
+            setLastImportDurationMs(durationMs);
+            setLastImportCompletedAt(new Date());
+
+            setImportSummary(summary);
+
+            const firstIdx = 0;
+            const lastIdx = Math.max(0, csvRows.length - 1);
+            const firstRowNumber = csvRows.length > 0 ? firstIdx + 2 : 0;
+            const lastRowNumber = csvRows.length > 0 ? lastIdx + 2 : 0;
+            const firstRowData = csvRows.length > 0 ? buildMappedImportRecord(csvRows[firstIdx]) : {};
+            const lastRowData = csvRows.length > 0 ? buildMappedImportRecord(csvRows[lastIdx]) : {};
+
+            try {
+                await persistImportHistory({
+                    entityType,
+                    summary,
+                    durationMs,
+                    firstRowNumber,
+                    lastRowNumber,
+                    firstRowData,
+                    lastRowData,
+                });
+            } catch (histErr) {
+                console.error('Import history save failed:', histErr);
+                toast.warning(
+                    histErr instanceof Error
+                        ? `Import finished, but history was not saved: ${histErr.message}`
+                        : 'Import finished, but history was not saved.'
+                );
+            }
+
             setCurrentStep(6);
+            toast.success(`Import finished in ${formatDurationMs(durationMs)}`);
         } catch (err) {
             console.error('Error importing data:', err);
             toast.error(err instanceof Error ? err.message : 'Failed to import data');
         } finally {
+            if (importTimerRef.current) {
+                clearInterval(importTimerRef.current);
+                importTimerRef.current = null;
+            }
+            setImportLiveProgress(null);
             setIsImporting(false);
         }
     };
 
     const handleReset = () => {
         setCurrentStep(1);
+        setMainTab('upload');
         setSelectedFile(null);
         setCsvHeaders([]);
         setCsvRows([]);
         setFieldMappings({});
         setValidationErrors([]);
         setImportSummary(null);
+        setLastImportDurationMs(null);
+        setLastImportCompletedAt(null);
+        setImportElapsedMs(0);
+        setImportLiveProgress(null);
+        setViewHistoryDetail(null);
+        setViewHistoryLoading(false);
         setImportOptions({
             skipDuplicates: false,
             updateExisting: false,
@@ -583,6 +860,44 @@ export default function DataUploader() {
         });
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
+        }
+    };
+
+    const openHistoryView = async (id: number) => {
+        setViewHistoryLoading(true);
+        setViewHistoryDetail(null);
+        try {
+            const res = await fetch(`/api/admin/data-upload-import-history/${id}`, { cache: 'no-store' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to load entry');
+            }
+            const item = data.item as ImportHistoryDetail;
+            setViewHistoryDetail(item);
+        } catch (e) {
+            console.error(e);
+            toast.error(e instanceof Error ? e.message : 'Failed to load entry');
+        } finally {
+            setViewHistoryLoading(false);
+        }
+    };
+
+    const handleDeleteHistory = async (id: number) => {
+        if (!window.confirm('Delete this import history record?')) return;
+        try {
+            const res = await fetch(`/api/admin/data-upload-import-history/${id}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.message || 'Delete failed');
+            }
+            toast.success('History entry deleted');
+            setHistoryItems((prev) => prev.filter((h) => h.id !== id));
+            if (viewHistoryDetail?.id === id) {
+                setViewHistoryDetail(null);
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error(e instanceof Error ? e.message : 'Delete failed');
         }
     };
 
@@ -656,27 +971,52 @@ export default function DataUploader() {
                 >
                     <FiX className="w-6 h-6" />
                 </button>
-                <div className="flex items-center justify-between mb-6 border-b pb-4">
-                    {/* Left Section */}
-                    <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b pb-4">
+                    <div className="flex flex-wrap items-center gap-4">
                         <h1 className="text-2xl font-semibold text-gray-800">
                             CSV Data Upload
                         </h1>
 
-                        {recordType && currentStep !== 1 && (
+                        {mainTab === 'upload' && recordType && currentStep !== 1 && (
                             <span className="inline-flex items-center px-3 py-1 rounded-full font-medium bg-green-100 text-green-700 border border-green-500">
                                 {recordType}
                             </span>
                         )}
                     </div>
 
-                    {/* Right Section (Optional Step Indicator) */}
-                    <div className="text-sm text-gray-400 pr-10">
-                        Step {currentStep} of 6
+                    <div className="flex flex-col items-stretch sm:items-end gap-2 pr-10">
+                        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                            <button
+                                type="button"
+                                onClick={() => setMainTab('upload')}
+                                className={`px-4 py-2 text-sm font-medium transition-colors ${mainTab === 'upload'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                            >
+                                Upload
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMainTab('history')}
+                                className={`px-4 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${mainTab === 'history'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                            >
+                                History
+                            </button>
+                        </div>
+                        {mainTab === 'upload' && (
+                            <div className="text-sm text-gray-400 text-right">
+                                Step {currentStep} of 6
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* Step Indicator */}
+                {mainTab === 'upload' && (
                 <div className="mb-8">
                     <div className="flex items-center justify-between">
                         {[1, 2, 3, 4, 5, 6].map((step) => {
@@ -722,9 +1062,80 @@ export default function DataUploader() {
                         })}
                     </div>
                 </div>
+                )}
 
                 {/* Step Content */}
                 <div className="min-h-[400px]">
+                    {mainTab === 'history' ? (
+                        <div className="space-y-4">
+                            <h2 className="text-xl font-semibold text-gray-800">Import history</h2>
+                            <p className="text-sm text-gray-600">
+                                Recent CSV imports (counts and timing). Open an entry to see the first and last file rows that were uploaded.
+                            </p>
+                            {historyLoading ? (
+                                <div className="py-12 text-center text-gray-500">Loading history…</div>
+                            ) : historyItems.length === 0 ? (
+                                <div className="py-12 text-center text-gray-500 border border-dashed border-gray-200 rounded-lg">
+                                    No import history yet. Complete an import from the Upload tab to record it here.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Total</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">OK</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Fail</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Time</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Imported at</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">By</th>
+                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Category</th>
+                                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-100">
+                                            {historyItems.map((h) => (
+                                                <tr key={h.id} className="hover:bg-gray-50">
+                                                    <td className="px-3 py-2 whitespace-nowrap">{h.total_rows}</td>
+                                                    <td className="px-3 py-2 whitespace-nowrap text-green-700 font-medium">{h.succeeded}</td>
+                                                    <td className="px-3 py-2 whitespace-nowrap text-red-600 font-medium">{h.failed}</td>
+                                                    <td className="px-3 py-2 whitespace-nowrap">{formatDurationMs(h.duration_ms)}</td>
+                                                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                                                        {h.imported_at
+                                                            ? new Date(h.imported_at).toLocaleString()
+                                                            : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 max-w-[140px] truncate" title={h.imported_by_name || ''}>
+                                                        {h.imported_by_name || '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 whitespace-nowrap">{h.category_label}</td>
+                                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void openHistoryView(h.id)}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 text-blue-600 hover:bg-blue-50 rounded mr-1"
+                                                        >
+                                                            <FiEye className="w-4 h-4" />
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleDeleteHistory(h.id)}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                                                        >
+                                                            <FiTrash2 className="w-4 h-4" />
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                    <>
                     {/* Step 1: Record Type Selection */}
                     {currentStep === 1 && (
                         <div className="space-y-6">
@@ -1015,6 +1426,29 @@ export default function DataUploader() {
                         <div className="space-y-6">
                             <div>
                                 <h2 className="text-xl font-semibold mb-4">Step 5: Import Options</h2>
+                                {isImporting && (
+                                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <p className="text-sm font-semibold text-blue-900">
+                                            Import in progress… elapsed{' '}
+                                            <span className="tabular-nums text-base">{formatDurationMs(importElapsedMs)}</span>
+                                        </p>
+                                        {importLiveProgress && (
+                                            <p className="text-sm text-blue-900 mt-2 tabular-nums">
+                                                Rows processed:{' '}
+                                                <span className="font-semibold">{importLiveProgress.scanned}</span>
+                                                {' / '}
+                                                <span className="font-semibold">{importLiveProgress.totalInput}</span>
+                                                {' · '}
+                                                <span className="text-green-800">OK {importLiveProgress.successful}</span>
+                                                {' · '}
+                                                <span className="text-red-800">Failed {importLiveProgress.failed}</span>
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-blue-800 mt-1">
+                                            Updates stream over the same request (lightly throttled for smooth UI). Bulk organization imports refresh OK/Failed after each batch is written.
+                                        </p>
+                                    </div>
+                                )}
                                 {validationErrors.length > 0 && (
                                     <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
                                         <div className="flex items-center text-yellow-800 font-semibold mb-2">
@@ -1126,6 +1560,21 @@ export default function DataUploader() {
                                     </div>
                                 </div>
 
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                                    <div className="p-4 bg-gray-50 border border-gray-200 rounded">
+                                        <div className="text-lg font-semibold text-gray-900 tabular-nums">
+                                            {lastImportDurationMs != null ? formatDurationMs(lastImportDurationMs) : '—'}
+                                        </div>
+                                        <div className="text-sm text-gray-600">Time taken</div>
+                                    </div>
+                                    <div className="p-4 bg-gray-50 border border-gray-200 rounded">
+                                        <div className="text-lg font-semibold text-gray-900">
+                                            {lastImportCompletedAt ? lastImportCompletedAt.toLocaleString() : '—'}
+                                        </div>
+                                        <div className="text-sm text-gray-600">Import completed at</div>
+                                    </div>
+                                </div>
+
                                 {importSummary.errors.length > 0 && (
                                     <div className="mt-6">
                                         <h3 className="text-lg font-semibold mb-3">Error Details</h3>
@@ -1164,12 +1613,14 @@ export default function DataUploader() {
                             </div>
                         </div>
                     )}
+                    </>
+                    )}
                 </div>
 
                 {/* Navigation Buttons */}
                 <div className="flex w-full sticky bottom-0 p-4 justify-between bg-white mt-8 border-t border-gray-300">
                     <div>
-                        {currentStep > 1 && (
+                        {mainTab === 'upload' && currentStep > 1 && (
                             <button
                                 onClick={handleBack}
                                 className="px-6 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
@@ -1178,8 +1629,17 @@ export default function DataUploader() {
                             </button>
                         )}
                     </div>
-                    <div className="flex space-x-4">
-                        {currentStep < totalSteps && (
+                    <div className="flex flex-col items-end gap-2">
+                        {mainTab === 'history' && (
+                            <button
+                                type="button"
+                                onClick={() => setMainTab('upload')}
+                                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                                Return to upload
+                            </button>
+                        )}
+                        {mainTab === 'upload' && currentStep < totalSteps && (
                             <>
                                 {currentStep === 5 ? (
                                     <button
@@ -1194,7 +1654,11 @@ export default function DataUploader() {
                                             : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
                                             }`}
                                     >
-                                        {isImporting ? 'Importing...' : 'Start Import'}
+                                        {isImporting
+                                            ? `Importing… ${formatDurationMs(importElapsedMs)}${importLiveProgress
+                                                ? ` · ${importLiveProgress.successful}/${importLiveProgress.totalInput} OK`
+                                                : ''}`
+                                            : 'Start Import'}
                                     </button>
                                 ) : (
                                     <button
@@ -1206,7 +1670,7 @@ export default function DataUploader() {
                                 )}
                             </>
                         )}
-                        {currentStep === totalSteps && (
+                        {mainTab === 'upload' && currentStep === totalSteps && (
                             <button
                                 onClick={handleReset}
                                 className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600"
@@ -1216,6 +1680,86 @@ export default function DataUploader() {
                         )}
                     </div>
                 </div>
+
+                {(viewHistoryDetail || viewHistoryLoading) && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="history-view-title"
+                    >
+                        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setViewHistoryDetail(null);
+                                    setViewHistoryLoading(false);
+                                }}
+                                className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 p-1"
+                                aria-label="Close"
+                            >
+                                <FiX className="w-6 h-6" />
+                            </button>
+                            <h3 id="history-view-title" className="text-lg font-semibold text-gray-900 pr-10 mb-4">
+                                Import preview
+                            </h3>
+                            {viewHistoryLoading ? (
+                                <p className="text-gray-600">Loading…</p>
+                            ) : viewHistoryDetail ? (
+                                <div className="space-y-6 text-sm">
+                                    <div>
+                                        <span className="text-gray-500">File name</span>
+                                        <p className="font-medium text-gray-900 break-all">{viewHistoryDetail.file_name}</p>
+                                    </div>
+                                    <div className="border rounded-lg overflow-hidden">
+                                        <div className="bg-gray-100 px-3 py-2 font-semibold text-gray-700">
+                                            First data row (row {viewHistoryDetail.first_row_number ?? '—'} in file)
+                                        </div>
+                                        <div className="p-3 max-h-48 overflow-y-auto">
+                                            {viewHistoryDetail.first_row_data &&
+                                                Object.keys(viewHistoryDetail.first_row_data).length > 0 ? (
+                                                <table className="w-full text-left text-xs">
+                                                    <tbody>
+                                                        {Object.entries(viewHistoryDetail.first_row_data).map(([k, v]) => (
+                                                            <tr key={k} className="border-b border-gray-100 last:border-0">
+                                                                <td className="py-1 pr-2 font-medium text-gray-600 align-top whitespace-nowrap">{k}</td>
+                                                                <td className="py-1 text-gray-900 break-all">{v || '—'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <p className="text-gray-500">No row data stored.</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="border rounded-lg overflow-hidden">
+                                        <div className="bg-gray-100 px-3 py-2 font-semibold text-gray-700">
+                                            Last data row (row {viewHistoryDetail.last_row_number ?? '—'} in file)
+                                        </div>
+                                        <div className="p-3 max-h-48 overflow-y-auto">
+                                            {viewHistoryDetail.last_row_data &&
+                                                Object.keys(viewHistoryDetail.last_row_data).length > 0 ? (
+                                                <table className="w-full text-left text-xs">
+                                                    <tbody>
+                                                        {Object.entries(viewHistoryDetail.last_row_data).map(([k, v]) => (
+                                                            <tr key={k} className="border-b border-gray-100 last:border-0">
+                                                                <td className="py-1 pr-2 font-medium text-gray-600 align-top whitespace-nowrap">{k}</td>
+                                                                <td className="py-1 text-gray-900 break-all">{v || '—'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <p className="text-gray-500">No row data stored.</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
