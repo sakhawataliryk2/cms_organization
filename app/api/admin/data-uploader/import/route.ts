@@ -103,6 +103,45 @@ interface FieldDefinition {
     lookup_type?: string | null;
 }
 
+const AUTO_DATE_FIELD_NAME = 'Field_69';
+
+function toYmdDate(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    const iso = normalizeDateInputToIso(str);
+    if (iso) return iso.slice(0, 10);
+    const parsed = new Date(str);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+}
+
+async function resolveFieldLabelByFieldName(
+    apiUrl: string,
+    token: string,
+    entityType: string,
+    fieldName: string
+): Promise<string | null> {
+    try {
+        const qs = new URLSearchParams({
+            entity_type: entityType,
+            field_name: fieldName,
+        });
+        const res = await fetch(`${apiUrl}/api/custom-fields/field-label?${qs.toString()}`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => ({}));
+        const label = data?.field_label;
+        return typeof label === 'string' && label.trim() ? label.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Fetch all records for a lookup type and build a map of record_number → id.
  * Results are cached per lookup_type for the lifetime of a single import request.
@@ -357,9 +396,9 @@ export async function POST(request: NextRequest) {
         const duplicateChecksEnabled = false;
         const needsDupCheck =
             duplicateChecksEnabled && !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
-        const useOrgBulkCreate = entityType === 'organizations' && !needsDupCheck;
+        const useEntityBulkCreate = !needsDupCheck;
 
-        const createOrganizationChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
+        const createBulkChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
             try {
                 let createRes: Response | null = null;
                 let createData: any = {};
@@ -367,7 +406,7 @@ export async function POST(request: NextRequest) {
 
                 for (let attempt = 0; attempt <= IMPORT_BULK_RETRIES; attempt++) {
                     try {
-                        createRes = await fetchWithTimeout(`${apiUrl}/api/organizations/bulk-create`, {
+                        createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}/bulk-create`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -433,7 +472,7 @@ export async function POST(request: NextRequest) {
             writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
         };
 
-        const flushOrganizationBulkChunksConcurrently = async (
+        const flushBulkChunksConcurrently = async (
             pending: Array<{ row: number; payload: Record<string, any> }>
         ) => {
             if (pending.length === 0) return;
@@ -441,7 +480,7 @@ export async function POST(request: NextRequest) {
             for (let i = 0; i < chunks.length; i += ORG_BULK_CONCURRENCY) {
                 throwIfAborted();
                 const batch = chunks.slice(i, i + ORG_BULK_CONCURRENCY);
-                await Promise.all(batch.map((chunk) => createOrganizationChunk(chunk)));
+                await Promise.all(batch.map((chunk) => createBulkChunk(chunk)));
             }
         };
 
@@ -450,6 +489,18 @@ export async function POST(request: NextRequest) {
         const lookupFields = (fieldDefinitions as FieldDefinition[]).filter(
             (fd) => fd.field_name && fd.lookup_type && LOOKUP_TYPE_CONFIG[fd.lookup_type]
         );
+        // Resolve Field_69 label from admin center/custom-field service once per import request.
+        const adminResolvedAutoDateLabel = await resolveFieldLabelByFieldName(
+            apiUrl,
+            token,
+            entityType,
+            AUTO_DATE_FIELD_NAME
+        );
+        const autoDateFieldLabel =
+            adminResolvedAutoDateLabel ??
+            (fieldDefinitions as FieldDefinition[]).find((fd) => fd.field_name === AUTO_DATE_FIELD_NAME)?.field_label ??
+            fieldNameToLabel[AUTO_DATE_FIELD_NAME] ??
+            null;
 
         for (let i = 0; i < records.length; i++) {
             throwIfAborted();
@@ -497,6 +548,25 @@ export async function POST(request: NextRequest) {
 
                 // Ensure custom_fields is always a plain serialisable object
                 payload.custom_fields = { ...(payload.custom_fields ?? {}) };
+
+                // Auto-populate Field_69 label if the column was not present in the file.
+                // Value source: incoming created_at timestamp when available, else import-time date.
+                if (autoDateFieldLabel) {
+                    const currentVal = payload.custom_fields[autoDateFieldLabel];
+                    const hasCurrentVal =
+                        currentVal != null && String(currentVal).trim() !== '';
+                    if (!hasCurrentVal) {
+                        const createdAtFromRow =
+                            record?.created_at ??
+                            record?.createdAt ??
+                            record?.['Created At'] ??
+                            record?.['created at'] ??
+                            record?.['Date Created'];
+                        const fallbackDate = new Date().toISOString().slice(0, 10);
+                        payload.custom_fields[autoDateFieldLabel] =
+                            toYmdDate(createdAtFromRow) ?? fallbackDate;
+                    }
+                }
 
                 // ── Hiring manager model uses camelCase "customFields" not "custom_fields" ──
                 // Rename the key so the model picks it up correctly
@@ -604,11 +674,11 @@ export async function POST(request: NextRequest) {
                 if (!foundDuplicate) {
                 // ── Create new record ─────────────────────────────────────────────────
                 throwIfAborted();
-                if (useOrgBulkCreate) {
+                if (useEntityBulkCreate) {
                     orgBulkPending.push({ row: rowNumber, payload });
                     if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY) {
                         const batchToFlush = orgBulkPending.splice(0, ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY);
-                        await flushOrganizationBulkChunksConcurrently(batchToFlush);
+                        await flushBulkChunksConcurrently(batchToFlush);
                     }
                 } else {
                     const createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}`, {
@@ -643,8 +713,8 @@ export async function POST(request: NextRequest) {
             writeProgress(i + 1, summary.successful, summary.failed, records.length);
         }
 
-        if (useOrgBulkCreate) {
-            await flushOrganizationBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
+        if (useEntityBulkCreate) {
+            await flushBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
         }
 
         writeProgress(records.length, summary.successful, summary.failed, records.length, true);
