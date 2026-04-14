@@ -198,8 +198,8 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
     return '';
 }
 
-/** Organizations per backend bulk-create call (single DB transaction; tune for ~10–30s per chunk). */
-const ORG_BULK_CHUNK_SIZE = 250;
+/** Organizations per backend bulk-create call (backend max is 500). */
+const ORG_BULK_CHUNK_SIZE = 500;
 
 export async function POST(request: NextRequest) {
     try {
