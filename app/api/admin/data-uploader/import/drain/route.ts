@@ -1,32 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     if (!token) {
       return NextResponse.json({ success: false, message: "Authentication required" }, { status: 401 });
     }
-    const body = await request.json();
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const response = await fetch(`${apiUrl}/api/admin/import-jobs`, {
+    const response = await fetch(`${apiUrl}/api/admin/import-jobs/drain`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ maxChunks: 1 }),
       cache: "no-store",
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return NextResponse.json(
-        { success: false, message: data.message || "Failed to create import job" },
-        { status: response.status }
-      );
-    }
-    return NextResponse.json(data, { status: 201 });
+    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Internal server error" },

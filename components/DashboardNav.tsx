@@ -21,6 +21,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalList
 import { CSS } from '@dnd-kit/utilities';
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import { useMultipleAdd } from "@/contexts/MultipleAddContext";
+import { useImportQueue } from "@/contexts/ImportQueueContext";
 // Import icons from react-icons
 import {
   FiHome,
@@ -44,6 +45,7 @@ import {
   FiLayers,
   FiChevronDown,
   FiChevronRight,
+  FiClock,
 } from "react-icons/fi";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { toast } from "sonner";
@@ -253,6 +255,7 @@ export default function DashboardNav() {
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [addMenuPosition, setAddMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const { activeJobs, pendingCount, hasActiveEntityQueue, entityLabelByType } = useImportQueue();
 
   // Add menu items
   const addMenuItems = [
@@ -260,26 +263,31 @@ export default function DashboardNav() {
       name: "Organization",
       path: "/dashboard/organizations/add",
       icon: <HiOutlineOfficeBuilding size={16} />,
+      entityType: "organizations",
     },
     {
       name: "Job",
       path: "/dashboard/jobs/add",
       icon: <FiBriefcase size={16} />,
+      entityType: "jobs",
     },
     {
       name: "Job Seeker",
       path: "/dashboard/job-seekers/add",
       icon: <FiUsers size={16} />,
+      entityType: "job-seekers",
     },
     {
       name: "Lead",
       path: "/dashboard/leads/add",
       icon: <FiTarget size={16} />,
+      entityType: "leads",
     },
     {
       name: "Hiring Manager",
       path: "/dashboard/hiring-managers/add",
       icon: <FiUserCheck size={16} />,
+      entityType: "hiring-managers",
     },
     {
       name: "Task",
@@ -290,6 +298,7 @@ export default function DashboardNav() {
       name: "Placement",
       path: "/dashboard/placements/add",
       icon: <FiDollarSign size={16} />,
+      entityType: "placements",
     },
     {
       name: `${!isMultipleAddMode ? "Add Multiple" : "Close Multiple Add"}`,
@@ -302,6 +311,21 @@ export default function DashboardNav() {
       }
     },
   ];
+
+  const addPathEntityMap: Record<string, string> = {
+    "/dashboard/organizations/add": "organizations",
+    "/dashboard/jobs/add": "jobs",
+    "/dashboard/jobs/add/contract": "jobs",
+    "/dashboard/jobs/add/direct-hire": "jobs",
+    "/dashboard/jobs/add/executive-search": "jobs",
+    "/dashboard/job-seekers/add": "job-seekers",
+    "/dashboard/leads/add": "leads",
+    "/dashboard/hiring-managers/add": "hiring-managers",
+    "/dashboard/placements/add": "placements",
+    "/dashboard/placements/add/contract": "placements",
+    "/dashboard/placements/add/direct-hire": "placements",
+    "/dashboard/placements/add/executive-search": "placements",
+  };
 
   // Functions to manage recent searches
   const loadRecentSearches = (): RecentSearch[] => {
@@ -621,6 +645,17 @@ export default function DashboardNav() {
     );
   }, [pathname, searchParams || new URLSearchParams()]);
 
+  useEffect(() => {
+    const blockedEntity = addPathEntityMap[pathname];
+    if (!blockedEntity) return;
+    if (!hasActiveEntityQueue(blockedEntity)) return;
+    toast.warning(
+      `Cannot open add form while ${entityLabelByType(blockedEntity)} queue is pending/processing.`
+    );
+    const modulePath = pathname.split("/").slice(0, 3).join("/");
+    router.replace(modulePath);
+  }, [pathname, hasActiveEntityQueue, entityLabelByType, router]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     // Search is handled in real-time via useEffect
@@ -758,6 +793,14 @@ export default function DashboardNav() {
     if (item.isSpecial && item.onClick) {
       item.onClick();
     } else {
+      const entityType = (item as any).entityType as string | undefined;
+      if (entityType && hasActiveEntityQueue(entityType)) {
+        toast.warning(
+          `${entityLabelByType(entityType)} queue is already pending/processing.`
+        );
+        setIsAddMenuOpen(false);
+        return;
+      }
       router.push(item.path);
       setIsAddMenuOpen(false);
     }
@@ -880,6 +923,11 @@ export default function DashboardNav() {
       name: "Admin Center",
       path: "/dashboard/admin",
       icon: <FiSettings size={20} />,
+    },
+    {
+      name: "Import Queues",
+      path: "/dashboard/admin/data-uploader?tab=queues",
+      icon: <FiClock size={20} />,
     },
     // { name: 'Profile', path: '/dashboard/profile', icon: <FaRegUserCircle size={20} /> },
     // { name: 'API', path: '/dashboard/api', icon: <FiGrid size={20} /> },
@@ -1447,20 +1495,43 @@ export default function DashboardNav() {
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {addMenuItems.map((item) => (
+                  {addMenuItems.map((item) => {
+                    const entityType = (item as any).entityType as string | undefined;
+                    const disabled = !!entityType && hasActiveEntityQueue(entityType);
+                    return (
                     <button
                       key={item.path}
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                      className={`flex items-center w-full px-4 py-2 text-sm ${disabled ? "text-gray-500 cursor-not-allowed" : "text-gray-300 hover:bg-slate-700 hover:text-white"}`}
                       onClick={() => navigateToAddItem(item)}
+                      disabled={disabled}
+                      title={
+                        disabled
+                          ? `${entityLabelByType(entityType || "")} queue is pending/processing`
+                          : undefined
+                      }
                     >
                       <span className="mr-2">{item.icon}</span>
                       {item.name}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>,
                 document.body
               )}
             </div>
+            <button
+              className="relative flex items-center text-gray-300 hover:text-white"
+              onClick={() => router.push("/dashboard/admin/data-uploader?tab=queues")}
+              title="Pending import queues"
+            >
+              <FiClock className="mr-1" />
+              Queues
+              {pendingCount > 0 && (
+                <span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] leading-[18px] text-center">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
           </div>
 
 
@@ -1546,7 +1617,14 @@ export default function DashboardNav() {
                 <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
                   {item.icon}
                 </div>
-                {item.name}
+                <span className="flex items-center gap-2">
+                  {item.name}
+                  {item.name === "Import Queues" && pendingCount > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] leading-[18px] text-center">
+                      {pendingCount}
+                    </span>
+                  )}
+                </span>
               </Link>
             ))
           ) : (
