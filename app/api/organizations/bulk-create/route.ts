@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-/**
- * Proxy to Express POST /api/organizations/bulk-create (batch insert for data uploader).
- */
 export async function POST(request: NextRequest) {
     try {
         const cookieStore = await cookies();
