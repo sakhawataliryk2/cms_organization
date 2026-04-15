@@ -19,6 +19,9 @@ import AddressGroupRenderer, {
 } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
+// Temporary switch: bypass all required validations on this page.
+const TEMP_DISABLE_REQUIRED_VALIDATIONS = true;
+
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Job Title": "jobTitle", Title: "jobTitle",
@@ -1480,7 +1483,7 @@ export default function AddJob() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isEditMode) {
+    if (!TEMP_DISABLE_REQUIRED_VALIDATIONS && !isEditMode) {
       if (!hiringManagerCustomField) {
         setError("Hiring Manager field is not configured in Field Management.");
         return;
@@ -1492,10 +1495,12 @@ export default function AddJob() {
     }
 
     // Validate required custom fields
-    const customFieldValidation = validateCustomFields();
-    if (!customFieldValidation.isValid) {
-      setError(customFieldValidation.message);
-      return;
+    if (!TEMP_DISABLE_REQUIRED_VALIDATIONS) {
+      const customFieldValidation = validateCustomFields();
+      if (!customFieldValidation.isValid) {
+        setError(customFieldValidation.message);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -1584,6 +1589,7 @@ export default function AddJob() {
   };
 
   const isFormValid = useMemo(() => {
+    if (TEMP_DISABLE_REQUIRED_VALIDATIONS) return true;
     const customFieldValidation = validateCustomFields();
     if (!customFieldValidation.isValid) return false;
     if (!isEditMode) {
@@ -1678,9 +1684,9 @@ export default function AddJob() {
               </button>
               <button
                 type="button"
-                disabled={!hmValueForStep?.trim()}
+                disabled={!TEMP_DISABLE_REQUIRED_VALIDATIONS && !hmValueForStep?.trim()}
                 onClick={handleHmStepContinue}
-                className={`px-4 py-2 rounded text-white ${!hmValueForStep?.trim()
+                className={`px-4 py-2 rounded text-white ${!TEMP_DISABLE_REQUIRED_VALIDATIONS && !hmValueForStep?.trim()
                   ? "bg-gray-300 cursor-not-allowed"
                   : "bg-blue-500 hover:bg-blue-600"
                   }`}
