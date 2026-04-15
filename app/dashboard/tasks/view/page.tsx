@@ -12,6 +12,7 @@ import { FiCheckSquare, FiSearch, FiUserCheck } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
@@ -206,6 +207,8 @@ export default function TaskView() {
     // Note sorting & filtering (match Organization Notes design)
     const [noteActionFilter, setNoteActionFilter] = useState<string>('');
     const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>('');
+    const [noteDateStartFilter, setNoteDateStartFilter] = useState<string>('');
+    const [noteDateEndFilter, setNoteDateEndFilter] = useState<string>('');
     const [noteSortKey, setNoteSortKey] = useState<'date' | 'action' | 'author'>('date');
     const [noteSortDir, setNoteSortDir] = useState<'asc' | 'desc'>('desc');
     const sortedFilteredNotes = useMemo(() => {
@@ -217,6 +220,9 @@ export default function TaskView() {
             out = out.filter(
                 (n) => (n.created_by_name || 'Unknown User') === noteAuthorFilter
             );
+        }
+        if (noteDateStartFilter || noteDateEndFilter) {
+            out = out.filter((n) => isNoteWithinDateRange(n, noteDateStartFilter, noteDateEndFilter));
         }
         out.sort((a, b) => {
             let av: any, bv: any;
@@ -230,8 +236,8 @@ export default function TaskView() {
                     bv = b.created_by_name || '';
                     break;
                 default:
-                    av = new Date(a.created_at).getTime();
-                    bv = new Date(b.created_at).getTime();
+                    av = getNoteDateTimeMs(a);
+                    bv = getNoteDateTimeMs(b);
                     break;
             }
             if (typeof av === 'number' && typeof bv === 'number') {
@@ -1686,6 +1692,23 @@ export default function TaskView() {
                         </select>
                     </div>
                     <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Date Range</label>
+                        <div className="flex gap-2">
+                            <input
+                                type="date"
+                                value={noteDateStartFilter}
+                                onChange={(e) => setNoteDateStartFilter(e.target.value)}
+                                className="p-2 border border-gray-300 rounded text-sm"
+                            />
+                            <input
+                                type="date"
+                                value={noteDateEndFilter}
+                                onChange={(e) => setNoteDateEndFilter(e.target.value)}
+                                className="p-2 border border-gray-300 rounded text-sm"
+                            />
+                        </div>
+                    </div>
+                    <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
                         <select
                             value={noteSortKey}
@@ -1706,9 +1729,9 @@ export default function TaskView() {
                             {noteSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
                         </button>
                     </div>
-                    {(noteActionFilter || noteAuthorFilter) && (
+                    {(noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter) && (
                         <button
-                            onClick={() => { setNoteActionFilter(''); setNoteAuthorFilter(''); }}
+                            onClick={() => { setNoteActionFilter(''); setNoteAuthorFilter(''); setNoteDateStartFilter(''); setNoteDateEndFilter(''); }}
                             className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
                         >
                             Clear Filters
@@ -1746,13 +1769,7 @@ export default function TaskView() {
                                                     </span>
                                                 </div>
                                                 <div className="text-xs text-gray-500">
-                                                    {new Date(note.created_at).toLocaleString('en-US', {
-                                                        month: '2-digit',
-                                                        day: '2-digit',
-                                                        year: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                    })}
+                                                    {formatNoteDateTime(note)}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1">
@@ -2405,7 +2422,7 @@ export default function TaskView() {
                                         <div key={note.id} className="mb-3 pb-3 border-b last:border-0">
                                             <div className="flex justify-between text-sm mb-1">
                                                 <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
-                                                <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                                                <span className="text-gray-500">{formatNoteDateTime(note)}</span>
                                             </div>
                                             <p className="text-sm text-gray-700">
                                                 {note.text.length > 100

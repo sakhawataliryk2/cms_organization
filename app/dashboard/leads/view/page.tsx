@@ -309,8 +309,14 @@ export default function LeadView() {
   // Note sorting & filtering (match Organization Notes design)
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteDateStartFilter, setNoteDateStartFilter] = useState<string>("");
+  const [noteDateEndFilter, setNoteDateEndFilter] = useState<string>("");
   const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
   const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+
+  const getNoteDateTimeValue = (note: any) =>
+    note?.note_date_time || note?.created_at || note?.createdAt || null;
 
   // Delete request state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -346,7 +352,23 @@ export default function LeadView() {
         (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
       );
     }
-    out.sort((a, b) => {
+        if (noteDateStartFilter || noteDateEndFilter) {
+      out = out.filter((n) => {
+        const rawValue = getNoteDateTimeValue(n);
+        if (!rawValue) return false;
+        const noteDate = new Date(rawValue);
+        if (Number.isNaN(noteDate.getTime())) return false;
+
+        const fromDate = noteDateStartFilter ? new Date(`${noteDateStartFilter}T00:00:00`) : null;
+        const toDate = noteDateEndFilter ? new Date(`${noteDateEndFilter}T23:59:59.999`) : null;
+
+        if (fromDate && noteDate < fromDate) return false;
+        if (toDate && noteDate > toDate) return false;
+        return true;
+      });
+    }
+
+out.sort((a, b) => {
       let av: any, bv: any;
       switch (noteSortKey) {
         case "action":
@@ -358,8 +380,8 @@ export default function LeadView() {
           bv = b.created_by_name || "";
           break;
         default:
-          av = new Date(a.created_at).getTime();
-          bv = new Date(b.created_at).getTime();
+          av = new Date(getNoteDateTimeValue(a) || 0).getTime();
+          bv = new Date(getNoteDateTimeValue(b) || 0).getTime();
           break;
       }
       if (typeof av === "number" && typeof bv === "number") {
@@ -369,7 +391,7 @@ export default function LeadView() {
       return noteSortDir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+  }, [notes, noteActionFilter, noteAuthorFilter, noteDateStartFilter, noteDateEndFilter, noteSortKey, noteSortDir]);
 
   // Documents state
   const [documents, setDocuments] = useState<Array<any>>([]);
@@ -1201,7 +1223,7 @@ export default function LeadView() {
                     >
                       <div className="flex justify-between items-start mb-1">
                         <span className="text-xs text-gray-500">
-                          {new Date(note.created_at).toLocaleString()}
+                          {new Date(getNoteDateTimeValue(note) || 0).toLocaleString()}
                         </span>
                         <span className="text-xs font-medium text-blue-600">
                           {note.created_by_name}
@@ -2987,6 +3009,24 @@ export default function LeadView() {
           </select>
         </div>
         <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">From Date</label>
+          <input
+            type="date"
+            value={noteDateStartFilter}
+            onChange={(e) => setNoteDateStartFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">To Date</label>
+          <input
+            type="date"
+            value={noteDateEndFilter}
+            onChange={(e) => setNoteDateEndFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded text-sm"
+          />
+        </div>
+        <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
           <select
             value={noteSortKey}
@@ -3007,9 +3047,9 @@ export default function LeadView() {
             {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
           </button>
         </div>
-        {(noteActionFilter || noteAuthorFilter) && (
+        {(noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter) && (
           <button
-            onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+            onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); setNoteDateStartFilter(""); setNoteDateEndFilter(""); }}
             className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
           >
             Clear Filters
@@ -3049,7 +3089,7 @@ export default function LeadView() {
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">
-                        {new Date(note.created_at).toLocaleString("en-US", {
+                        {new Date(getNoteDateTimeValue(note) || 0).toLocaleString("en-US", {
                           month: "2-digit",
                           day: "2-digit",
                           year: "numeric",
@@ -3135,7 +3175,7 @@ export default function LeadView() {
         </div>
       ) : (
         <p className="text-gray-500 italic">
-          {(noteActionFilter || noteAuthorFilter) ? "No notes match your filters." : "No notes have been added yet."}
+          {(noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter) ? "No notes match your filters." : "No notes have been added yet."}
         </p>
       )}
       </div>

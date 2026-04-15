@@ -1,13 +1,17 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import StyledReactSelect, { type StyledSelectOption } from './StyledReactSelect';
+
+const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
+const lookupListCache = new Map<string, { data: LookupOption[]; cachedAt: number }>();
+const lookupByIdCache = new Map<string, { data: LookupOption; cachedAt: number }>();
 
 interface LookupOption {
   id: string;
   name: string;
   record_number: string;
   email?: string;
-  [key: string]: any;
 }
 
 interface LookupFieldProps {
@@ -28,167 +32,308 @@ export default function LookupField({
   lookupType,
   placeholder = 'Select an option',
   required = false,
-  className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
+  className = 'w-full',
   disabled = false,
   filterByParam,
 }: LookupFieldProps) {
   const [options, setOptions] = useState<LookupOption[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchOptions();
-  }, [lookupType, filterByParam?.key, filterByParam?.value]);
+    const controller = new AbortController();
+    const query = searchInput.trim();
 
-  const fetchOptions = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let apiEndpoint = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
-      if (filterByParam?.value && lookupType !== 'owner') {
+    const run = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        let apiEndpoint = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
         const u = new URL(apiEndpoint, window.location.origin);
-        u.searchParams.set(filterByParam.key, filterByParam.value);
-        apiEndpoint = u.pathname + u.search;
+        if (filterByParam?.value && lookupType !== 'owner') {
+          u.searchParams.set(filterByParam.key, filterByParam.value);
+        }
+        if (query.length > 0) {
+          u.searchParams.set('q', query);
+        }
+        u.searchParams.set('limit', '100');
+
+        const requestPath = u.pathname + u.search;
+        const canUseListCache = query.length > 0;
+        const cached = canUseListCache ? lookupListCache.get(requestPath) : null;
+        if (cached && Date.now() - cached.cachedAt < LOOKUP_CACHE_TTL_MS) {
+          setOptions(cached.data);
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await fetch(requestPath, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch ${lookupType}`);
+        }
+
+        const data = await response.json();
+        const mappedOptions = mapLookupResponse(lookupType, data).slice(0, 100);
+        if (canUseListCache) {
+          lookupListCache.set(requestPath, { data: mappedOptions, cachedAt: Date.now() });
+        }
+        setOptions(mappedOptions);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : 'Failed to load options');
+      } finally {
+        setIsLoading(false);
       }
-      const response = await fetch(apiEndpoint);
+    };
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${lookupType}`);
-      }
+    const timeoutId = window.setTimeout(run, 300);
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [lookupType, filterByParam?.key, filterByParam?.value, searchInput]);
 
-      const data = await response.json();
-      console.log(data);
-      // Handle different response structures
-      let fetchedOptions: LookupOption[] = [];
+  useEffect(() => {
+    const fetchSelectedOption = async () => {
+      if (!value || lookupType === 'owner') return;
+      if (options.some((option) => option.id === value)) return;
 
-      // Filter out archived records (archived_at / archivedAt not null)
-      const isNotArchived = (item: any) =>
-        item &&
-        item.archived_at == null &&
-        item.archivedAt == null;
-      
-      if (lookupType === 'organizations') {
-        fetchedOptions = (data.organizations || [])
-          .filter(isNotArchived)
-          .map((org: any) => ({
-            id: org.id.toString(),
-            name: org.name,
-            record_number: org.record_number || ''
-          }));
-      } else if (lookupType === 'hiring-managers') {
-        fetchedOptions = (data.hiringManagers || data.hiring_managers || [])
-          .filter(isNotArchived)
-          .map((hm: any) => ({
-            id: hm.id.toString(),
-            name: hm.full_name || `${hm.first_name} ${hm.last_name}`,
-            record_number: hm.record_number || ''
-          }));
-      } else if (lookupType === 'job-seekers') {
-        fetchedOptions = (data.jobSeekers || [])
-          .filter(isNotArchived)
-          .map((js: any) => ({
-            id: js.id.toString(),
-            name: js.full_name || `${js.first_name} ${js.last_name}`,
-            record_number: js.record_number || ''
-          }));
-      } else if (lookupType === 'leads') {
-        fetchedOptions = (data.leads || [])
-          .filter(isNotArchived)
-          .map((lead: any) => ({
-            id: lead.id.toString(),
-            name: lead.full_name || `${lead.firstName || lead.first_name || ''} ${lead.lastName || lead.last_name || ''}`.trim() || 'Untitled Lead',
-            record_number: lead.record_number || ''
-          }));
-      } else if (lookupType === 'placements') {
-        fetchedOptions = (data.placements || [])
-          .filter(isNotArchived)
-          .map((p: any) => ({
-            id: p.id.toString(),
-            name: `${p.job_seeker_name || 'Candidate'} - ${p.job_title || p.job_name || 'Job'}`,
-            record_number: p.record_number || ''
-          }));
-      } else if (lookupType === 'jobs') {
-        fetchedOptions = (data.jobs || [])
-          .filter(isNotArchived)
-          .map((job: any) => ({
-            id: job.id.toString(),
-            name: job.job_title,
-            record_number: job.record_number || ''
-          }));
-      } else if (lookupType === 'owner') {
-        fetchedOptions = (data.users || [])
-          .filter(isNotArchived)
-          .map((user: any) => ({
-            id: user.id.toString(),
-            name: user.name || user.email || '',
-            email: user.email || '',
-            // Many user records don't have an explicit record_number.
-            // Fallback to the numeric id so owner options still show a prefixed code (e.g. U123 - owner@gmail.com).
-            record_number:
-              (user.record_number != null && user.record_number !== '')
-                ? String(user.record_number)
-                : user.id != null
-                  ? String(user.id)
-                  : ''
-          }));
+      const cacheKey = `${lookupType}:${value}`;
+      const cached = lookupByIdCache.get(cacheKey);
+      if (cached && Date.now() - cached.cachedAt < LOOKUP_CACHE_TTL_MS) {
+        setOptions((prev) => {
+          if (prev.some((item) => item.id === cached.data.id)) return prev;
+          return [cached.data, ...prev];
+        });
+        return;
       }
 
-      setOptions(fetchedOptions);
-    } catch (err) {
-      console.error(`Error fetching ${lookupType}:`, err);
-      setError(err instanceof Error ? err.message : 'Failed to load options');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const endpoint = `/api/${lookupType}/${encodeURIComponent(value)}`;
+      try {
+        const response = await fetch(endpoint);
+        if (!response.ok) return;
+        const data = await response.json();
+        const selectedRecord = mapSingleLookupRecord(lookupType, data);
+        if (!selectedRecord) return;
+        lookupByIdCache.set(cacheKey, { data: selectedRecord, cachedAt: Date.now() });
 
-  if (isLoading) {
-    return (
-      <select className={className} disabled>
-        <option>Loading...</option>
-      </select>
-    );
-  }
+        setOptions((prev) => {
+          if (prev.some((item) => item.id === selectedRecord.id)) return prev;
+          return [selectedRecord, ...prev];
+        });
+      } catch {
+        // Keep form usable even if single-record lookup fails.
+      }
+    };
 
-  if (error) {
-    return (
-      <select className={className} disabled>
-        <option>Error loading options</option>
-      </select>
-    );
-  }
+    fetchSelectedOption();
+  }, [lookupType, options, value]);
+
+  const selectOptions = useMemo<StyledSelectOption[]>(() => {
+    return options.map((option) => {
+      const prefix =
+        lookupType === 'organizations' ? 'O' :
+        lookupType === 'hiring-managers' ? 'HM' :
+        lookupType === 'job-seekers' ? 'JS' :
+        lookupType === 'jobs' ? 'J' :
+        lookupType === 'owner' ? 'U' :
+        lookupType === 'leads' ? 'L' :
+        lookupType === 'placements' ? 'P' : '';
+
+      const ownerLabel = option.email ? `${option.name} (${option.email})` : option.name;
+      const baseLabel = lookupType === 'owner' ? ownerLabel : option.name;
+      const label = option.record_number ? `${prefix}${option.record_number} - ${baseLabel}` : baseLabel;
+
+      return {
+        value: option.id,
+        label,
+      };
+    });
+  }, [lookupType, options]);
+
+  const selectedOption = useMemo(
+    () => selectOptions.find((opt) => opt.value === value) ?? null,
+    [selectOptions, value]
+  );
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={className}
-      required={required}
-      disabled={disabled}
-    >
-      <option value="">{placeholder}</option>
-      {options.map((option) => {
-        const prefix =
-          lookupType === "organizations" ? "O" :
-          lookupType === "hiring-managers" ? "HM" :
-          lookupType === "job-seekers" ? "JS" :
-          lookupType === "jobs" ? "J" :
-          lookupType === "owner" ? "U" :
-          lookupType === "leads" ? "L" :
-          lookupType === "placements" ? "P" : "";
-        const baseLabel =
-          lookupType === 'owner'
-            ? `${option.name} (${option.email})`|| option.email
-            : option.name;
-        const label = option.record_number ? `${prefix}${option.record_number} - ${baseLabel}` : baseLabel;
-        return (
-          <option key={option.id} value={option.id}>
-            {label}
-          </option>
-        );
-      })}
-    </select>
+    <div className="relative">
+      {required && (
+        <input
+          tabIndex={-1}
+          autoComplete="off"
+          value={value}
+          onChange={() => {}}
+          required={required}
+          className="absolute h-0 w-0 opacity-0 pointer-events-none"
+          aria-hidden="true"
+        />
+      )}
+      <StyledReactSelect
+        className={className}
+        value={selectedOption}
+        options={selectOptions}
+        onChange={(option) => onChange((option as StyledSelectOption | null)?.value ?? '')}
+        onInputChange={(input, meta) => {
+          if (meta.action === 'input-change') setSearchInput(input);
+        }}
+        isDisabled={disabled}
+        isLoading={isLoading}
+        isClearable
+        placeholder={
+          placeholder
+        }
+        noOptionsMessage={() => {
+          if (error) return 'Error loading options';
+          return 'No options found';
+        }}
+      />
+    </div>
   );
+}
+
+function mapLookupResponse(
+  lookupType: LookupFieldProps['lookupType'],
+  data: Record<string, unknown>
+): LookupOption[] {
+  const isNotArchived = (item: any) =>
+    item &&
+    item.archived_at == null &&
+    item.archivedAt == null;
+
+  if (lookupType === 'organizations') {
+    return ((data.organizations as any[]) || [])
+      .filter(isNotArchived)
+      .map((org) => ({
+        id: String(org.id),
+        name: org.name,
+        record_number: org.record_number ? String(org.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'hiring-managers') {
+    return (((data.hiringManagers as any[]) || (data.hiring_managers as any[]) || []))
+      .filter(isNotArchived)
+      .map((hm) => ({
+        id: String(hm.id),
+        name: hm.full_name || `${hm.first_name || ''} ${hm.last_name || ''}`.trim(),
+        record_number: hm.record_number ? String(hm.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'job-seekers') {
+    return ((data.jobSeekers as any[]) || [])
+      .filter(isNotArchived)
+      .map((js) => ({
+        id: String(js.id),
+        name: js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim(),
+        record_number: js.record_number ? String(js.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'leads') {
+    return ((data.leads as any[]) || [])
+      .filter(isNotArchived)
+      .map((lead) => ({
+        id: String(lead.id),
+        name: lead.full_name || `${lead.firstName || lead.first_name || ''} ${lead.lastName || lead.last_name || ''}`.trim() || 'Untitled Lead',
+        record_number: lead.record_number ? String(lead.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'placements') {
+    return ((data.placements as any[]) || [])
+      .filter(isNotArchived)
+      .map((p) => ({
+        id: String(p.id),
+        name: `${p.job_seeker_name || 'Candidate'} - ${p.job_title || p.job_name || 'Job'}`,
+        record_number: p.record_number ? String(p.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'jobs') {
+    return ((data.jobs as any[]) || [])
+      .filter(isNotArchived)
+      .map((job) => ({
+        id: String(job.id),
+        name: job.job_title || 'Untitled Job',
+        record_number: job.record_number ? String(job.record_number) : '',
+      }));
+  }
+
+  if (lookupType === 'owner') {
+    return ((data.users as any[]) || [])
+      .filter(isNotArchived)
+      .map((user) => ({
+        id: String(user.id),
+        name: user.name || user.email || '',
+        email: user.email || '',
+        record_number:
+          user.record_number != null && user.record_number !== ''
+            ? String(user.record_number)
+            : user.id != null
+              ? String(user.id)
+              : '',
+      }));
+  }
+
+  return [];
+}
+
+function mapSingleLookupRecord(
+  lookupType: LookupFieldProps['lookupType'],
+  data: Record<string, any>
+): LookupOption | null {
+  if (lookupType === 'organizations' && data.organization) {
+    const org = data.organization;
+    return {
+      id: String(org.id),
+      name: org.name || 'Unnamed Organization',
+      record_number: org.record_number ? String(org.record_number) : '',
+    };
+  }
+  if (lookupType === 'hiring-managers' && data.hiringManager) {
+    const hm = data.hiringManager;
+    return {
+      id: String(hm.id),
+      name: hm.full_name || `${hm.first_name || ''} ${hm.last_name || ''}`.trim(),
+      record_number: hm.record_number ? String(hm.record_number) : '',
+    };
+  }
+  if (lookupType === 'job-seekers' && data.jobSeeker) {
+    const js = data.jobSeeker;
+    return {
+      id: String(js.id),
+      name: js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim(),
+      record_number: js.record_number ? String(js.record_number) : '',
+    };
+  }
+  if (lookupType === 'jobs' && data.job) {
+    const job = data.job;
+    return {
+      id: String(job.id),
+      name: job.job_title || 'Untitled Job',
+      record_number: job.record_number ? String(job.record_number) : '',
+    };
+  }
+  if (lookupType === 'leads' && data.lead) {
+    const lead = data.lead;
+    return {
+      id: String(lead.id),
+      name: lead.full_name || `${lead.firstName || lead.first_name || ''} ${lead.lastName || lead.last_name || ''}`.trim() || 'Untitled Lead',
+      record_number: lead.record_number ? String(lead.record_number) : '',
+    };
+  }
+  if (lookupType === 'placements' && data.placement) {
+    const placement = data.placement;
+    return {
+      id: String(placement.id),
+      name: `${placement.job_seeker_name || 'Candidate'} - ${placement.job_title || placement.job_name || 'Job'}`,
+      record_number: placement.record_number ? String(placement.record_number) : '',
+    };
+  }
+
+  return null;
 }
 

@@ -1689,7 +1689,6 @@ export default function CustomFieldRenderer({
           lookupType={field.lookup_type || "organizations"}
           placeholder={field.placeholder || "Select an option"}
           required={false}
-          className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
           disabled
           filterByParam={lookupFilterByParam}
         />
@@ -1700,7 +1699,6 @@ export default function CustomFieldRenderer({
           lookupType={field.lookup_type || "organizations"}
           placeholder={field.placeholder || "Select an option"}
           required={field.is_required}
-          className={className}
           disabled={false}
           filterByParam={lookupFilterByParam}
         />

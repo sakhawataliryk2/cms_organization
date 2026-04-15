@@ -310,7 +310,6 @@ export default function FieldMappingDefaultValueControl({
                 onChange={onChange}
                 lookupType="owner"
                 placeholder="— None —"
-                className={inputClass(!!locked)}
                 disabled={locked}
               />
             )}
@@ -323,7 +322,6 @@ export default function FieldMappingDefaultValueControl({
           onChange={onChange}
           lookupType={lookupType}
           placeholder="— None —"
-          className={inputClass(!!locked)}
           disabled={locked}
         />
       );
@@ -338,7 +336,6 @@ export default function FieldMappingDefaultValueControl({
           }
           lookupType={lookupType}
           placeholder="Search records…"
-          className={inputClass(!!locked)}
           disabled={locked}
         />
       );
