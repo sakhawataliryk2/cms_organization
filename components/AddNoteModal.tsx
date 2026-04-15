@@ -13,12 +13,7 @@ interface AddNoteModalProps {
     entityId: string;
     entityDisplay?: string;
     onSuccess?: () => void;
-    /** Optional default action to pre-select when the modal opens (e.g. 'Job Seeker Withdrew'). */
     defaultAction?: string;
-    /**
-     * Optional additional About/Reference records to pre-populate.
-     * These are merged with the primary entity reference and deduplicated by id+type.
-     */
     defaultAboutReferences?: Array<{
         id: string;
         type: string;
@@ -42,6 +37,7 @@ interface NoteFormState {
     additionalReferences: Array<{ id: string; type: string; display: string; value: string }>;
     scheduleNextAction: string;
     emailNotification: string[];
+    note_date_time: string;
 }
 
 export default function AddNoteModal({
@@ -54,6 +50,12 @@ export default function AddNoteModal({
     defaultAction,
     defaultAboutReferences
 }: AddNoteModalProps) {
+    const getCurrentLocalDateTime = () => {
+        const now = new Date();
+        const pad = (value: number) => String(value).padStart(2, "0");
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    };
+
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: "",
         action: "",
@@ -69,6 +71,7 @@ export default function AddNoteModal({
         additionalReferences: [],
         scheduleNextAction: "None",
         emailNotification: [],
+        note_date_time: getCurrentLocalDateTime(),
     });
 
     const [noteFormErrors, setNoteFormErrors] = useState<{
@@ -155,6 +158,7 @@ export default function AddNoteModal({
                 additionalReferences: [],
                 scheduleNextAction: "None",
                 emailNotification: [],
+                note_date_time: getCurrentLocalDateTime(),
             });
             setNoteFormErrors({});
             setAboutSearchQuery("");
@@ -707,8 +711,9 @@ export default function AddNoteModal({
                 replace_general_contact_comments: noteForm.replaceGeneralContactComments,
                 additional_references: noteForm.additionalReferences,
                 schedule_next_action: noteForm.scheduleNextAction,
-                email_notification: noteForm.emailNotification
-            };
+                email_notification: noteForm.emailNotification,
+                note_date_time: noteForm.note_date_time,
+                            };
 
             const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
                 method: 'POST',
@@ -789,7 +794,8 @@ export default function AddNoteModal({
                                 additional_references: noteForm.additionalReferences,
                                 schedule_next_action: noteForm.scheduleNextAction,
                                 email_notification: noteForm.emailNotification,
-                            }),
+                                note_date_time: noteForm.note_date_time,
+                                                            }),
                         });
                         
                         if (!propResponse.ok) {
@@ -857,6 +863,21 @@ export default function AddNoteModal({
                 {/* Form Content */}
                 <div className="p-6">
                     <div className="space-y-4">
+                        {/* Note Date & Time */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Note Date & Time
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={noteForm.note_date_time}
+                                onChange={(e) =>
+                                    setNoteForm((prev) => ({ ...prev, note_date_time: e.target.value }))
+                                }
+                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+
                         {/* Note Text Area - Required */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">

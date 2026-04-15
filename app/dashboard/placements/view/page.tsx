@@ -13,6 +13,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { FiBriefcase, FiLock, FiUnlock, FiSearch } from "react-icons/fi";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
+import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import CountdownTimer from "@/components/CountdownTimer";
@@ -374,8 +375,14 @@ export default function PlacementView() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteDateStartFilter, setNoteDateStartFilter] = useState<string>("");
+  const [noteDateEndFilter, setNoteDateEndFilter] = useState<string>("");
   const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
   const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+
+  const getNoteDateTimeValue = (note: any) =>
+    note?.note_date_time || note?.created_at || note?.createdAt || null;
   const sortedFilteredNotes = useMemo(() => {
     let out = [...notes];
     if (noteActionFilter) {
@@ -385,6 +392,9 @@ export default function PlacementView() {
       out = out.filter(
         (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
       );
+    }
+    if (noteDateStartFilter || noteDateEndFilter) {
+      out = out.filter((n) => isNoteWithinDateRange(n, noteDateStartFilter, noteDateEndFilter));
     }
     out.sort((a, b) => {
       let av: any, bv: any;
@@ -398,8 +408,8 @@ export default function PlacementView() {
           bv = b.created_by_name || "";
           break;
         default:
-          av = new Date(a.created_at).getTime();
-          bv = new Date(b.created_at).getTime();
+          av = getNoteDateTimeMs(a);
+          bv = getNoteDateTimeMs(b);
           break;
       }
       if (typeof av === "number" && typeof bv === "number") {
@@ -412,7 +422,7 @@ export default function PlacementView() {
       return noteSortDir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+  }, [notes, noteActionFilter, noteAuthorFilter, noteDateStartFilter, noteDateEndFilter, noteSortKey, noteSortDir]);
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
@@ -2338,8 +2348,8 @@ export default function PlacementView() {
         let aValue: any = getDocumentColumnValue(a, sortKey);
         let bValue: any = getDocumentColumnValue(b, sortKey);
         if (sortKey === "created_at") {
-          aValue = new Date(a.created_at).getTime();
-          bValue = new Date(b.created_at).getTime();
+          aValue = new Date(getNoteDateTimeValue(a) || 0).getTime();
+          bValue = new Date(getNoteDateTimeValue(b) || 0).getTime();
         }
         const aNum = typeof aValue === "number" ? aValue : Number(aValue);
         const bNum = typeof bValue === "number" ? bValue : Number(bValue);
@@ -3325,6 +3335,23 @@ export default function PlacementView() {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Date Range</label>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={noteDateStartFilter}
+                onChange={(e) => setNoteDateStartFilter(e.target.value)}
+                className="p-2 border border-gray-300 rounded text-sm"
+              />
+              <input
+                type="date"
+                value={noteDateEndFilter}
+                onChange={(e) => setNoteDateEndFilter(e.target.value)}
+                className="p-2 border border-gray-300 rounded text-sm"
+              />
+            </div>
+          </div>
+          <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
             <select
               value={noteSortKey}
@@ -3345,9 +3372,9 @@ export default function PlacementView() {
               {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
             </button>
           </div>
-          {(noteActionFilter || noteAuthorFilter) && (
+          {(noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter) && (
             <button
-              onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+              onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); setNoteDateStartFilter(""); setNoteDateEndFilter(""); }}
               className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
             >
               Clear Filters
@@ -3390,13 +3417,7 @@ export default function PlacementView() {
                           </span>
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(note.created_at).toLocaleString("en-US", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatNoteDateTime(note)}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -4071,7 +4092,7 @@ export default function PlacementView() {
                     >
                       <div className="flex justify-between text-sm mb-1">
                         <span className="font-medium">{note.created_by_name || "Unknown User"}</span>
-                        <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                        <span className="text-gray-500">{formatNoteDateTime(note)}</span>
                       </div>
                       <p className="text-sm text-gray-700">
                         {note.text.length > 100
