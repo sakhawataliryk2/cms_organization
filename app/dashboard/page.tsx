@@ -7,6 +7,7 @@ import { useRouter } from 'nextjs-toploader/app';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { ActivityReportGrid, type ActivityReportRow } from '@/components/ActivityReportGrid';
+import { getNoteDateTimeValue } from '@/lib/noteUtils';
 
 interface Task {
     id: string;
@@ -189,7 +190,7 @@ export default function Dashboard() {
     const getActivityRangeEndDate = () =>
         activityRange.end ? new Date(`${activityRange.end}T23:59:59.999`) : null;
 
-    const isInActivityRange = (dateString: string | undefined) => {
+    const isInActivityRange = (dateString: string | null | undefined) => {
         if (!dateString) return false;
         const d = new Date(dateString);
         if (Number.isNaN(d.getTime())) return false;
@@ -290,7 +291,7 @@ export default function Dashboard() {
                     notes.forEach((note: any) => {
                         if (
                             String(note.created_by) === String(user.id) &&
-                            isInActivityRange(note.created_at)
+                            isInActivityRange(getNoteDateTimeValue(note))
                         ) {
                             notesList.push({
                                 ...note,
