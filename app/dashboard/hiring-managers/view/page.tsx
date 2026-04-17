@@ -63,6 +63,7 @@ import AddTearsheetModal from "@/components/AddTearsheetModal";
 import CountdownTimer from '@/components/CountdownTimer';
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
+import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -151,8 +152,8 @@ interface NoteFormState {
   emailNotification: string[];
 }
 
-// Zoom Phone integration — Field_10 is the primary phone field for Hiring Managers
-const HM_PRIMARY_PHONE_FIELD_IDENTIFIER = "field_10";
+// Zoom Phone integration — Field_11 is the primary phone field for Hiring Managers
+const HM_PRIMARY_PHONE_FIELD_IDENTIFIER = "field_11";
 
 const normalizeHMFieldIdentifier = (identifier: unknown) => {
   if (identifier === undefined || identifier === null) return "";
@@ -898,7 +899,9 @@ out.sort((a, b) => {
                     <span className="font-medium">{note.created_by_name || "Unknown User"}</span>
                     <span className="text-gray-500">{new Date(getNoteDateTimeValue(note) || 0).toLocaleString()}</span>
                   </div>
-                  <p className="text-sm text-gray-700">{note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}</p>
+                  <div className="text-sm text-gray-700">
+                    <ZoomPhoneNoteBody text={note.text} compact />
+                  </div>
                 </div>
               ))}
               {notes.length > 5 && (
@@ -3157,7 +3160,7 @@ out.sort((a, b) => {
     }
   };
 
-  // Zoom Phone call — mirrors job seeker implementation, uses Field_10 as primary phone
+  // Zoom Phone call — mirrors job seeker implementation, uses Field_11 as primary phone
   const handleStartZoomCall = async (phoneNumber?: string) => {
     if (!hiringManagerId || !hiringManager) {
       toast.error("Hiring manager not loaded");
@@ -3859,9 +3862,22 @@ out.sort((a, b) => {
                   (af) => af.field_name === note.action || af.field_label === note.action
                 )?.field_label || note.action || "General Note";
               const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+              const zoomKind = getZoomPhoneNoteKind(note.text);
+              const zoomAccentClass =
+                zoomKind === "call"
+                  ? "border-l-4 border-l-indigo-400"
+                  : zoomKind === "sms"
+                    ? "border-l-4 border-l-teal-500"
+                    : "";
+              const zoomActionBadge =
+                /zoom\s*call/i.test(String(actionLabel))
+                  ? "bg-indigo-100 text-indigo-900 border border-indigo-200/80"
+                  : /zoom\s*sms/i.test(String(actionLabel))
+                    ? "bg-teal-100 text-teal-900 border border-teal-200/80"
+                    : "bg-blue-100 text-blue-800";
 
               return (
-                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                <div id={`note-${note.id}`} key={note.id} className={`p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors ${zoomAccentClass}`}>
                   <div className="border-b border-gray-200 pb-3 mb-3">
                     <div className="flex justify-between items-start">
                       <div className="flex flex-col gap-2">
@@ -3870,7 +3886,7 @@ out.sort((a, b) => {
                             {note.created_by_name || "Unknown User"}
                           </span>
                           {actionLabel && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${zoomActionBadge}`}>
                               {actionLabel}
                             </span>
                           )}
@@ -3938,7 +3954,7 @@ out.sort((a, b) => {
                     </div>
                   )}
                   <div className="mt-2">
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                    <ZoomPhoneNoteBody text={note.text} />
                   </div>
                 </div>
               );
