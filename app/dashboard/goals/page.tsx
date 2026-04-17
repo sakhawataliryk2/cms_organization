@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { toast } from "sonner";
 import { ActivityReportGrid, type ActivityReportRow } from "@/components/ActivityReportGrid";
+import { getNoteDateTimeValue } from "@/lib/noteUtils";
 
 interface User {
   id: string;
@@ -257,7 +258,7 @@ const GoalsAndQuotas = () => {
         : null;
       const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
 
-      const isInRange = (dateString: string | undefined) => {
+      const isInRange = (dateString: string | null | undefined) => {
         if (!dateString) return false;
         const d = new Date(dateString);
         if (Number.isNaN(d.getTime())) return false;
@@ -301,7 +302,7 @@ const GoalsAndQuotas = () => {
                 const notes = notesData.notes || [];
 
                 notes.forEach((note: any) => {
-                  if (note.created_by && isInRange(note.created_at)) {
+                  if (note.created_by && isInRange(getNoteDateTimeValue(note))) {
                     const key = `${note.created_by}-${category}`;
                     notesCountMap[key] = (notesCountMap[key] || 0) + 1;
 

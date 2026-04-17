@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo } from 'react';
+import { formatNoteDateTime, getNoteDateTimeValue } from '@/lib/noteUtils';
 
 export interface ActivityReportRow {
   key: string;
@@ -158,8 +159,8 @@ export const ActivityReportGrid = memo(function ActivityReportGrid({
                     <div key={note.id || idx} className="border border-gray-200 rounded p-4">
                       <div className="text-sm font-medium text-gray-900">{note._entityName}</div>
                       <div className="text-sm text-gray-700 mt-2">{note.text || note.note || '(No text)'}</div>
-                      {note.created_at && (
-                        <div className="text-xs text-gray-500 mt-2">Created: {new Date(note.created_at).toLocaleString()}</div>
+                      {getNoteDateTimeValue(note) && (
+                        <div className="text-xs text-gray-500 mt-2">Note date: {formatNoteDateTime(note)}</div>
                       )}
                     </div>
                   ))}

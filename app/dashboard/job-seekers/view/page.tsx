@@ -41,6 +41,7 @@ import AddNoteModal from "@/components/AddNoteModal";
 import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
 import SubmissionFormModal from "@/components/SubmissionFormModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import { formatNoteDateTime, getNoteDateTimeMs, getNoteDateTimeValue } from "@/lib/noteUtils";
 // Drag and drop imports
 import {
   DndContext,
@@ -4198,7 +4199,7 @@ Best regards`;
       .sort((a, b) => {
         let cmp = 0;
         if (noteSortKey === "date") {
-          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          cmp = getNoteDateTimeMs(a) - getNoteDateTimeMs(b);
         } else if (noteSortKey === "action") {
           cmp = (a.action || "").localeCompare(b.action || "");
         } else if (noteSortKey === "author") {
@@ -4372,13 +4373,7 @@ Best regards`;
                           </span>
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(note.created_at).toLocaleString("en-US", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatNoteDateTime(note)}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -4953,7 +4948,12 @@ Best regards`;
               <div key={note.id} className="text-sm pb-2 border-b last:border-b-0">
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>{note.created_by_name}</span>
-                  <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                  <span>
+                    {(() => {
+                      const v = getNoteDateTimeValue(note);
+                      return v ? new Date(v).toLocaleDateString() : "";
+                    })()}
+                  </span>
                 </div>
                 <div className="mt-1">
                   <ZoomPhoneNoteBody text={note.text} compact />
@@ -5359,9 +5359,7 @@ Best regards`;
                   return /pre\s*screen|prescreen/.test(actionOrType);
                 })
                 .sort(
-                  (a, b) =>
-                    new Date(b.created_at || 0).getTime() -
-                    new Date(a.created_at || 0).getTime()
+                  (a, b) => getNoteDateTimeMs(b) - getNoteDateTimeMs(a)
                 )
                 .map((note) => (
                   <div
@@ -5380,15 +5378,7 @@ Best regards`;
                         )}
                       </div>
                       <div className="text-xs text-gray-600">
-                        {note.created_at
-                          ? new Date(note.created_at).toLocaleString("en-US", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                          : null}
+                        {getNoteDateTimeValue(note) ? formatNoteDateTime(note) : null}
                       </div>
                       {note.text && (
                         <div className="mt-1 text-gray-800 line-clamp-3">

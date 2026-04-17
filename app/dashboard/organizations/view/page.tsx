@@ -67,6 +67,7 @@ import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -391,6 +392,7 @@ export default function OrganizationView() {
       id: string;
       text: string;
       created_at: string;
+      note_date_time?: string | null;
       created_by_name: string;
       action?: string;
       additional_references?: string;
@@ -449,8 +451,8 @@ export default function OrganizationView() {
           bv = b.created_by_name || "";
           break;
         default:
-          av = new Date(a.created_at).getTime();
-          bv = new Date(b.created_at).getTime();
+          av = getNoteDateTimeMs(a);
+          bv = getNoteDateTimeMs(b);
           break;
       }
 
@@ -3236,7 +3238,7 @@ export default function OrganizationView() {
                             {note.created_by_name || "Unknown User"}
                           </span>
                           <span className="text-gray-500">
-                            {new Date(note.created_at).toLocaleString()}
+                            {formatNoteDateTime(note)}
                           </span>
                         </div>
                         {actionLabel && (
@@ -5116,15 +5118,9 @@ export default function OrganizationView() {
                             </span>
                           )}
                         </div>
-                        {/* Date & Time */}
+                        {/* Date & Time (note_date_time when set; else legacy created_at) */}
                         <div className="text-xs text-gray-500">
-                          {new Date(note.created_at).toLocaleString("en-US", {
-                            month: "2-digit",
-                            day: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatNoteDateTime(note)}
                         </div>
                       </div>
                       {/* Action Buttons */}
