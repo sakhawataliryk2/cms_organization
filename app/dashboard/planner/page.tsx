@@ -1766,7 +1766,9 @@ const Planners = () => {
         job_id: "",
         description: "",
         duration: 30,
-        sendInvites: true,
+        sendInvites: false,
+        meeting_mode: "",
+        custom_meeting_url: "",
       });
       setInvitees([]);
       setIsBulkInterviewMode(false);
