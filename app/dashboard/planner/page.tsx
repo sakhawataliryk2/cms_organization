@@ -447,6 +447,8 @@ const Planners = () => {
     description: "",
     duration: 30,
     sendInvites: true,
+    meeting_mode: "auto_zoom",
+    custom_meeting_url: "",
   });
   const [invitees, setInvitees] = useState<
     { type: InviteeType; id: number }[]
@@ -1308,6 +1310,8 @@ const Planners = () => {
       description: "",
       duration: 30,
       sendInvites: true,
+      meeting_mode: "auto_zoom",
+      custom_meeting_url: "",
     });
     setInvitees([]);
     setIsBulkInterviewMode(false);
@@ -1317,12 +1321,15 @@ const Planners = () => {
   };
 
   const closeAddModal = () => {
-    // Only hide the modal here; do not clear pendingApplicationStatusUpdate.
-    // That ref is intentionally cleared after any follow-up status PATCH logic
-    // in handleSaveAppointment's finally block.
     setShowAddModal(false);
     setIsBulkInterviewMode(false);
     setBulkJobSeekerIds([]);
+    // Reset meeting_mode fields
+    setAppointmentForm((prev) => ({
+      ...prev,
+      meeting_mode: "auto_zoom",
+      custom_meeting_url: "",
+    }));
   };
 
   // Handle Save Appointment
@@ -1334,6 +1341,19 @@ const Planners = () => {
     ) {
       toast.error("Please fill in all required fields (Date, Time, Type)");
       return;
+    }
+
+    // Validate custom_meeting_url when custom_url mode is selected
+    if (appointmentForm.meeting_mode === "custom_url" && !appointmentForm.custom_meeting_url) {
+      toast.error("Meeting link is required when Custom URL is selected");
+      return;
+    }
+    if (appointmentForm.meeting_mode === "custom_url" && appointmentForm.custom_meeting_url) {
+      const urlPattern = /^https:\/\/[^\s/$.?#].[^\s]*$/i;
+      if (!urlPattern.test(appointmentForm.custom_meeting_url)) {
+        toast.error("Invalid meeting URL. Must be a valid https:// URL");
+        return;
+      }
     }
 
     setIsSavingAppointment(true);
@@ -1507,7 +1527,12 @@ const Planners = () => {
             : null,
         duration: appointmentForm.duration || 30,
         sendInvites: appointmentForm.sendInvites ?? false,
+        meeting_mode: appointmentForm.meeting_mode || "none",
       };
+      // Add custom_meeting_url only when custom_url mode is selected
+      if (appointmentForm.meeting_mode === "custom_url" && appointmentForm.custom_meeting_url) {
+        requestBody.custom_meeting_url = appointmentForm.custom_meeting_url;
+      }
       if (
         isBulkInterviewMode &&
         appointmentForm.participant_type === "job_seeker" &&
@@ -3241,7 +3266,6 @@ const Planners = () => {
                     required
                   >
                     <option value="">Select type</option>
-                    <option value="zoom">Zoom Meeting</option>
                     <option value="Interview">Interview</option>
                     <option value="Meeting">Meeting</option>
                     <option value="Phone Call">Phone Call</option>
@@ -3270,6 +3294,62 @@ const Planners = () => {
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Meeting Configuration */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Meeting
+                  </label>
+                  <select
+                    value={appointmentForm.meeting_mode}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        meeting_mode: e.target.value,
+                        // Reset custom URL when changing mode
+                        custom_meeting_url: e.target.value !== "custom_url" ? "" : prev.custom_meeting_url,
+                      }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="none">None</option>
+                    <option value="auto_zoom">Auto Zoom</option>
+                    <option value="custom_url">Custom URL</option>
+                  </select>
+                </div>
+
+                {/* Custom Meeting URL - shown when custom_url is selected */}
+                {appointmentForm.meeting_mode === "custom_url" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Meeting Link{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={appointmentForm.custom_meeting_url}
+                      onChange={(e) =>
+                        setAppointmentForm((prev) => ({
+                          ...prev,
+                          custom_meeting_url: e.target.value,
+                        }))
+                      }
+                      placeholder="https://zoom.us/j/..."
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter your Zoom, Google Meet, Teams, or other meeting link
+                    </p>
+                  </div>
+                )}
+
+                {/* Info text for auto_zoom */}
+                {appointmentForm.meeting_mode === "auto_zoom" && (
+                  <div className="p-2 bg-blue-50 rounded text-sm text-blue-700">
+                    A Zoom meeting will be created automatically when you save the appointment.
+                  </div>
+                )}
               </div>
 
               {/* Right Column */}

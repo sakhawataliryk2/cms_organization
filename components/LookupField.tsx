@@ -2,6 +2,18 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import StyledReactSelect, { type StyledSelectOption } from './StyledReactSelect';
+import { FiArrowRightCircle } from 'react-icons/fi';
+
+function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
+  return (
+    <div className="group relative inline-flex">
+      {children}
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+        {text}
+      </span>
+    </div>
+  );
+}
 
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000;
 const lookupListCache = new Map<string, { data: LookupOption[]; cachedAt: number }>();
@@ -40,6 +52,34 @@ export default function LookupField({
   const [searchInput, setSearchInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConvertedToLookup, setIsConvertedToLookup] = useState(false);
+
+  const checkIsPlainTextValue = (val: string, converted: boolean, opts: LookupOption[]): boolean => {
+    if (!val) return false;
+    if (converted) return false;
+    if (!/^\d+$/.test(val)) return true;
+    const isValidOption = opts.some((option) => option.id === val);
+    return !isValidOption;
+  };
+
+  const shouldShowAsText = checkIsPlainTextValue(value, isConvertedToLookup, options);
+
+  useEffect(() => {
+    if (shouldShowAsText && value && !isConvertedToLookup) {
+      return;
+    }
+    if (value && !checkIsPlainTextValue(value, isConvertedToLookup, options)) {
+      setIsConvertedToLookup(false);
+    }
+  }, [options, value, isConvertedToLookup, shouldShowAsText]);
+
+  const handleConvertToLookup = () => {
+    setIsConvertedToLookup(true);
+  };
+
+  const handleTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(e.target.value);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,6 +196,57 @@ export default function LookupField({
     () => selectOptions.find((opt) => opt.value === value) ?? null,
     [selectOptions, value]
   );
+
+  if (disabled) {
+    if (shouldShowAsText) {
+      return (
+        <div className="w-full py-2 px-3 border border-gray-200 rounded bg-gray-50 text-gray-700">
+          {value || '—'}
+        </div>
+      );
+    }
+    return (
+      <div className="relative">
+        <StyledReactSelect
+          className={className}
+          value={selectedOption}
+          options={selectOptions}
+          onChange={() => {}}
+          isDisabled
+          isLoading={isLoading}
+          placeholder={placeholder}
+          noOptionsMessage={() => {
+            if (error) return 'Error loading options';
+            return 'No options found';
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (shouldShowAsText) {
+    return (
+      <div className="relative flex items-center">
+        <input
+          type="text"
+          value={value}
+          onChange={handleTextInputChange}
+          placeholder={placeholder}
+          className="w-full py-2 px-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        <Tooltip text="Convert to lookup">
+          <button
+            type="button"
+            onClick={handleConvertToLookup}
+            className="absolute right-2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
+            aria-label="Convert to lookup"
+          >
+            <FiArrowRightCircle className="w-5 h-5" />
+          </button>
+        </Tooltip>
+      </div>
+    );
+  }
 
   return (
     <div className="relative">
