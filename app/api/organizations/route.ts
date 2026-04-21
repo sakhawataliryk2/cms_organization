@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';  // Add this import
+const CREATE_ORGANIZATION_TIMEOUT_MS = 20000;
 
 export async function GET(request: NextRequest) {
     try {
@@ -109,14 +110,22 @@ export async function POST(request: NextRequest) {
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/organizations`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(apiData)
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), CREATE_ORGANIZATION_TIMEOUT_MS);
+        let response: Response;
+        try {
+            response = await fetch(`${apiUrl}/api/organizations`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(apiData),
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
 
         // Log the response status for debugging
         console.log('Backend response status:', response.status);
@@ -134,6 +143,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(data);
     } catch (error) {
         console.error('Error creating organization:', error);
+        if (error instanceof Error && error.name === 'AbortError') {
+            return NextResponse.json(
+                { success: false, message: 'Create organization request timed out. Please try again.' },
+                { status: 504 }
+            );
+        }
         return NextResponse.json(
             { success: false, message: 'Internal server error' },
             { status: 500 }
