@@ -96,22 +96,16 @@ function fieldDefByStableName(
 
 type OrgDupMatch = { id: string | number; name: string };
 
-function phoneDupCacheKey(
-  excludeId: string,
-  phoneLabel: string | null | undefined,
-  websiteLabel: string | null | undefined,
-  phone: string
-): string {
-  return `phone|ex:${excludeId}|pl:${phoneLabel ?? ""}|wl:${websiteLabel ?? ""}|p:${phone}`;
-}
+type DupCheckCacheEntry = { phone: OrgDupMatch[]; website: OrgDupMatch[] };
 
-function websiteDupCacheKey(
+function combinedDupCacheKey(
   excludeId: string,
   phoneLabel: string | null | undefined,
   websiteLabel: string | null | undefined,
+  phone: string,
   website: string
 ): string {
-  return `web|ex:${excludeId}|pl:${phoneLabel ?? ""}|wl:${websiteLabel ?? ""}|w:${website}`;
+  return `dup|ex:${excludeId}|pl:${phoneLabel ?? ""}|wl:${websiteLabel ?? ""}|p:${phone}|w:${website}`;
 }
 
 export default function AddOrganization() {
@@ -130,8 +124,7 @@ export default function AddOrganization() {
   const [isCheckingPhoneDup, setIsCheckingPhoneDup] = useState(false);
   const [isCheckingWebsiteDup, setIsCheckingWebsiteDup] = useState(false);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
-  const phoneDupResponseCache = useRef<Map<string, OrgDupMatch[]>>(new Map());
-  const websiteDupResponseCache = useRef<Map<string, OrgDupMatch[]>>(new Map());
+  const dupCheckResponseCache = useRef<Map<string, DupCheckCacheEntry>>(new Map());
   const [organizationContacts, setOrganizationContacts] = useState<
     Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
   >([]);
@@ -488,160 +481,111 @@ export default function AddOrganization() {
   const excludeIdForDup =
     isEditMode && organizationId ? String(organizationId).trim() : "";
 
-  // Phone: deps are only phone-related strings + labels + edit id — not getCustomFieldsForSubmission or whole form.
+  // One debounced duplicate check (phone and/or website) — single API call + AbortController.
   useEffect(() => {
     let timeoutId: number | undefined;
+    let abortController: AbortController | undefined;
     let isCancelled = false;
 
-    if (!phoneValidForDupCheck) {
+    const phoneForCheck = phoneValidForDupCheck ? dupCheckValues.phone.trim() : "";
+    const websiteForCheck = websiteValidForDupCheck ? dupCheckValues.website.trim() : "";
+
+    if (!phoneForCheck && !websiteForCheck) {
       setPhoneDupMatches([]);
+      setWebsiteDupMatches([]);
       setIsCheckingPhoneDup(false);
+      setIsCheckingWebsiteDup(false);
       return () => {
         isCancelled = true;
       };
     }
 
-    const phoneForCheck = dupCheckValues.phone.trim();
-    if (!phoneForCheck) {
-      setPhoneDupMatches([]);
-      setIsCheckingPhoneDup(false);
-      return () => {
-        isCancelled = true;
-      };
-    }
-
-    const cacheKey = phoneDupCacheKey(
+    const cacheKey = combinedDupCacheKey(
       excludeIdForDup,
       phoneLabelForDup,
       websiteLabelForDup,
-      phoneForCheck
+      phoneForCheck,
+      websiteForCheck
     );
-    const cached = phoneDupResponseCache.current.get(cacheKey);
+    const cached = dupCheckResponseCache.current.get(cacheKey);
     if (cached) {
-      setPhoneDupMatches(cached);
+      setPhoneDupMatches(cached.phone);
+      setWebsiteDupMatches(cached.website);
       setIsCheckingPhoneDup(false);
+      setIsCheckingWebsiteDup(false);
       return () => {
         isCancelled = true;
       };
     }
 
-    const runCheck = async () => {
-      try {
-        setIsCheckingPhoneDup(true);
-        const params = new URLSearchParams();
-        params.set("phone", phoneForCheck);
-        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
-        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
-        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
+    timeoutId = window.setTimeout(() => {
+      abortController = new AbortController();
+      void (async () => {
+        try {
+          if (phoneForCheck) setIsCheckingPhoneDup(true);
+          else {
+            setPhoneDupMatches([]);
+            setIsCheckingPhoneDup(false);
+          }
+          if (websiteForCheck) setIsCheckingWebsiteDup(true);
+          else {
+            setWebsiteDupMatches([]);
+            setIsCheckingWebsiteDup(false);
+          }
 
-        const dupRes = await fetch(
-          `/api/organizations/check-duplicates?${params.toString()}`
-        );
-        const dupData = await dupRes.json();
+          const params = new URLSearchParams();
+          if (phoneForCheck) params.set("phone", phoneForCheck);
+          if (websiteForCheck) params.set("website", websiteForCheck);
+          if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
+          if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
+          if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
 
-        if (isCancelled) return;
+          const dupRes = await fetch(
+            `/api/organizations/check-duplicates?${params.toString()}`,
+            { signal: abortController.signal }
+          );
+          const dupData = await dupRes.json();
 
-        const matches =
-          dupData.success && dupData.duplicates
-            ? (dupData.duplicates.phone ?? [])
-            : [];
-        phoneDupResponseCache.current.set(cacheKey, matches);
-        setPhoneDupMatches(matches);
-      } catch {
-        if (!isCancelled) setPhoneDupMatches([]);
-      } finally {
-        if (!isCancelled) setIsCheckingPhoneDup(false);
-      }
-    };
+          if (isCancelled) return;
 
-    timeoutId = window.setTimeout(runCheck, 600);
+          const phoneMatches =
+            phoneForCheck && dupData.success && dupData.duplicates
+              ? (dupData.duplicates.phone ?? [])
+              : [];
+          const websiteMatches =
+            websiteForCheck && dupData.success && dupData.duplicates
+              ? (dupData.duplicates.website ?? [])
+              : [];
+
+          dupCheckResponseCache.current.set(cacheKey, {
+            phone: phoneMatches,
+            website: websiteMatches,
+          });
+          if (phoneForCheck) setPhoneDupMatches(phoneMatches);
+          if (websiteForCheck) setWebsiteDupMatches(websiteMatches);
+        } catch {
+          if (!isCancelled) {
+            if (phoneForCheck) setPhoneDupMatches([]);
+            if (websiteForCheck) setWebsiteDupMatches([]);
+          }
+        } finally {
+          if (!isCancelled) {
+            setIsCheckingPhoneDup(false);
+            setIsCheckingWebsiteDup(false);
+          }
+        }
+      })();
+    }, 600);
 
     return () => {
       isCancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
+      abortController?.abort();
     };
   }, [
     dupCheckValues.phone,
-    phoneValidForDupCheck,
-    phoneLabelForDup,
-    websiteLabelForDup,
-    excludeIdForDup,
-  ]);
-
-  // Website: same pattern — isolated deps + cache.
-  useEffect(() => {
-    let timeoutId: number | undefined;
-    let isCancelled = false;
-
-    if (!websiteValidForDupCheck) {
-      setWebsiteDupMatches([]);
-      setIsCheckingWebsiteDup(false);
-      return () => {
-        isCancelled = true;
-      };
-    }
-
-    const websiteForCheck = dupCheckValues.website.trim();
-    if (!websiteForCheck) {
-      setWebsiteDupMatches([]);
-      setIsCheckingWebsiteDup(false);
-      return () => {
-        isCancelled = true;
-      };
-    }
-
-    const cacheKey = websiteDupCacheKey(
-      excludeIdForDup,
-      phoneLabelForDup,
-      websiteLabelForDup,
-      websiteForCheck
-    );
-    const cached = websiteDupResponseCache.current.get(cacheKey);
-    if (cached) {
-      setWebsiteDupMatches(cached);
-      setIsCheckingWebsiteDup(false);
-      return () => {
-        isCancelled = true;
-      };
-    }
-
-    const runCheck = async () => {
-      try {
-        setIsCheckingWebsiteDup(true);
-        const params = new URLSearchParams();
-        params.set("website", websiteForCheck);
-        if (excludeIdForDup) params.set("excludeId", excludeIdForDup);
-        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
-        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
-
-        const dupRes = await fetch(
-          `/api/organizations/check-duplicates?${params.toString()}`
-        );
-        const dupData = await dupRes.json();
-
-        if (isCancelled) return;
-
-        const matches =
-          dupData.success && dupData.duplicates
-            ? (dupData.duplicates.website ?? [])
-            : [];
-        websiteDupResponseCache.current.set(cacheKey, matches);
-        setWebsiteDupMatches(matches);
-      } catch {
-        if (!isCancelled) setWebsiteDupMatches([]);
-      } finally {
-        if (!isCancelled) setIsCheckingWebsiteDup(false);
-      }
-    };
-
-    timeoutId = window.setTimeout(runCheck, 600);
-
-    return () => {
-      isCancelled = true;
-      if (timeoutId) window.clearTimeout(timeoutId);
-    };
-  }, [
     dupCheckValues.website,
+    phoneValidForDupCheck,
     websiteValidForDupCheck,
     phoneLabelForDup,
     websiteLabelForDup,
@@ -848,9 +792,10 @@ export default function AddOrganization() {
             websiteForCheck
         );
 
-      if (runPhoneDup) {
+      if (runPhoneDup || runWebsiteDup) {
         const params = new URLSearchParams();
-        params.set("phone", phoneForCheck);
+        if (runPhoneDup) params.set("phone", phoneForCheck);
+        if (runWebsiteDup) params.set("website", websiteForCheck);
         if (isEditMode && organizationId) params.set("excludeId", organizationId);
         if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
         if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
@@ -859,22 +804,8 @@ export default function AddOrganization() {
         );
         const dupData = await dupRes.json();
         if (dupData.success && dupData.duplicates) {
-          dupPhone = dupData.duplicates.phone ?? [];
-        }
-      }
-
-      if (runWebsiteDup) {
-        const params = new URLSearchParams();
-        params.set("website", websiteForCheck);
-        if (isEditMode && organizationId) params.set("excludeId", organizationId);
-        if (phoneLabelForDup) params.set("phone_label", phoneLabelForDup);
-        if (websiteLabelForDup) params.set("website_label", websiteLabelForDup);
-        const dupRes = await fetch(
-          `/api/organizations/check-duplicates?${params.toString()}`
-        );
-        const dupData = await dupRes.json();
-        if (dupData.success && dupData.duplicates) {
-          dupWebsite = dupData.duplicates.website ?? [];
+          if (runPhoneDup) dupPhone = dupData.duplicates.phone ?? [];
+          if (runWebsiteDup) dupWebsite = dupData.duplicates.website ?? [];
         }
       }
 
