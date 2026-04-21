@@ -238,7 +238,7 @@ export default function LookupField({
           <button
             type="button"
             onClick={handleConvertToLookup}
-            className="absolute right-2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
+            className="absolute top-1/2 -translate-y-1/2 right-2 p-1 text-gray-500 hover:text-blue-600 transition-colors"
             aria-label="Convert to lookup"
           >
             <FiArrowRightCircle className="w-5 h-5" />
