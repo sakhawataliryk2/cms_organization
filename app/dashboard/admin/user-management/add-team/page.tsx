@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
-import { FiRefreshCw, FiX, FiChevronDown } from 'react-icons/fi';
+import { FiRefreshCw, FiX, FiChevronDown, FiTrash2, FiCheck } from 'react-icons/fi';
+import { toast } from 'sonner';
 
 interface Team {
     id: string;
@@ -93,6 +94,30 @@ export default function TeamManagement() {
         setSelectedTeam(id);
     };
 
+    const handleDeleteTeam = async (team: Team) => {
+        const isConfirmed = window.confirm(`Delete team "${team.name}"? This action cannot be undone.`);
+        if (!isConfirmed) return;
+
+        await toast.promise((async () => {
+            const response = await fetch(`/api/teams/${team.id}`, {
+                method: 'DELETE',
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Failed to delete team');
+            }
+
+            if (selectedTeam === team.id) {
+                setSelectedTeam(null);
+            }
+            await fetchTeams();
+        })(), {
+            loading: `Deleting ${team.name}...`,
+            success: `Deleted ${team.name}`,
+            error: (error) => error instanceof Error ? error.message : 'Failed to delete team',
+        });
+    };
+
     return (
         <div className="bg-gray-100 min-h-screen">
             {/* Header area */}
@@ -111,7 +136,7 @@ export default function TeamManagement() {
                     >
                         Add Team
                     </button>
-                    <button className="p-2 rounded hover:bg-gray-200">
+                    <button onClick={fetchTeams} className="p-2 rounded hover:bg-gray-200">
                         <FiRefreshCw size={18} />
                     </button>
                     <button onClick={handleGoBack} className="p-2 rounded hover:bg-gray-200">
@@ -158,32 +183,47 @@ export default function TeamManagement() {
 
             {/* Table */}
             <div className="px-4 pb-4">
-                <div className="bg-white p-4">
+                <div className="bg-white rounded-md shadow overflow-x-auto">
                     <table className="min-w-full">
                         <thead>
-                            <tr>
-                                <th className="text-left py-2 px-3 border-b font-normal">Name</th>
-                                <th className="text-left py-2 px-3 border-b font-normal">Office</th>
+                            <tr className="bg-gray-50 border-b">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Name</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Office</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={2} className="py-4 text-center text-gray-500">Loading teams...</td>
+                                    <td colSpan={3} className="px-4 py-4 text-center text-gray-500">Loading teams...</td>
                                 </tr>
                             ) : filteredTeams.length > 0 ? (
                                 filteredTeams.map(team => (
                                     <tr key={team.id}
-                                        className={`hover:bg-gray-50 cursor-pointer ${selectedTeam === team.id ? 'bg-gray-100' : ''}`}
+                                        className={`border-b hover:bg-gray-50 cursor-pointer ${selectedTeam === team.id ? 'bg-gray-100' : ''}`}
                                         onClick={() => handleSelectTeam(team.id)}
                                     >
-                                        <td className="py-2 px-3">{team.name}</td>
-                                        <td className="py-2 px-3">{team.office_name}</td>
+                                        <td className="px-4 py-3 text-sm">{team.name}</td>
+                                        <td className="px-4 py-3 text-sm">{team.office_name}</td>
+                                        <td className="px-4 py-3 text-sm">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteTeam(team);
+                                                }}
+                                                className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50"
+                                                aria-label={`Delete ${team.name}`}
+                                            >
+                                                <FiTrash2 size={14} />
+                                                Delete
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={2} className="py-4 text-center text-gray-500">No teams found</td>
+                                    <td colSpan={3} className="px-4 py-4 text-center text-gray-500">No teams found</td>
                                 </tr>
                             )}
                         </tbody>
@@ -498,6 +538,10 @@ function AddTeamModal({
         }
     };
 
+    const RequiredIndicator = ({ filled }: { filled: boolean }) => (
+        filled ? <FiCheck className="inline text-green-600" aria-hidden="true" /> : <span className="text-red-500">*</span>
+    );
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
             <div className="bg-white rounded-md shadow-lg w-full max-w-3xl overflow-hidden">
@@ -520,7 +564,7 @@ function AddTeamModal({
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Team Name <span className="text-red-500">*</span>
+                                        Team Name <RequiredIndicator filled={Boolean(teamData.name.trim())} />
                                     </label>
                                     <input
                                         type="text"
@@ -528,20 +572,20 @@ function AddTeamModal({
                                         value={teamData.name}
                                         onChange={handleChange}
                                         placeholder="Enter team name"
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         autoFocus
                                     />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Office <span className="text-red-500">*</span>
+                                        Office <RequiredIndicator filled={Boolean(teamData.officeId.trim())} />
                                     </label>
                                     <select
                                         name="officeId"
                                         value={teamData.officeId}
                                         onChange={handleChange}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="">Select Office</option>
                                         {offices.map(office => (
@@ -553,13 +597,16 @@ function AddTeamModal({
                                 </div>
 
                                 <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Description
+                                    </label>
                                     <textarea
                                         name="description"
                                         value={teamData.description}
                                         onChange={handleChange}
                                         placeholder="Enter team description (optional)"
                                         rows={3}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                             </div>

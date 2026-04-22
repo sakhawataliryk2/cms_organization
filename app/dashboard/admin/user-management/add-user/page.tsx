@@ -20,7 +20,6 @@ interface User {
     title: string;
     office: string;
     team: string;
-    idNumber: string;
     isAdmin: boolean;
     status: boolean;
     role: string;
@@ -63,6 +62,85 @@ function formatPhoneNumber(input: string) {
     if (cleaned.length >= 3) return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
     if (cleaned.length > 0) return `(${cleaned}`;
     return '';
+}
+
+type PhoneSelection = { start: number; end: number };
+
+function countDigitsBefore(str: string, position: number): number {
+    let count = 0;
+    for (let i = 0; i < position && i < str.length; i++) {
+        if (/\d/.test(str[i])) count++;
+    }
+    return count;
+}
+
+function formatPhoneInputWithCursor(input: string, oldValue: string, selection: PhoneSelection): { formatted: string; cursor: number } {
+    const { start: prevStart, end: prevEnd } = selection;
+    const oldDigits = oldValue.replace(/\D/g, '');
+    const newDigits = input.replace(/\D/g, '').slice(0, 10);
+    const isAdding = newDigits.length > oldDigits.length;
+    const isDeleting = newDigits.length < oldDigits.length;
+    const hadSelection = prevEnd > prevStart;
+    const digitsBeforeCursor = countDigitsBefore(oldValue, prevStart);
+    const selectedDigitCount = hadSelection
+        ? countDigitsBefore(oldValue, prevEnd) - countDigitsBefore(oldValue, prevStart)
+        : 0;
+    const formatted = formatPhoneNumber(input);
+
+    let newCursorPosition = formatted.length;
+    if (hadSelection && (isAdding || isDeleting || selectedDigitCount > 0)) {
+        const digitsTyped = newDigits.length - oldDigits.length + selectedDigitCount;
+        const targetDigitCount = Math.min(Math.max(0, digitsBeforeCursor + digitsTyped), newDigits.length);
+        let digitCount = 0;
+        for (let i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                digitCount++;
+                if (digitCount === targetDigitCount) {
+                    newCursorPosition = i + 1;
+                    break;
+                }
+            }
+        }
+        if (targetDigitCount === 0 && formatted.length > 0 && formatted[0] === '(') newCursorPosition = 1;
+    } else if (isDeleting) {
+        const targetDigitCount = Math.max(0, digitsBeforeCursor - 1);
+        let digitCount = 0;
+        for (let i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                digitCount++;
+                if (digitCount === targetDigitCount) {
+                    newCursorPosition = i + 1;
+                    break;
+                }
+            }
+        }
+        if (targetDigitCount === 0 && formatted.length > 0 && formatted[0] === '(') newCursorPosition = 1;
+    } else if (isAdding) {
+        const targetDigitCount = digitsBeforeCursor + 1;
+        let digitCount = 0;
+        for (let i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                digitCount++;
+                if (digitCount === targetDigitCount) {
+                    newCursorPosition = i + 1;
+                    break;
+                }
+            }
+        }
+        if (newDigits.length >= 10) newCursorPosition = formatted.length;
+    } else {
+        let digitCount = 0;
+        for (let i = 0; i < formatted.length; i++) {
+            if (/\d/.test(formatted[i])) {
+                digitCount++;
+                if (digitCount === digitsBeforeCursor) {
+                    newCursorPosition = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+    return { formatted, cursor: newCursorPosition };
 }
 
 function phoneDigitsOnly(input: string | null | undefined): string {
@@ -134,8 +212,7 @@ export default function UserManagement() {
 
                     return {
                         id: String(user.id),
-                        // Fall back to primary id when a separate user_id field is not present
-                        userId: backendUserId ? String(backendUserId) : String(user.id),
+                        userId: backendUserId ? String(backendUserId) : '',
                         firstName: firstName,
                         lastName: lastName,
                         email: user.email || '',
@@ -155,7 +232,6 @@ export default function UserManagement() {
                         title: user.title || '',
                         office: user.office_name || '',
                         team: user.team_name || '',
-                        idNumber: user.id_number || '',
                         isAdmin: user.is_admin || false,
                         status: user.status !== false,
                         role: user.role || 'recruiter'
@@ -196,21 +272,10 @@ export default function UserManagement() {
             user.title,
             user.office,
             user.team,
-            user.idNumber,
             user.role
         ].filter(Boolean).join(' ').toLowerCase();
         return searchableText.includes(term);
     });
-
-    // Compute the next sequential primary key value based on existing users.
-    // Uses the numeric `id` from the backend and falls back to "1" if none exist.
-    const getNextIdNumber = (): string => {
-        const numericIds = users
-            .map((u) => parseInt((u.id || '').trim(), 10))
-            .filter((n) => !Number.isNaN(n));
-        const maxExisting = numericIds.length ? Math.max(...numericIds) : 0;
-        return String(maxExisting + 1);
-    };
 
     const handleAddUser = () => {
         setIsAddUserModalOpen(true);
@@ -336,7 +401,6 @@ export default function UserManagement() {
         { id: 'title', label: 'Title' },
         { id: 'office', label: 'Office' },
         { id: 'team', label: 'Team' },
-        { id: 'idNumber', label: 'ID Number' },
         { id: 'userType', label: 'User Type' },
         { id: 'isAdmin', label: 'Is Admin' },
         { id: 'status', label: 'Status' },
@@ -465,7 +529,6 @@ export default function UserManagement() {
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.title}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.office}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.team}</td>
-                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.idNumber}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">
                                             <select
                                                 value={(user.role || 'recruiter').toLowerCase()}
@@ -540,7 +603,6 @@ export default function UserManagement() {
                 <AddUserModal 
                     onClose={() => setIsAddUserModalOpen(false)} 
                     onUserAdded={handleUserAdded}
-                    initialIdNumber={getNextIdNumber()}
                 />
             )}
             {editingUser && (
@@ -562,11 +624,9 @@ export default function UserManagement() {
 function AddUserModal({
     onClose,
     onUserAdded,
-    initialIdNumber,
 }: {
     onClose: () => void;
     onUserAdded?: () => void;
-    initialIdNumber?: string;
 }) {
     const [formData, setFormData] = useState({
         firstName: '',
@@ -578,12 +638,13 @@ function AddUserModal({
         title: '',
         officeId: '',
         teamId: '',
-        idNumber: initialIdNumber || '',
         userType: 'recruiter',
         isAdmin: false,
         password: '',
         confirmPassword: ''
     });
+    const phoneSelectionRef = useRef<PhoneSelection>({ start: 0, end: 0 });
+    const phone2SelectionRef = useRef<PhoneSelection>({ start: 0, end: 0 });
 
     // Passwords are always auto-generated; manual entry removed.
     const [createdPassword, setCreatedPassword] = useState<string | null>(null);
@@ -835,17 +896,29 @@ function AddUserModal({
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type, checked } = e.target as HTMLInputElement;
-        let nextValue: string | boolean = type === 'checkbox' ? checked : value;
         if (name === 'phone' || name === 'phone2') {
-            nextValue = formatPhoneNumber(String(value));
+            const selectionRef = name === 'phone' ? phoneSelectionRef : phone2SelectionRef;
+            const oldValue = name === 'phone' ? formData.phone : formData.phone2;
+            const { formatted, cursor } = formatPhoneInputWithCursor(String(value), oldValue, selectionRef.current);
+            setFormData((prev) => ({
+                ...prev,
+                [name]: formatted
+            }));
+            requestAnimationFrame(() => {
+                const el = e.target as HTMLInputElement;
+                el.setSelectionRange(cursor, cursor);
+                selectionRef.current = { start: cursor, end: cursor };
+            });
+            return;
         }
+        let nextValue: string | boolean = type === 'checkbox' ? checked : value;
         if (name === 'zoomExtensionNumber') {
             nextValue = String(value).replace(/\D/g, '');
         }
-        setFormData({
-            ...formData,
+        setFormData((prev) => ({
+            ...prev,
             [name]: nextValue
-        });
+        }));
     };
 
     const isFormValid = useMemo(() => {
@@ -913,7 +986,6 @@ function AddUserModal({
                 phone2: phone2Digits || null,
                 ...(zoomExtDigits ? { zoomExtensionNumber: zoomExtDigits } : {}),
                 title: formData.title,
-                idNumber: formData.idNumber,
                 isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType)
             };
             // No manual password; backend will auto-generate a strong temporary password.
@@ -1094,6 +1166,13 @@ function AddUserModal({
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
+                                        onSelect={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            phoneSelectionRef.current = {
+                                                start: target.selectionStart ?? 0,
+                                                end: target.selectionEnd ?? 0,
+                                            };
+                                        }}
                                         placeholder="(123) 456-7890"
                                         className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
@@ -1144,6 +1223,13 @@ function AddUserModal({
                                     name="phone2"
                                     value={formData.phone2}
                                     onChange={handleChange}
+                                    onSelect={(e) => {
+                                        const target = e.target as HTMLInputElement;
+                                        phone2SelectionRef.current = {
+                                            start: target.selectionStart ?? 0,
+                                            end: target.selectionEnd ?? 0,
+                                        };
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
@@ -1268,20 +1354,6 @@ function AddUserModal({
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    ID Number
-                                </label>
-                                <input
-                                    type="text"
-                                    name="idNumber"
-                                    value={formData.idNumber}
-                                    readOnly
-                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
-                                    title="Next primary key value (auto-generated)"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
                                     User Type <ValidationIndicator valid={formData.userType.trim() !== ''} />
                                 </label>
                                 <select
@@ -1306,7 +1378,7 @@ function AddUserModal({
                                     type="text"
                                     readOnly
                                     value=""
-                                    placeholder="Auto-generated on save"
+                                    placeholder={`USR-${new Date().getFullYear()}-####`}
                                     className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
                                     title="Generated by the system when you save (format: USR-YYYY-XXXX)"
                                 />
@@ -1376,10 +1448,11 @@ function EditUserModal({
         title: user.title || '',
         officeId: user.officeId || '',
         teamId: user.teamId || '',
-        idNumber: user.idNumber || '',
         userType: (user.role || 'recruiter').toLowerCase(),
         statusActive: user.status,
     });
+    const phoneSelectionRef = useRef<PhoneSelection>({ start: 0, end: 0 });
+    const phone2SelectionRef = useRef<PhoneSelection>({ start: 0, end: 0 });
 
     const [offices, setOffices] = useState<Office[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
@@ -1605,10 +1678,19 @@ function EditUserModal({
             const checked = (e.target as HTMLInputElement).checked;
             setFormData((prev) => ({ ...prev, [name]: checked }));
         } else {
-            let nextValue = value;
             if (name === 'phone' || name === 'phone2') {
-                nextValue = formatPhoneNumber(value);
+                const selectionRef = name === 'phone' ? phoneSelectionRef : phone2SelectionRef;
+                const oldValue = name === 'phone' ? formData.phone : formData.phone2;
+                const { formatted, cursor } = formatPhoneInputWithCursor(value, oldValue, selectionRef.current);
+                setFormData((prev) => ({ ...prev, [name]: formatted }));
+                requestAnimationFrame(() => {
+                    const el = e.target as HTMLInputElement;
+                    el.setSelectionRange(cursor, cursor);
+                    selectionRef.current = { start: cursor, end: cursor };
+                });
+                return;
             }
+            let nextValue = value;
             if (name === 'zoomExtensionNumber') {
                 nextValue = value.replace(/\D/g, '');
             }
@@ -1680,7 +1762,6 @@ function EditUserModal({
                 phone: phoneDigits || null,
                 phone2: phone2Digits || null,
                 title: formData.title || null,
-                idNumber: formData.idNumber || null,
                 officeId: formData.officeId || null,
                 teamId: formData.teamId || null,
                 zoomExtensionNumber: zoomExtDigits || null,
@@ -1803,6 +1884,13 @@ function EditUserModal({
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
+                                        onSelect={(e) => {
+                                            const target = e.target as HTMLInputElement;
+                                            phoneSelectionRef.current = {
+                                                start: target.selectionStart ?? 0,
+                                                end: target.selectionEnd ?? 0,
+                                            };
+                                        }}
                                         placeholder="(123) 456-7890"
                                         className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
@@ -1845,6 +1933,13 @@ function EditUserModal({
                                     name="phone2"
                                     value={formData.phone2}
                                     onChange={handleChange}
+                                    onSelect={(e) => {
+                                        const target = e.target as HTMLInputElement;
+                                        phone2SelectionRef.current = {
+                                            start: target.selectionStart ?? 0,
+                                            end: target.selectionEnd ?? 0,
+                                        };
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
@@ -1955,22 +2050,11 @@ function EditUserModal({
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">ID Number</label>
-                                <input
-                                    type="text"
-                                    name="idNumber"
-                                    value={formData.idNumber}
-                                    readOnly
-                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
-                                />
-                            </div>
-
-                            <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
                                 <input
                                     type="text"
                                     readOnly
-                                    value={user.userId || ''}
+                                    value={user.userId || `USR-${new Date().getFullYear()}-####`}
                                     className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
                                 />
                             </div>
