@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
-import { FiRefreshCw, FiX, FiChevronDown } from 'react-icons/fi';
+import { FiRefreshCw, FiX, FiChevronDown, FiTrash2, FiCheck } from 'react-icons/fi';
+import { toast } from 'sonner';
 
 interface Office {
     id: string;
@@ -79,6 +80,26 @@ export default function OfficeManagement() {
         setFilterStatus(status);
     };
 
+    const handleDeleteOffice = async (office: Office) => {
+        const isConfirmed = window.confirm(`Delete office "${office.building_name}"? This action cannot be undone.`);
+        if (!isConfirmed) return;
+
+        await toast.promise((async () => {
+            const response = await fetch(`/api/offices/${office.id}`, {
+                method: 'DELETE',
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Failed to delete office');
+            }
+            await fetchOffices();
+        })(), {
+            loading: `Deleting ${office.building_name}...`,
+            success: `Deleted ${office.building_name}`,
+            error: (error) => error instanceof Error ? error.message : 'Failed to delete office',
+        });
+    };
+
     const tableHeaders = [
         { id: 'buildingName', label: 'Building Name' },
         { id: 'address', label: 'Address' },
@@ -86,7 +107,8 @@ export default function OfficeManagement() {
         { id: 'city', label: 'City' },
         { id: 'state', label: 'State' },
         { id: 'zipCode', label: 'Zip Code' },
-        { id: 'buildingType', label: 'Building Type' }
+        { id: 'buildingType', label: 'Building Type' },
+        { id: 'actions', label: 'Actions' }
     ];
 
     return (
@@ -182,6 +204,17 @@ export default function OfficeManagement() {
                                         <td className="px-4 py-3 text-sm">{office.state}</td>
                                         <td className="px-4 py-3 text-sm">{office.zip_code}</td>
                                         <td className="px-4 py-3 text-sm">{office.building_type || '-'}</td>
+                                        <td className="px-4 py-3 text-sm">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteOffice(office)}
+                                                className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50"
+                                                aria-label={`Delete ${office.building_name}`}
+                                            >
+                                                <FiTrash2 size={14} />
+                                                Delete
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
@@ -300,6 +333,10 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
         'Wisconsin', 'Wyoming'
     ];
 
+    const RequiredIndicator = ({ filled }: { filled: boolean }) => (
+        filled ? <FiCheck className="inline text-green-600" aria-hidden="true" /> : <span className="text-red-500">*</span>
+    );
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
             <div className="bg-white rounded-md shadow-lg w-full max-w-3xl overflow-hidden">
@@ -322,7 +359,7 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
                             {/* Building Name */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Building Name <span className="text-red-500">*</span>
+                                    Building Name <RequiredIndicator filled={Boolean(formData.buildingName.trim())} />
                                 </label>
                                 <input
                                     type="text"
@@ -338,7 +375,7 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
                             {/* Street Address */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Address <span className="text-red-500">*</span>
+                                    Address <RequiredIndicator filled={Boolean(formData.address.trim())} />
                                 </label>
                                 <input
                                     type="text"
@@ -354,24 +391,28 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
                             {/* City, State, ZIP Row */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-gray-600 text-sm">City <span className="text-red-500">*</span></label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        City <RequiredIndicator filled={Boolean(formData.city.trim())} />
+                                    </label>
                                     <input
                                         type="text"
                                         name="city"
                                         value={formData.city}
                                         onChange={handleChange}
-                                        className="w-full p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-gray-600 text-sm">State / Province <span className="text-red-500">*</span></label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        State / Province <RequiredIndicator filled={Boolean(formData.state.trim())} />
+                                    </label>
                                     <div className="relative">
                                         <select
                                             name="state"
                                             value={formData.state}
                                             onChange={handleChange}
-                                            className="w-full p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500 appearance-none pr-10"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none pr-10"
                                             required
                                         >
                                             <option value="">Select State</option>
@@ -385,13 +426,15 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-gray-600 text-sm">ZIP / Postal code <span className="text-red-500">*</span></label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        ZIP / Postal code <RequiredIndicator filled={Boolean(formData.zipCode.trim())} />
+                                    </label>
                                     <input
                                         type="text"
                                         name="zipCode"
                                         value={formData.zipCode}
                                         onChange={handleChange}
-                                        className="w-full p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
                                 </div>
@@ -399,14 +442,14 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
 
                             {/* Address 2 */}
                             <div>
-                                <label className="block text-gray-600 text-sm">Address 2</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Address 2</label>
                                 <input
                                     type="text"
                                     name="address2"
                                     value={formData.address2}
                                     onChange={handleChange}
                                     placeholder="Apartment, suite, unit, building, floor, etc."
-                                    className="w-full p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
 
