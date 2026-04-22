@@ -548,6 +548,26 @@ export default function OrganizationView() {
   const [newDocumentType, setNewDocumentType] = useState("General");
   const [newDocumentContent, setNewDocumentContent] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [invoices, setInvoices] = useState<Array<any>>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const INVOICE_DEFAULT_COLUMNS = [
+    "invoiceNumber",
+    "customerName",
+    "customerId",
+    "invoiceDate",
+    "weekendDate",
+    "invoiceAmount",
+    "payAmount",
+    "balanceAmount",
+    "invoiceStatus",
+    "masterInvoice",
+    "document",
+  ];
+  const [invoiceColumnFields, setInvoiceColumnFields] = useState<string[]>(INVOICE_DEFAULT_COLUMNS);
+  const [invoiceColumnSorts, setInvoiceColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [invoiceColumnFilters, setInvoiceColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState("");
 
   // Document table columns state
   const DOCUMENT_DEFAULT_COLUMNS = [
@@ -1051,6 +1071,13 @@ export default function OrganizationView() {
   useEffect(() => {
     if (organizationId && activeTab === "placements") {
       fetchPlacements(organizationId);
+    }
+  }, [organizationId, activeTab]);
+
+  // Fetch invoices when user switches to Invoices tab
+  useEffect(() => {
+    if (organizationId && activeTab === "invoices") {
+      fetchInvoices(organizationId);
     }
   }, [organizationId, activeTab]);
 
@@ -2270,6 +2297,152 @@ export default function OrganizationView() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [hiringManagers]);
 
+  const invoiceStatusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    invoices.forEach((inv) => {
+      if (inv?.InvoiceStatus) statuses.add(String(inv.InvoiceStatus));
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [invoices]);
+
+  const getInvoiceColumnValue = (inv: any, key: string): string => {
+    switch (key) {
+      case "invoiceNumber":
+        return String(inv?.InvoiceNumber ?? "—");
+      case "customerName":
+        return String(inv?.CustomerName ?? "—");
+      case "customerId":
+        return String(inv?.CustomerId ?? "—");
+      case "invoiceDate":
+        return String(inv?.InvoiceDate ?? "—");
+      case "weekendDate":
+        return String(inv?.WeekendDate ?? "—");
+      case "invoiceAmount":
+        return String(inv?.InvoiceAmount ?? "—");
+      case "payAmount":
+        return String(inv?.PayAmount ?? "—");
+      case "balanceAmount":
+        return String(inv?.BalanceAmount ?? "—");
+      case "invoiceStatus":
+        return String(inv?.InvoiceStatus ?? "—");
+      case "masterInvoice":
+        return inv?.MasterInvoice == null || String(inv.MasterInvoice).trim() === ""
+          ? "—"
+          : String(inv.MasterInvoice);
+      case "document":
+        return inv?.docUrl ? "View" : "—";
+      default:
+        return "—";
+    }
+  };
+
+  const filteredAndSortedInvoices = useMemo(() => {
+    let result = [...invoices];
+
+    if (invoiceSearchTerm.trim()) {
+      const term = invoiceSearchTerm.toLowerCase();
+      result = result.filter((inv) => {
+        const number = getInvoiceColumnValue(inv, "invoiceNumber");
+        const customer = getInvoiceColumnValue(inv, "customerName");
+        const customerId = getInvoiceColumnValue(inv, "customerId");
+        const status = getInvoiceColumnValue(inv, "invoiceStatus");
+        return (
+          number.toLowerCase().includes(term) ||
+          customer.toLowerCase().includes(term) ||
+          customerId.toLowerCase().includes(term) ||
+          status.toLowerCase().includes(term)
+        );
+      });
+    }
+
+    Object.entries(invoiceColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+      result = result.filter((inv) => {
+        const valueStr = getInvoiceColumnValue(inv, columnKey).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    const activeSorts = Object.entries(invoiceColumnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      const parseUsDate = (s: string) => {
+        const m = String(s || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (!m) return NaN;
+        return new Date(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}T00:00:00`).getTime();
+      };
+      const parseNum = (s: string) => Number(String(s).replace(/[^0-9.-]/g, ""));
+
+      result.sort((a, b) => {
+        const aRaw = getInvoiceColumnValue(a, sortKey);
+        const bRaw = getInvoiceColumnValue(b, sortKey);
+
+        if (sortKey === "invoiceDate" || sortKey === "weekendDate") {
+          const aT = parseUsDate(aRaw);
+          const bT = parseUsDate(bRaw);
+          if (!Number.isNaN(aT) && !Number.isNaN(bT)) {
+            const cmp = aT - bT;
+            return sortDir === "asc" ? cmp : -cmp;
+          }
+        }
+
+        if (sortKey === "invoiceAmount" || sortKey === "payAmount" || sortKey === "balanceAmount") {
+          const aN = parseNum(aRaw);
+          const bN = parseNum(bRaw);
+          if (!Number.isNaN(aN) && !Number.isNaN(bN)) {
+            const cmp = aN - bN;
+            return sortDir === "asc" ? cmp : -cmp;
+          }
+        }
+
+        const cmp = String(aRaw ?? "").localeCompare(String(bRaw ?? ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [invoices, invoiceSearchTerm, invoiceColumnFilters, invoiceColumnSorts]);
+
+  const handleInvoiceColumnSort = (columnKey: string) => {
+    setInvoiceColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") return { ...prev, [columnKey]: "desc" };
+      if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: "asc" };
+    });
+  };
+
+  const handleInvoiceColumnFilter = (columnKey: string, value: string) => {
+    setInvoiceColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  const handleInvoiceColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = invoiceColumnFields.indexOf(active.id as string);
+    const newIndex = invoiceColumnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setInvoiceColumnFields(arrayMove(invoiceColumnFields, oldIndex, newIndex));
+    }
+  };
+
   const filteredAndSortedHiringManagers = useMemo(() => {
     let result = [...hiringManagers];
 
@@ -2522,6 +2695,38 @@ export default function OrganizationView() {
       setPlacements([]);
     } finally {
       setIsLoadingPlacements(false);
+    }
+  };
+
+  const fetchInvoices = async (organizationId: string) => {
+    setIsLoadingInvoices(true);
+    setInvoicesError(null);
+    try {
+      const response = await fetch(`/api/organizations/${organizationId}/invoices?limit=100`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch invoices");
+      }
+      const data = await response.json();
+      const list = data.invoices ?? data.result ?? [];
+      setInvoices(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Error fetching invoices:", err);
+      setInvoicesError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching invoices"
+      );
+      setInvoices([]);
+    } finally {
+      setIsLoadingInvoices(false);
     }
   };
 
@@ -5884,7 +6089,141 @@ export default function OrganizationView() {
         {activeTab === "invoices" && (
           <div className="bg-white p-4 rounded shadow-sm">
             <h2 className="text-lg font-semibold mb-4">Invoices</h2>
-            <p className="text-gray-500 italic">No invoices available</p>
+            {isLoadingInvoices ? (
+              <div className="flex justify-center py-6">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            ) : invoicesError ? (
+              <p className="text-red-500">{invoicesError}</p>
+            ) : (
+              <>
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search invoices..."
+                    value={invoiceSearchTerm}
+                    onChange={(e) => setInvoiceSearchTerm(e.target.value)}
+                    className="w-full max-w-md px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="overflow-x-auto">
+                  <DndContext collisionDetection={closestCenter} onDragEnd={handleInvoiceColumnDragEnd}>
+                    <table className="min-w-full border border-gray-200">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left px-6 py-3 font-medium">Actions</th>
+                          <SortableContext
+                            items={invoiceColumnFields}
+                            strategy={horizontalListSortingStrategy}
+                          >
+                            {invoiceColumnFields.map((key) => {
+                              const labels: Record<string, string> = {
+                                invoiceNumber: "Invoice #",
+                                customerName: "Customer",
+                                customerId: "Customer ID",
+                                invoiceDate: "Invoice Date",
+                                weekendDate: "Weekend Date",
+                                invoiceAmount: "Invoice Amount",
+                                payAmount: "Pay Amount",
+                                balanceAmount: "Balance Amount",
+                                invoiceStatus: "Status",
+                                masterInvoice: "Master Invoice",
+                                document: "Document",
+                              };
+                              const filterType: "text" | "select" | "number" =
+                                key === "invoiceAmount" || key === "payAmount" || key === "balanceAmount"
+                                  ? "number"
+                                  : key === "invoiceStatus"
+                                    ? "select"
+                                    : "text";
+                              return (
+                                <SortableColumnHeader
+                                  key={key}
+                                  id={key}
+                                  columnKey={key}
+                                  label={labels[key] || key}
+                                  sortState={invoiceColumnSorts[key] || null}
+                                  filterValue={invoiceColumnFilters[key] || null}
+                                  onSort={() => handleInvoiceColumnSort(key)}
+                                  onFilterChange={(value) => handleInvoiceColumnFilter(key, value)}
+                                  filterType={filterType}
+                                  filterOptions={key === "invoiceStatus" ? invoiceStatusOptions : undefined}
+                                />
+                              );
+                            })}
+                          </SortableContext>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAndSortedInvoices.length > 0 ? (
+                          filteredAndSortedInvoices.map((inv: any, idx: number) => (
+                            <tr key={`${inv.InvoiceNumber || "inv"}-${idx}`} className="hover:bg-gray-50">
+                              <td className="px-6 py-3 border">
+                                <ActionDropdown
+                                  label="Actions"
+                                  options={[
+                                    {
+                                      label: "View",
+                                      action: () =>
+                                        inv.docUrl &&
+                                        setSelectedDocument({
+                                          document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
+                                          document_type: "Invoice",
+                                          file_path: inv.docUrl,
+                                          mime_type: "application/pdf",
+                                          created_by_name: "OASIS",
+                                          created_at: inv.InvoiceDate || new Date().toISOString(),
+                                        }),
+                                    },
+                                    {
+                                      label: "Open in new tab",
+                                      action: () => inv.docUrl && window.open(inv.docUrl, "_blank"),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                              {invoiceColumnFields.map((key) => (
+                                <td key={key} className="px-3 py-2 border">
+                                  {key === "document" ? (
+                                    inv.docUrl ? (
+                                      <button
+                                        onClick={() =>
+                                          setSelectedDocument({
+                                            document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
+                                            document_type: "Invoice",
+                                            file_path: inv.docUrl,
+                                            mime_type: "application/pdf",
+                                            created_by_name: "OASIS",
+                                            created_at: inv.InvoiceDate || new Date().toISOString(),
+                                          })
+                                        }
+                                        className="text-blue-600 hover:underline font-medium"
+                                      >
+                                        View
+                                      </button>
+                                    ) : (
+                                      "—"
+                                    )
+                                  ) : (
+                                    getInvoiceColumnValue(inv, key)
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={invoiceColumnFields.length + 1} className="px-3 py-6 border text-center text-gray-500 italic">
+                              No invoices available
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </DndContext>
+                </div>
+              </>
+            )}
           </div>
         )}
 
