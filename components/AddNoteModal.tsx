@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
 import StyledReactSelect, { type StyledSelectOption } from '@/components/StyledReactSelect';
+import { getUser } from '@/lib/auth';
 
 interface AddNoteModalProps {
     open: boolean;
@@ -40,6 +41,8 @@ interface NoteFormState {
     note_date_time: string;
 }
 
+const ADMIN_ROLES = ['admin', 'owner', 'developer', 'administrator'] as const;
+
 export default function AddNoteModal({
     open,
     onClose,
@@ -50,6 +53,19 @@ export default function AddNoteModal({
     defaultAction,
     defaultAboutReferences
 }: AddNoteModalProps) {
+    const currentUser = useMemo(() => {
+        return getUser() as
+            | (ReturnType<typeof getUser> & { isAdmin?: boolean; role?: string; user_type?: string })
+            | null;
+    }, []);
+    const normalizedUserType = String(
+        currentUser?.userType || currentUser?.role || currentUser?.user_type || ''
+    )
+        .trim()
+        .toLowerCase();
+    const canManageNoteDateTime =
+        currentUser?.isAdmin === true || ADMIN_ROLES.includes(normalizedUserType as (typeof ADMIN_ROLES)[number]);
+
     const getCurrentLocalDateTime = () => {
         const now = new Date();
         const pad = (value: number) => String(value).padStart(2, "0");
@@ -863,20 +879,22 @@ export default function AddNoteModal({
                 {/* Form Content */}
                 <div className="p-6">
                     <div className="space-y-4">
-                        {/* Note Date & Time */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Note Date & Time
-                            </label>
-                            <input
-                                type="datetime-local"
-                                value={noteForm.note_date_time}
-                                onChange={(e) =>
-                                    setNoteForm((prev) => ({ ...prev, note_date_time: e.target.value }))
-                                }
-                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
+                        {/* Note Date & Time (admin only) */}
+                        {canManageNoteDateTime && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Note Date & Time
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={noteForm.note_date_time}
+                                    onChange={(e) =>
+                                        setNoteForm((prev) => ({ ...prev, note_date_time: e.target.value }))
+                                    }
+                                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        )}
 
                         {/* Note Text Area - Required */}
                         <div>
