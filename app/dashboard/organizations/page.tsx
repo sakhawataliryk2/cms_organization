@@ -530,6 +530,25 @@ export default function OrganizationList() {
       .trim();
 
   const columnsCatalog = useMemo(() => {
+    const coreBackendColumns = ORG_BACKEND_COLUMN_KEYS.map((key) => {
+      let filterType: "text" | "select" | "number" = "text";
+      if (key === "status") filterType = "select";
+      else if (key === "job_orders_count" || key === "placements_count") {
+        filterType = "number";
+      }
+
+      return {
+        key,
+        label: humanize(key),
+        sortable: true,
+        filterType,
+        fieldType: "",
+        lookupType: "",
+        multiSelectLookupType: "",
+        options: undefined as { label: string; value: string }[] | undefined,
+      };
+    });
+
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
@@ -615,6 +634,7 @@ export default function OrganizationList() {
         sortable: true,
         filterType: "number" as const,
       },
+      ...coreBackendColumns,
       ...fromApi,
     ];
     const seen = new Set<string>();
@@ -648,7 +668,18 @@ export default function OrganizationList() {
             parsed.length > 1 &&
             validOrder.length === 1 &&
             validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+          const isOnlyRecordNumberPreference =
+            validOrder.length === 1 && validOrder[0] === "record_number";
+          // Ignore stale fallback-only localStorage values when we now have a
+          // richer catalog; otherwise the table appears to show one column for
+          // several seconds until async header config catches up.
+          const shouldIgnoreStaleRecordOnlyPreference =
+            isOnlyRecordNumberPreference && catalogKeys.length > 1;
+          if (
+            !wouldCollapseToRecordNumberOnly &&
+            !shouldIgnoreStaleRecordOnlyPreference &&
+            validOrder.length > 0
+          ) {
             setColumnFields(validOrder);
             return;
           }
@@ -657,7 +688,17 @@ export default function OrganizationList() {
         // ignore
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+    setColumnFields((prev) => {
+      if (prev.length === 0) return catalogKeys;
+
+      // If we only have the fallback Record Number column while catalog now has
+      // more fields, restore the full default set so columns are not stuck hidden.
+      const isOnlyRecordNumber =
+        prev.length === 1 && prev[0] === "record_number";
+      if (isOnlyRecordNumber && catalogKeys.length > 1) return catalogKeys;
+
+      return prev;
+    });
   }, [columnsCatalog]);
 
   const getColumnLabel = (key: string) =>
@@ -836,6 +877,7 @@ export default function OrganizationList() {
     let cancelled = false;
     const loadAllOrganizations = async () => {
       setIsAdvancedDatasetLoading(true);
+      setAdvancedOrganizationsDataset([]);
       try {
         const limit = 500;
         let page = 1;
@@ -871,6 +913,14 @@ export default function OrganizationList() {
                   ? data.pagination.total
                   : null;
           all.push(...batch);
+          if (!cancelled) {
+            // Progressive rendering: show batches as they arrive rather than
+            // waiting for the full dataset.
+            setAdvancedOrganizationsDataset((prev) => [
+              ...(prev ?? []),
+              ...batch,
+            ]);
+          }
 
           if (batch.length < limit) break;
           if (total != null && all.length >= total) break;
@@ -879,7 +929,6 @@ export default function OrganizationList() {
 
         if (!cancelled) {
           advancedOrganizationsCacheRef.current.set(cacheKey, all);
-          setAdvancedOrganizationsDataset(all);
         }
       } catch (err) {
         if (!cancelled) {

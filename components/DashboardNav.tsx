@@ -710,35 +710,48 @@ export default function DashboardNav() {
       return `${prefix}${id}`;
     };
 
+    let baseLabel = "";
     switch (type) {
       case 'job':
-        return item.job_title || item.title || `Job ${formatId(item.id, 'J')}`;
+        baseLabel = item.job_title || item.title || `Job ${formatId(item.id, 'J')}`;
+        break;
       case 'lead':
         if (item.first_name && item.last_name) {
-          return `${item.first_name} ${item.last_name}`;
+          baseLabel = `${item.first_name} ${item.last_name}`;
+          break;
         }
-        return item.organization_name || item.name || `Lead ${formatId(item.id, 'L')}`;
+        baseLabel = item.organization_name || item.name || `Lead ${formatId(item.id, 'L')}`;
+        break;
       case 'jobSeeker':
         if (item.first_name && item.last_name) {
-          return `${item.first_name} ${item.last_name}`;
+          baseLabel = `${item.first_name} ${item.last_name}`;
+          break;
         }
-        return item.name || `Job Seeker ${formatId(item.id, 'JS')}`;
+        baseLabel = item.name || `Job Seeker ${formatId(item.id, 'JS')}`;
+        break;
       case 'organization':
-        return item.name || `Organization ${formatId(item.id, 'O')}`;
+        baseLabel = item.name || `Organization ${formatId(item.id, 'O')}`;
+        break;
       case 'task':
-        return item.title || item.task_title || `Task ${formatId(item.id, 'T')}`;
+        baseLabel = item.title || item.task_title || `Task ${formatId(item.id, 'T')}`;
+        break;
       case 'hiringManager':
         if (item.first_name && item.last_name) {
-          return `${item.first_name} ${item.last_name}`;
+          baseLabel = `${item.first_name} ${item.last_name}`;
+          break;
         }
-        return item.name || `Hiring Manager ${formatId(item.id, 'HM')}`;
+        baseLabel = item.name || `Hiring Manager ${formatId(item.id, 'HM')}`;
+        break;
       case 'placement':
-        return item.job_title || `Placement ${formatId(item.id, 'P')}`;
-      case 'task':
-        return item.title || item.task_title || `Task #${item.id}`;
+        baseLabel = item.job_title || `Placement ${formatId(item.id, 'P')}`;
+        break;
       default:
-        return `Item #${item.id}`;
+        baseLabel = `Item #${item.id}`;
+        break;
     }
+
+    const recordLabel = getResultRecordNumber(item, type);
+    return recordLabel ? `${recordLabel} - ${baseLabel}` : baseLabel;
   };
 
   const getResultRecordNumber = (item: any, type: string): string => {

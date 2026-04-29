@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { parseRecordId, RECORD_PREFIXES } from '@/lib/recordIdFormatter';
+import { parseRecordId } from '@/lib/recordIdFormatter';
 
 // Global search across all entities
 export async function GET(request: NextRequest) {
@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const trimmedQuery = query.trim();
-        const normalizedQuery = trimmedQuery.toLowerCase().replace(/[^a-z0-9]/g, '');
         // Split into terms so "o 54" → ["o", "54"]: a record must match ALL terms (in ID or in title/other fields)
         const terms = trimmedQuery.split(/\s+/).filter(Boolean);
         
@@ -206,22 +205,6 @@ export async function GET(request: NextRequest) {
             if (terms.length === 0) return false;
             const idStr = String(id ?? '').toLowerCase();
             const recordNumberStr = String(recordNumber ?? '').toLowerCase();
-            const prefix = RECORD_PREFIXES[type].toLowerCase();
-            const normalizedId = String(id ?? '').replace(/[^a-z0-9]/g, '');
-            const normalizedRecordNumber = String(recordNumber ?? '').replace(/[^a-z0-9]/g, '');
-
-            // Support compact prefixed queries like "o1", "o 1", "hm12" against both id and record_number.
-            if (normalizedQuery && prefix) {
-                const prefixedId = `${prefix}${normalizedId}`;
-                const prefixedRecordNumber = `${prefix}${normalizedRecordNumber}`;
-                if (
-                    prefixedId.includes(normalizedQuery) ||
-                    prefixedRecordNumber.includes(normalizedQuery)
-                ) {
-                    return true;
-                }
-            }
-
             return terms.every((t) => {
                 const needle = t.toLowerCase();
                 return idStr.includes(needle) || recordNumberStr.includes(needle);
