@@ -1669,7 +1669,7 @@ export default function OrganizationList() {
       )}
 
       <div className="w-full max-w-full overflow-x-hidden">
-        <div className="overflow-x-auto overflow-y-auto h-[100vh]">
+        <div className="overflow-x-auto overflow-y-auto h-[80vh]">
           <DndContext
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
