@@ -134,7 +134,7 @@ function SortableColumnHeader({
     <th
       ref={(node) => { thRef.current = node; setNodeRef(node); }}
       style={style}
-      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
     >
       <div className="flex items-center gap-2">
         {/* Drag Handle */}
@@ -1176,13 +1176,13 @@ export default function ArchivedJobSeekersList() {
       />
 
       {/* Job Seekers Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-auto h-[100vh]">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 {/* Fixed checkbox header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                   <input
                     type="checkbox"
                     className="h-4 w-4 text-blue-600 border-gray-300 rounded"
@@ -1192,7 +1192,7 @@ export default function ArchivedJobSeekersList() {
                 </th>
 
                 {/* Fixed Actions header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                   Actions
                 </th>
 

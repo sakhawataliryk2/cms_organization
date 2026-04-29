@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  useDeferredValue,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
@@ -114,7 +122,11 @@ function SortableColumnHeader({
   const filterRef = useRef<HTMLDivElement>(null);
   const filterToggleRef = useRef<HTMLButtonElement>(null);
   const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [filterPosition, setFilterPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   useLayoutEffect(() => {
     if (!showFilter || !filterToggleRef.current || !thRef.current) {
@@ -143,7 +155,8 @@ function SortableColumnHeader({
 
     if (showFilter) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showFilter, id]);
 
@@ -154,7 +167,7 @@ function SortableColumnHeader({
         setNodeRef(node);
       }}
       style={style}
-      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
     >
       <div className="flex items-center gap-2">
         {/* Drag Handle */}
@@ -187,7 +200,6 @@ function SortableColumnHeader({
           )}
         </button>
 
-
         {/* Filter Toggle */}
         <button
           ref={filterToggleRef}
@@ -196,8 +208,9 @@ function SortableColumnHeader({
             e.stopPropagation();
             setShowFilter(!showFilter);
           }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${
+            filterValue ? "text-blue-600" : ""
+          }`}
           title="Filter column"
         >
           <FiFilter size={14} />
@@ -205,67 +218,70 @@ function SortableColumnHeader({
       </div>
 
       {/* Filter Dropdown (portal so it stays on top) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{
-            position: "fixed",
-            top: filterPosition.top,
-            left: filterPosition.left,
-            width: filterPosition.width,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => {
-                onFilterChange("");
-                setShowFilter(false);
-              }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
+      {showFilter &&
+        filterPosition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={filterRef}
+            className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+            style={{
+              position: "fixed",
+              top: filterPosition.top,
+              left: filterPosition.left,
+              width: filterPosition.width,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {filterType === "text" && (
+              <input
+                type="text"
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                placeholder={`Filter ${label.toLowerCase()}...`}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+            )}
+            {filterType === "number" && (
+              <input
+                type="number"
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                placeholder={`Filter ${label.toLowerCase()}...`}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+            )}
+            {filterType === "select" && filterOptions && (
+              <select
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              >
+                <option value="">All</option>
+                {filterOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {filterValue && (
+              <button
+                onClick={() => {
+                  onFilterChange("");
+                  setShowFilter(false);
+                }}
+                className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </th>
   );
 }
@@ -317,14 +333,21 @@ export default function OrganizationList() {
         // ignore
       }
     }
-    localStorage.setItem("organizationColumnOrder", JSON.stringify(columnFields));
+    localStorage.setItem(
+      "organizationColumnOrder",
+      JSON.stringify(columnFields),
+    );
   }, [columnFields]);
 
   // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [columnSorts, setColumnSorts] = useState<
+    Record<string, ColumnSortState>
+  >({});
 
   // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [columnFilters, setColumnFilters] = useState<
+    Record<string, ColumnFilterState>
+  >({});
 
   const [favorites, setFavorites] = useState<OrganizationFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
@@ -335,7 +358,9 @@ export default function OrganizationList() {
 
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
-  const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
+  const [favoriteNameError, setFavoriteNameError] = useState<string | null>(
+    null,
+  );
 
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
@@ -391,7 +416,7 @@ export default function OrganizationList() {
       try {
         const token = document.cookie.replace(
           /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
+          "$1",
         );
 
         const res = await fetch("/api/admin/field-management/organizations", {
@@ -459,18 +484,28 @@ export default function OrganizationList() {
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isPageLoading, setIsPageLoading] = useState<boolean>(false);
-  const [totalOrganizationsCount, setTotalOrganizationsCount] = useState<number | null>(null);
-  const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
+  const [totalOrganizationsCount, setTotalOrganizationsCount] = useState<
+    number | null
+  >(null);
+  const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>(
+    [],
+  );
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [advancedOrganizationsDataset, setAdvancedOrganizationsDataset] = useState<Organization[] | null>(null);
-  const [isAdvancedDatasetLoading, setIsAdvancedDatasetLoading] = useState(false);
+  const [advancedOrganizationsDataset, setAdvancedOrganizationsDataset] =
+    useState<Organization[] | null>(null);
+  const [isAdvancedDatasetLoading, setIsAdvancedDatasetLoading] =
+    useState(false);
   const hasLoadedOnceRef = useRef(false);
   const activeFetchControllerRef = useRef<AbortController | null>(null);
   const latestRequestIdRef = useRef(0);
-  const organizationsQueryCacheRef = useRef<Map<string, { organizations: Organization[]; total: number | null }>>(new Map());
-  const advancedOrganizationsCacheRef = useRef<Map<string, Organization[]>>(new Map());
+  const organizationsQueryCacheRef = useRef<
+    Map<string, { organizations: Organization[]; total: number | null }>
+  >(new Map());
+  const advancedOrganizationsCacheRef = useRef<Map<string, Organization[]>>(
+    new Map(),
+  );
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -498,19 +533,27 @@ export default function OrganizationList() {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
-        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
-        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const name = String(
+          (f as any)?.field_name ?? (f as any)?.fieldName ?? "",
+        ).trim();
+        const label =
+          (f as any)?.field_label ??
+          (f as any)?.fieldLabel ??
+          (name ? humanize(name) : "");
         const isBackendCol = name && ORG_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
-        else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
+        else if (name === "job_orders_count" || name === "placements_count")
+          filterType = "number";
         // Normalize select options (admin-center fields)
         let options: { label: string; value: string }[] | undefined = undefined;
         const rawOptions = (f as any)?.options;
         if (rawOptions) {
           try {
             const parsed =
-              typeof rawOptions === "string" ? JSON.parse(rawOptions) : rawOptions;
+              typeof rawOptions === "string"
+                ? JSON.parse(rawOptions)
+                : rawOptions;
             if (Array.isArray(parsed)) {
               options = parsed
                 .map((opt: any) => {
@@ -566,7 +609,12 @@ export default function OrganizationList() {
     //   }));
 
     const merged = [
-      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const },
+      {
+        key: "record_number",
+        label: "Record Number",
+        sortable: true,
+        filterType: "number" as const,
+      },
       ...fromApi,
     ];
     const seen = new Set<string>();
@@ -588,13 +636,18 @@ export default function OrganizationList() {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
           let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+          if (
+            catalogSet.has("record_number") &&
+            !validOrder.includes("record_number")
+          ) {
             validOrder = ["record_number", ...validOrder];
           }
           // Don't apply when we would collapse a multi-column preference to only record_number
           // (catalog may still be loading — e.g. availableFields not yet loaded)
           const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
+            parsed.length > 1 &&
+            validOrder.length === 1 &&
+            validOrder[0] === "record_number";
           if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
@@ -647,7 +700,7 @@ export default function OrganizationList() {
   // Apply a single advanced-search criterion to an org (returns true if org matches)
   const matchesAdvancedCriterion = (
     org: Organization,
-    c: AdvancedSearchCriterion
+    c: AdvancedSearchCriterion,
   ): boolean => {
     const raw = getColumnValue(org, c.fieldKey);
     const colInfo = getColumnInfo(c.fieldKey);
@@ -704,7 +757,9 @@ export default function OrganizationList() {
         const data = await response.json();
         if (requestId !== latestRequestIdRef.current) return;
 
-        const incomingOrganizations: Organization[] = Array.isArray(data?.organizations)
+        const incomingOrganizations: Organization[] = Array.isArray(
+          data?.organizations,
+        )
           ? data.organizations
           : [];
         const total =
@@ -734,7 +789,7 @@ export default function OrganizationList() {
         setError(
           err instanceof Error
             ? err.message
-            : "An error occurred while fetching organizations"
+            : "An error occurred while fetching organizations",
         );
       } finally {
         if (requestId !== latestRequestIdRef.current) return;
@@ -743,7 +798,7 @@ export default function OrganizationList() {
         setIsPageLoading(false);
       }
     },
-    [pageSize, searchTerm]
+    [pageSize, searchTerm],
   );
 
   const isAdvancedFullMode = advancedSearchCriteria.length > 0;
@@ -796,10 +851,17 @@ export default function OrganizationList() {
             query.set("search", searchTerm.trim());
           }
 
-          const response = await fetch(`/api/organizations?${query.toString()}`);
-          if (!response.ok) throw new Error("Failed to fetch organizations for advanced search");
+          const response = await fetch(
+            `/api/organizations?${query.toString()}`,
+          );
+          if (!response.ok)
+            throw new Error(
+              "Failed to fetch organizations for advanced search",
+            );
           const data = await response.json();
-          const batch: Organization[] = Array.isArray(data?.organizations) ? data.organizations : [];
+          const batch: Organization[] = Array.isArray(data?.organizations)
+            ? data.organizations
+            : [];
           total =
             typeof data?.total === "number"
               ? data.total
@@ -821,7 +883,10 @@ export default function OrganizationList() {
         }
       } catch (err) {
         if (!cancelled) {
-          console.error("Error loading full organizations dataset for advanced search:", err);
+          console.error(
+            "Error loading full organizations dataset for advanced search:",
+            err,
+          );
           setAdvancedOrganizationsDataset([]);
         }
       } finally {
@@ -846,16 +911,17 @@ export default function OrganizationList() {
 
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const shouldApplyClientGlobalSearch = totalOrganizationsCount == null;
-  const totalPages =
-    isAdvancedFullMode
-      ? 1
-      : totalOrganizationsCount != null
-        ? Math.max(1, Math.ceil(totalOrganizationsCount / pageSize))
-        : null;
+  const totalPages = isAdvancedFullMode
+    ? 1
+    : totalOrganizationsCount != null
+      ? Math.max(1, Math.ceil(totalOrganizationsCount / pageSize))
+      : null;
   const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
   const canGoNext =
     !isAdvancedFullMode &&
-    (totalPages != null ? currentPage < totalPages : organizations.length === pageSize) &&
+    (totalPages != null
+      ? currentPage < totalPages
+      : organizations.length === pageSize) &&
     !isPageLoading &&
     !isLoading;
   const paginationItems = useMemo<(number | "...")[]>(() => {
@@ -879,16 +945,16 @@ export default function OrganizationList() {
   }, [currentPage, totalPages]);
   // Find custom field definitions for individual row actions
   const findFieldByLabel = (label: string) => {
-    return availableFields.find(f => {
-      const fieldLabel = (f.field_label || '').toLowerCase();
-      const fieldName = (f.field_name || '').toLowerCase();
+    return availableFields.find((f) => {
+      const fieldLabel = (f.field_label || "").toLowerCase();
+      const fieldName = (f.field_name || "").toLowerCase();
       const searchLabel = label.toLowerCase();
       return fieldLabel === searchLabel || fieldName === searchLabel;
     });
   };
 
-  const ownerField = findFieldByLabel('Owner');
-  const statusField = findFieldByLabel('Status');
+  const ownerField = findFieldByLabel("Owner");
+  const statusField = findFieldByLabel("Status");
 
   const handleIndividualActionSuccess = () => {
     organizationsQueryCacheRef.current.clear();
@@ -902,7 +968,9 @@ export default function OrganizationList() {
 
   const applyFavorite = (fav: OrganizationFavorite) => {
     const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
-    const validColumnFields = (fav.columnFields || []).filter((k) => catalogKeys.has(k));
+    const validColumnFields = (fav.columnFields || []).filter((k) =>
+      catalogKeys.has(k),
+    );
 
     const nextFilters: Record<string, ColumnFilterState> = {};
     for (const [k, v] of Object.entries(fav.columnFilters || {})) {
@@ -953,7 +1021,8 @@ export default function OrganizationList() {
       columnFilters,
       columnSorts,
       columnFields,
-      advancedSearchCriteria: advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
+      advancedSearchCriteria:
+        advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
 
@@ -977,19 +1046,24 @@ export default function OrganizationList() {
       ? (advancedOrganizationsDataset ?? [])
       : organizations;
     let result = sourceOrganizations.filter(
-      (org) => org.status !== "Archived" && !org.archived_at
+      (org) => org.status !== "Archived" && !org.archived_at,
     );
 
     // Apply global search
     if (shouldApplyClientGlobalSearch && deferredSearchTerm.trim() !== "") {
       const term = deferredSearchTerm.toLowerCase();
-      result = result.filter((org) =>
-        (org.name || "").toLowerCase().includes(term) ||
-        String(org.id || "").toLowerCase().includes(term) ||
-        String(org.record_number ?? "").toLowerCase().includes(term) ||
-        (org.status || "").toLowerCase().includes(term) ||
-        (org.contact_phone || "").toLowerCase().includes(term) ||
-        (org.address || "").toLowerCase().includes(term)
+      result = result.filter(
+        (org) =>
+          (org.name || "").toLowerCase().includes(term) ||
+          String(org.id || "")
+            .toLowerCase()
+            .includes(term) ||
+          String(org.record_number ?? "")
+            .toLowerCase()
+            .includes(term) ||
+          (org.status || "").toLowerCase().includes(term) ||
+          (org.contact_phone || "").toLowerCase().includes(term) ||
+          (org.address || "").toLowerCase().includes(term),
       );
     }
 
@@ -1016,12 +1090,14 @@ export default function OrganizationList() {
     // Apply advanced search criteria (AND)
     if (advancedSearchCriteria.length > 0) {
       result = result.filter((org) =>
-        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(org, c))
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(org, c)),
       );
     }
 
     // Apply sorting (multiple columns supported, but we'll use the first active sort)
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    const activeSorts = Object.entries(columnSorts).filter(
+      ([_, dir]) => dir !== null,
+    );
     if (activeSorts.length > 0) {
       // Sort by the first active sort column
       const [sortKey, sortDir] = activeSorts[0];
@@ -1037,10 +1113,14 @@ export default function OrganizationList() {
         if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
           cmp = aNum - bNum;
         } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
+          cmp = String(aValue ?? "").localeCompare(
+            String(bValue ?? ""),
+            undefined,
+            {
+              numeric: true,
+              sensitivity: "base",
+            },
+          );
         }
 
         return sortDir === "asc" ? cmp : -cmp;
@@ -1048,15 +1128,26 @@ export default function OrganizationList() {
     }
 
     return result;
-  }, [organizations, advancedOrganizationsDataset, isAdvancedFullMode, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  }, [
+    organizations,
+    advancedOrganizationsDataset,
+    isAdvancedFullMode,
+    columnFilters,
+    columnSorts,
+    deferredSearchTerm,
+    advancedSearchCriteria,
+    shouldApplyClientGlobalSearch,
+  ]);
   const visibleResultsCount =
-    totalOrganizationsCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
+    totalOrganizationsCount != null &&
+    advancedSearchCriteria.length === 0 &&
+    Object.keys(columnFilters).length === 0
       ? totalOrganizationsCount
       : filteredAndSortedOrganizations.length;
 
   const showTableSkeleton = isLoading || isPageLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>
-    columnsCatalog.some((c) => c.key === k)
+    columnsCatalog.some((c) => c.key === k),
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
@@ -1078,7 +1169,9 @@ export default function OrganizationList() {
     if (selectAll) {
       setSelectedOrganizations([]);
     } else {
-      setSelectedOrganizations(filteredAndSortedOrganizations.map((org) => org.id));
+      setSelectedOrganizations(
+        filteredAndSortedOrganizations.map((org) => org.id),
+      );
     }
     setSelectAll(!selectAll);
   };
@@ -1087,12 +1180,15 @@ export default function OrganizationList() {
     e.stopPropagation();
 
     if (selectedOrganizations.includes(id)) {
-      setSelectedOrganizations(selectedOrganizations.filter((orgId) => orgId !== id));
+      setSelectedOrganizations(
+        selectedOrganizations.filter((orgId) => orgId !== id),
+      );
       if (selectAll) setSelectAll(false);
     } else {
       setSelectedOrganizations([...selectedOrganizations, id]);
       if (
-        [...selectedOrganizations, id].length === filteredAndSortedOrganizations.length
+        [...selectedOrganizations, id].length ===
+        filteredAndSortedOrganizations.length
       ) {
         setSelectAll(true);
       }
@@ -1116,7 +1212,7 @@ export default function OrganizationList() {
       const deletePromises = selectedOrganizations.map((id) =>
         fetch(`/api/organizations/${id}`, {
           method: "DELETE",
-        })
+        }),
       );
 
       const results = await Promise.allSettled(deletePromises);
@@ -1136,7 +1232,7 @@ export default function OrganizationList() {
       setDeleteError(
         err instanceof Error
           ? err.message
-          : "An error occurred while deleting organizations"
+          : "An error occurred while deleting organizations",
       );
     } finally {
       setIsDeleting(false);
@@ -1148,7 +1244,7 @@ export default function OrganizationList() {
     if (selectedOrganizations.length === 0) return;
 
     const selectedData = organizations.filter((org) =>
-      selectedOrganizations.includes(org.id)
+      selectedOrganizations.includes(org.id),
     );
 
     // Get headers from currently displayed columns
@@ -1156,9 +1252,9 @@ export default function OrganizationList() {
 
     // Escape CSV values
     const escapeCSV = (value: any): string => {
-      if (value === null || value === undefined) return '';
+      if (value === null || value === undefined) return "";
       const str = String(value);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
         return `"${str.replace(/"/g, '""')}"`;
       }
       return str;
@@ -1166,23 +1262,30 @@ export default function OrganizationList() {
 
     // Create CSV rows
     const csvRows = [
-      headers.map(escapeCSV).join(','),
+      headers.map(escapeCSV).join(","),
       ...selectedData.map((org) => {
         const row = columnFields.map((key) =>
-          key === "record_number" ? escapeCSV(`O ${getColumnValue(org, key)}`) : escapeCSV(getColumnValue(org, key))
+          key === "record_number"
+            ? escapeCSV(`O ${getColumnValue(org, key)}`)
+            : escapeCSV(getColumnValue(org, key)),
         );
-        return row.join(',');
-      })
+        return row.join(",");
+      }),
     ];
 
-    const csvContent = csvRows.join('\n');
-    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const csvContent = csvRows.join("\n");
+    const BOM = "\uFEFF"; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `organizations-export-${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `organizations-export-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
+    link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1213,10 +1316,12 @@ export default function OrganizationList() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
-                {(isLoading || isPageLoading || isAdvancedDatasetLoading) && (
+                  {(isLoading || isPageLoading || isAdvancedDatasetLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
                   )}
-                  <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
+                  <span>
+                    {isLoading ? "…" : `${visibleResultsCount} found`}
+                  </span>
                 </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1237,15 +1342,19 @@ export default function OrganizationList() {
                 ref={advancedSearchButtonRef}
                 type="button"
                 onClick={() => setShowAdvancedSearch((v) => !v)}
-                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                  }`}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
+                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
               >
                 <IoFilterSharp /> Filter
               </button>
 
-              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0 || advancedSearchCriteria.length > 0) && (
+              {(searchTerm ||
+                Object.keys(columnFilters).length > 0 ||
+                Object.keys(columnSorts).length > 0 ||
+                advancedSearchCriteria.length > 0) && (
                 <button
                   onClick={handleClearAllFilters}
                   className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
@@ -1285,10 +1394,17 @@ export default function OrganizationList() {
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
               className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
             >
-              <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+              <FiStar
+                className={
+                  selectedFavoriteId
+                    ? "text-yellow-400 fill-current"
+                    : "text-gray-400"
+                }
+              />
               <span className="max-w-[100px] truncate">
                 {selectedFavoriteId
-                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name ||
+                    "Favorites"
                   : "Favorites"}
               </span>
               <FiChevronDown />
@@ -1315,8 +1431,9 @@ export default function OrganizationList() {
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                          }`}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                        }`}
                         onClick={() => {
                           setSelectedFavoriteId(fav.id);
                           applyFavorite(fav);
@@ -1329,7 +1446,9 @@ export default function OrganizationList() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            const updated = favorites.filter(
+                              (f) => f.id !== fav.id,
+                            );
                             persistFavorites(updated);
                             if (selectedFavoriteId === fav.id) {
                               setSelectedFavoriteId("");
@@ -1407,10 +1526,17 @@ export default function OrganizationList() {
               className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white"
             >
               <span className="flex items-center gap-2">
-                <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                <FiStar
+                  className={
+                    selectedFavoriteId
+                      ? "text-yellow-400 fill-current"
+                      : "text-gray-400"
+                  }
+                />
                 <span className="truncate">
                   {selectedFavoriteId
-                    ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                    ? favorites.find((f) => f.id === selectedFavoriteId)
+                        ?.name || "Favorites"
                     : "Favorites"}
                 </span>
               </span>
@@ -1429,7 +1555,9 @@ export default function OrganizationList() {
                 </div>
                 <div className="max-h-60 overflow-y-auto py-1">
                   {favorites.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
+                    <p className="text-xs text-gray-400 text-center py-4">
+                      No saved favorites yet
+                    </p>
                   ) : (
                     favorites.map((fav) => (
                       <div
@@ -1441,13 +1569,18 @@ export default function OrganizationList() {
                           setFavoritesMenuOpen(false);
                         }}
                       >
-                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                        <span className="text-sm text-gray-700 truncate flex-1">
+                          {fav.name}
+                        </span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            const updated = favorites.filter(
+                              (f) => f.id !== fav.id,
+                            );
                             persistFavorites(updated);
-                            if (selectedFavoriteId === fav.id) setSelectedFavoriteId("");
+                            if (selectedFavoriteId === fav.id)
+                              setSelectedFavoriteId("");
                           }}
                           className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                           title="Delete favorite"
@@ -1484,8 +1617,17 @@ export default function OrganizationList() {
               onClick={deleteSelectedOrganizations}
               className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
               </svg>
               Delete Selected ({selectedOrganizations.length})
             </button>
@@ -1527,13 +1669,16 @@ export default function OrganizationList() {
       )}
 
       <div className="w-full max-w-full overflow-x-hidden">
-        <div className="overflow-x-auto">
-          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="overflow-x-auto overflow-y-auto h-[100vh]">
+          <DndContext
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   {/* Fixed checkbox header */}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                     <input
                       type="checkbox"
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded"
@@ -1542,9 +1687,8 @@ export default function OrganizationList() {
                     />
                   </th>
 
-
                   {/* Fixed Actions header */}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                     Actions
                   </th>
 
@@ -1553,27 +1697,31 @@ export default function OrganizationList() {
                     items={columnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
-                      const columnInfo = getColumnInfo(key);
-                      if (!columnInfo) return null;
+                    {columnFields
+                      .filter((k) => columnsCatalog.some((c) => c.key === k))
+                      .map((key) => {
+                        const columnInfo = getColumnInfo(key);
+                        if (!columnInfo) return null;
 
-                      return (
-                        <SortableColumnHeader
-                          key={key}
-                          id={key}
-                          columnKey={key}
-                          label={getColumnLabel(key)}
-                          sortState={columnSorts[key] || null}
-                          filterValue={columnFilters[key] || null}
-                          onSort={() => handleColumnSort(key)}
-                          onFilterChange={(value) => handleColumnFilter(key, value)}
-                          filterType={columnInfo.filterType}
-                          filterOptions={
-                            key === "status" ? statusOptions : undefined
-                          }
-                        />
-                      );
-                    })}
+                        return (
+                          <SortableColumnHeader
+                            key={key}
+                            id={key}
+                            columnKey={key}
+                            label={getColumnLabel(key)}
+                            sortState={columnSorts[key] || null}
+                            filterValue={columnFilters[key] || null}
+                            onSort={() => handleColumnSort(key)}
+                            onFilterChange={(value) =>
+                              handleColumnFilter(key, value)
+                            }
+                            filterType={columnInfo.filterType}
+                            filterOptions={
+                              key === "status" ? statusOptions : undefined
+                            }
+                          />
+                        );
+                      })}
                   </SortableContext>
                 </tr>
               </thead>
@@ -1593,9 +1741,10 @@ export default function OrganizationList() {
                         className="hover:bg-gray-50 cursor-pointer"
                         onClick={(e) => {
                           const target = e.target as HTMLElement;
-                          if (target.closest("a,button,input,[role='button']")) return;
+                          if (target.closest("a,button,input,[role='button']"))
+                            return;
                           const rowLink = e.currentTarget.querySelector(
-                            "a[data-row-link='true']"
+                            "a[data-row-link='true']",
                           ) as HTMLAnchorElement | null;
                           rowLink?.click();
                         }}
@@ -1609,7 +1758,7 @@ export default function OrganizationList() {
                             type="checkbox"
                             className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                             checked={selectedOrganizations.includes(org.id)}
-                            onChange={() => { }}
+                            onChange={() => {}}
                             onClick={(e) => handleSelectOrganization(org.id, e)}
                           />
                         </td>
@@ -1622,21 +1771,32 @@ export default function OrganizationList() {
                           <ActionDropdown
                             label="Actions"
                             options={[
-                              { label: "View", action: () => handleViewOrganization(org.id) },
-                              ...(ownerField ? [{
-                                label: "Change Ownership",
-                                action: () => {
-                                  setSelectedOrgId(org.id);
-                                  setShowOwnershipModal(true);
-                                },
-                              }] : []),
-                              ...(statusField ? [{
-                                label: "Change Status",
-                                action: () => {
-                                  setSelectedOrgId(org.id);
-                                  setShowStatusModal(true);
-                                },
-                              }] : []),
+                              {
+                                label: "View",
+                                action: () => handleViewOrganization(org.id),
+                              },
+                              ...(ownerField
+                                ? [
+                                    {
+                                      label: "Change Ownership",
+                                      action: () => {
+                                        setSelectedOrgId(org.id);
+                                        setShowOwnershipModal(true);
+                                      },
+                                    },
+                                  ]
+                                : []),
+                              ...(statusField
+                                ? [
+                                    {
+                                      label: "Change Status",
+                                      action: () => {
+                                        setSelectedOrgId(org.id);
+                                        setShowStatusModal(true);
+                                      },
+                                    },
+                                  ]
+                                : []),
                               {
                                 label: "Add To TearSheet",
                                 action: () => {
@@ -1649,47 +1809,55 @@ export default function OrganizationList() {
                         </td>
 
                         {/* Dynamic columns (including Record #) */}
-                        {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
-                          if (key === "record_number") {
-                            return (
-                              <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
-                                <Link
-                                  href={orgViewHref}
-                                  data-row-link="true"
-                                  className="text-black no-underline hover:no-underline focus:no-underline"
-                                  onClick={(e) => e.stopPropagation()}
+                        {columnFields
+                          .filter((k) =>
+                            columnsCatalog.some((c) => c.key === k),
+                          )
+                          .map((key) => {
+                            if (key === "record_number") {
+                              return (
+                                <td
+                                  key={key}
+                                  className="px-6 py-4 text-black whitespace-nowrap"
                                 >
-                                  O {getColumnValue(org, key)}
-                                </Link>
+                                  <Link
+                                    href={orgViewHref}
+                                    data-row-link="true"
+                                    className="text-black no-underline hover:no-underline focus:no-underline"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    O {getColumnValue(org, key)}
+                                  </Link>
+                                </td>
+                              );
+                            }
+                            const colInfo = getColumnInfo(key);
+                            const fieldInfo = colInfo
+                              ? {
+                                  key: colInfo.key,
+                                  label: colInfo.label,
+                                  fieldType: (colInfo as any).fieldType,
+                                  lookupType: (colInfo as any).lookupType,
+                                  multiSelectLookupType: (colInfo as any)
+                                    .multiSelectLookupType,
+                                }
+                              : { key, label: getColumnLabel(key) };
+                            return (
+                              <td
+                                key={key}
+                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                              >
+                                <FieldValueRenderer
+                                  value={getColumnValue(org, key)}
+                                  fieldInfo={fieldInfo}
+                                  emptyPlaceholder="N/A"
+                                  clickable
+                                  stopPropagation
+                                  className=""
+                                />
                               </td>
                             );
-                          }
-                          const colInfo = getColumnInfo(key);
-                          const fieldInfo = colInfo
-                            ? {
-                              key: colInfo.key,
-                              label: colInfo.label,
-                              fieldType: (colInfo as any).fieldType,
-                              lookupType: (colInfo as any).lookupType,
-                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                            }
-                            : { key, label: getColumnLabel(key) };
-                          return (
-                            <td
-                              key={key}
-                              className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            >
-                              <FieldValueRenderer
-                                value={getColumnValue(org, key)}
-                                fieldInfo={fieldInfo}
-                                emptyPlaceholder="N/A"
-                                clickable
-                                stopPropagation
-                                className=""
-                              />
-                            </td>
-                          );
-                        })}
+                          })}
                       </tr>
                     );
                   })
@@ -1699,7 +1867,9 @@ export default function OrganizationList() {
                       colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
-                      {searchTerm || Object.keys(columnFilters).length > 0 || advancedSearchCriteria.length > 0
+                      {searchTerm ||
+                      Object.keys(columnFilters).length > 0 ||
+                      advancedSearchCriteria.length > 0
                         ? "No organizations found matching your search."
                         : 'No organizations found. Click "Add Organization" to create one.'}
                     </td>
@@ -1720,8 +1890,12 @@ export default function OrganizationList() {
                 Showing{" "}
                 <span className="font-medium">
                   {isAdvancedFullMode
-                    ? (filteredAndSortedOrganizations.length === 0 ? 0 : 1)
-                    : (totalOrganizationsCount === 0 ? 0 : (currentPage - 1) * pageSize + 1)}
+                    ? filteredAndSortedOrganizations.length === 0
+                      ? 0
+                      : 1
+                    : totalOrganizationsCount === 0
+                      ? 0
+                      : (currentPage - 1) * pageSize + 1}
                 </span>{" "}
                 to{" "}
                 <span className="font-medium">
@@ -1731,25 +1905,35 @@ export default function OrganizationList() {
                 </span>{" "}
                 of{" "}
                 {isAdvancedFullMode ? (
-                  <span className="font-medium">{filteredAndSortedOrganizations.length}</span>
+                  <span className="font-medium">
+                    {filteredAndSortedOrganizations.length}
+                  </span>
                 ) : totalOrganizationsCount != null ? (
                   <span className="font-medium">{totalOrganizationsCount}</span>
                 ) : (
                   <span className="font-medium">{organizations.length}</span>
                 )}{" "}
                 organizations
-                {!isAdvancedFullMode && filteredAndSortedOrganizations.length !== organizations.length ? (
+                {!isAdvancedFullMode &&
+                filteredAndSortedOrganizations.length !==
+                  organizations.length ? (
                   <>
-                    {" "}(
-                    <span className="font-medium">{filteredAndSortedOrganizations.length}</span> shown
-                    after filters)
+                    {" "}
+                    (
+                    <span className="font-medium">
+                      {filteredAndSortedOrganizations.length}
+                    </span>{" "}
+                    shown after filters)
                   </>
                 ) : null}
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="organizations-page-size" className="text-sm text-gray-600">
+            <label
+              htmlFor="organizations-page-size"
+              className="text-sm text-gray-600"
+            >
               Rows per page
             </label>
             <select
@@ -1782,7 +1966,9 @@ export default function OrganizationList() {
             </button>
             <button
               type="button"
-              onClick={() => canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))}
+              onClick={() =>
+                canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))
+              }
               disabled={!canGoPrev}
               className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center gap-1"
             >
@@ -1803,7 +1989,9 @@ export default function OrganizationList() {
                     key={item}
                     type="button"
                     onClick={() => setCurrentPage(item)}
-                    disabled={isLoading || isPageLoading || item === currentPage}
+                    disabled={
+                      isLoading || isPageLoading || item === currentPage
+                    }
                     className={`min-w-[2.4rem] px-3 py-1.5 border rounded text-sm font-medium transition-colors ${
                       item === currentPage
                         ? "border-gray-300 bg-white text-gray-900 shadow-sm"
@@ -1813,7 +2001,7 @@ export default function OrganizationList() {
                   >
                     {item}
                   </button>
-                )
+                ),
               )}
             </div>
             <button
@@ -1846,10 +2034,17 @@ export default function OrganizationList() {
           description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the organization list."
           order={[
             ...columnFields,
-            ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+            ...columnsCatalog
+              .filter((c) => !columnFields.includes(c.key))
+              .map((c) => c.key),
           ]}
-          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
-          fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
+          visible={Object.fromEntries(
+            columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]),
+          )}
+          fieldCatalog={columnsCatalog.map((c) => ({
+            key: c.key,
+            label: c.label,
+          }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
               setColumnFields((prev) => prev.filter((x) => x !== key));
@@ -1862,7 +2057,9 @@ export default function OrganizationList() {
             if (!over || active.id === over.id) return;
             const fullOrder = [
               ...columnFields,
-              ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+              ...columnsCatalog
+                .filter((c) => !columnFields.includes(c.key))
+                .map((c) => c.key),
             ];
             const oldIndex = fullOrder.indexOf(active.id as string);
             const newIndex = fullOrder.indexOf(over.id as string);
@@ -1878,14 +2075,18 @@ export default function OrganizationList() {
           isSaveDisabled={isSavingColumns}
           onReset={() => {
             const requiredCustom = (availableFields || [])
-              .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => {
+              .filter((f) => f.is_required || f.required || f.isRequired)
+              .map((f) => {
                 const name = String(f.field_name ?? f.fieldName ?? "").trim();
-                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
-                const isBackendCol = name && ORG_BACKEND_COLUMN_KEYS.includes(name);
+                const label =
+                  f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
+                const isBackendCol =
+                  name && ORG_BACKEND_COLUMN_KEYS.includes(name);
                 return isBackendCol ? name : `custom:${label || name}`;
               });
-            const defaults = Array.from(new Set(["record_number", "name", "status", ...requiredCustom]));
+            const defaults = Array.from(
+              new Set(["record_number", "name", "status", ...requiredCustom]),
+            );
             setColumnFields(defaults);
           }}
           resetButtonText="Reset"
@@ -1898,7 +2099,9 @@ export default function OrganizationList() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>
+              <h3 className="font-semibold text-gray-800">
+                Save Search as Favorite
+              </h3>
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -1920,12 +2123,17 @@ export default function OrganizationList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Organizations"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                    }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
+                    favoriteNameError
+                      ? "border-red-300 bg-red-50"
+                      : "border-gray-300"
+                  }`}
                   autoFocus
                 />
                 {favoriteNameError && (
-                  <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
+                  <p className="text-xs text-red-500 mt-1">
+                    {favoriteNameError}
+                  </p>
                 )}
               </div>
 
@@ -1940,7 +2148,10 @@ export default function OrganizationList() {
                     <li>{Object.keys(columnFilters).length} active filters</li>
                   )}
                   {advancedSearchCriteria.length > 0 && (
-                    <li>{advancedSearchCriteria.length} advanced search condition(s)</li>
+                    <li>
+                      {advancedSearchCriteria.length} advanced search
+                      condition(s)
+                    </li>
                   )}
                   {Object.keys(columnSorts).length > 0 && (
                     <li>{Object.keys(columnSorts).length} active sorts</li>
@@ -1978,7 +2189,7 @@ export default function OrganizationList() {
           }}
           entityType="organization"
           entityIds={[selectedOrgId]}
-          fieldLabel={ownerField.field_label || 'Owner'}
+          fieldLabel={ownerField.field_label || "Owner"}
           onSuccess={handleIndividualActionSuccess}
         />
       )}
@@ -1992,7 +2203,7 @@ export default function OrganizationList() {
           }}
           entityType="organization"
           entityIds={[selectedOrgId]}
-          fieldLabel={statusField.field_label || 'Status'}
+          fieldLabel={statusField.field_label || "Status"}
           options={statusField.options || []}
           availableFields={availableFields}
           onSuccess={handleIndividualActionSuccess}
