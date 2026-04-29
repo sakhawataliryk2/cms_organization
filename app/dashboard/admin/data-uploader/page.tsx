@@ -167,7 +167,6 @@ const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
     'Placement': 'placements',
     'Lead': 'leads'
 };
-const MAX_IMPORT_ROWS_PER_FILE = 1000;
 
 export default function DataUploader() {
     const router = useRouter();
@@ -494,14 +493,6 @@ export default function DataUploader() {
         const { headers, rows } = await parseSpreadsheetFile(file);
         if (headers.length === 0) return;
 
-        if (rows.length > MAX_IMPORT_ROWS_PER_FILE) {
-            toast.error(
-                `File has ${rows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
-            );
-            setCsvHeaders([]);
-            setCsvRows([]);
-            return;
-        }
         setCsvHeaders(headers);
         setCsvRows(rows);
         setCurrentStep(2);
@@ -675,17 +666,6 @@ export default function DataUploader() {
                 toast.error('File appears to be empty or invalid');
                 return;
             }
-            if (parsedRows.length > MAX_IMPORT_ROWS_PER_FILE) {
-                toast.error(
-                    `File has ${parsedRows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
-                );
-                setCsvHeaders([]);
-                setCsvRows([]);
-                setValidationErrors([]);
-                setFieldMappings({});
-                return;
-            }
-
             setCsvHeaders(parsedHeaders);
             setCsvRows(parsedRows);
             setValidationErrors([]);
@@ -762,12 +742,6 @@ export default function DataUploader() {
             }
             if (csvHeaders.length === 0) {
                 toast.error('Please upload a valid CSV file');
-                return;
-            }
-            if (csvRows.length > MAX_IMPORT_ROWS_PER_FILE) {
-                toast.error(
-                    `This file has ${csvRows.length} rows. Please keep it to ${MAX_IMPORT_ROWS_PER_FILE} rows maximum per import.`
-                );
                 return;
             }
             setCurrentStep(3);
@@ -1369,7 +1343,7 @@ export default function DataUploader() {
                                         </p>
                                         <p className="text-xs text-gray-500 mt-1">or click to browse</p>
                                     </div>
-                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls (max 1000 data rows per file)</p>
+                                    <p className="text-xs text-gray-400">Supports .csv, .xlsx, .xls (large files may take longer to process)</p>
                                     {selectedFile && (
                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 shadow-sm">
                                             <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
