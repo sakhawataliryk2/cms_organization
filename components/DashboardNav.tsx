@@ -252,6 +252,8 @@ export default function DashboardNav() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchAbortControllerRef = useRef<AbortController | null>(null);
+  const latestSearchRequestIdRef = useRef(0);
   const [addMenuPosition, setAddMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   // Add menu items
@@ -433,13 +435,27 @@ export default function DashboardNav() {
     // Allow single character searches (especially for numeric IDs)
     // Minimum length check removed to allow searching for IDs like "8"
 
+    // Abort in-flight request before scheduling the next one
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+
     // Set loading state
     setIsSearching(true);
 
     // Debounce search API call
     searchTimeoutRef.current = setTimeout(async () => {
+      const requestId = latestSearchRequestIdRef.current + 1;
+      latestSearchRequestIdRef.current = requestId;
+      const controller = new AbortController();
+      searchAbortControllerRef.current = controller;
+
       try {
-        const response = await fetch(`/api/search?query=${encodeURIComponent(searchQuery.trim())}`);
+        const response = await fetch(
+          `/api/search?query=${encodeURIComponent(searchQuery.trim())}&limit=8`,
+          { signal: controller.signal },
+        );
+        if (requestId !== latestSearchRequestIdRef.current) return;
         if (response.ok) {
           const data = await response.json();
           if (data.success) {
@@ -458,9 +474,11 @@ export default function DashboardNav() {
           setSearchResults(null);
         }
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
         console.error('Error performing global search:', error);
         setSearchResults(null);
       } finally {
+        if (requestId !== latestSearchRequestIdRef.current) return;
         setIsSearching(false);
       }
     }, 300); // 300ms debounce
@@ -469,6 +487,9 @@ export default function DashboardNav() {
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
+      }
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
       }
     };
   }, [searchQuery]);
@@ -718,6 +739,25 @@ export default function DashboardNav() {
       default:
         return `Item #${item.id}`;
     }
+  };
+
+  const getResultRecordNumber = (item: any, type: string): string => {
+    const recordNumber = item?.record_number ?? item?.recordNumber;
+    if (recordNumber === null || recordNumber === undefined || recordNumber === "") {
+      return "";
+    }
+    const entityTypeMap: Record<string, string> = {
+      job: "job",
+      lead: "lead",
+      jobSeeker: "jobSeeker",
+      organization: "organization",
+      task: "task",
+      hiringManager: "hiringManager",
+      placement: "placement",
+    };
+    const normalizedType = entityTypeMap[type];
+    if (!normalizedType) return String(recordNumber);
+    return formatDisplayRecordNumber(normalizedType as any, recordNumber, item?.id);
   };
 
   const getResultIcon = (type: string) => {
@@ -1180,8 +1220,15 @@ export default function DashboardNav() {
                                     <span className="mr-3 text-blue-400">
                                       {getResultIcon("job")}
                                     </span>
-                                    <span className="flex-1 text-left truncate">
-                                      {getResultDisplayName(job, "job")}
+                                    <span className="flex-1 text-left min-w-0">
+                                      <span className="block truncate">
+                                        {getResultDisplayName(job, "job")}
+                                      </span>
+                                      {getResultRecordNumber(job, "job") && (
+                                        <span className="block truncate text-xs text-gray-400">
+                                          {getResultRecordNumber(job, "job")}
+                                        </span>
+                                      )}
                                     </span>
                                   </button>
                                 ))}
@@ -1211,8 +1258,15 @@ export default function DashboardNav() {
                                     <span className="mr-3 text-orange-400">
                                       {getResultIcon("lead")}
                                     </span>
-                                    <span className="flex-1 text-left truncate">
-                                      {getResultDisplayName(lead, "lead")}
+                                    <span className="flex-1 text-left min-w-0">
+                                      <span className="block truncate">
+                                        {getResultDisplayName(lead, "lead")}
+                                      </span>
+                                      {getResultRecordNumber(lead, "lead") && (
+                                        <span className="block truncate text-xs text-gray-400">
+                                          {getResultRecordNumber(lead, "lead")}
+                                        </span>
+                                      )}
                                     </span>
                                   </button>
                                 ))}
@@ -1242,8 +1296,15 @@ export default function DashboardNav() {
                                     <span className="mr-3 text-green-400">
                                       {getResultIcon("jobSeeker")}
                                     </span>
-                                    <span className="flex-1 text-left truncate">
-                                      {getResultDisplayName(js, "jobSeeker")}
+                                    <span className="flex-1 text-left min-w-0">
+                                      <span className="block truncate">
+                                        {getResultDisplayName(js, "jobSeeker")}
+                                      </span>
+                                      {getResultRecordNumber(js, "jobSeeker") && (
+                                        <span className="block truncate text-xs text-gray-400">
+                                          {getResultRecordNumber(js, "jobSeeker")}
+                                        </span>
+                                      )}
                                     </span>
                                   </button>
                                 ))}
@@ -1277,8 +1338,15 @@ export default function DashboardNav() {
                                       <span className="mr-3 text-purple-400">
                                         {getResultIcon("organization")}
                                       </span>
-                                      <span className="flex-1 text-left truncate">
-                                        {getResultDisplayName(org, "organization")}
+                                      <span className="flex-1 text-left min-w-0">
+                                        <span className="block truncate">
+                                          {getResultDisplayName(org, "organization")}
+                                        </span>
+                                        {getResultRecordNumber(org, "organization") && (
+                                          <span className="block truncate text-xs text-gray-400">
+                                            {getResultRecordNumber(org, "organization")}
+                                          </span>
+                                        )}
                                       </span>
                                     </button>
                                   ))}
@@ -1309,8 +1377,15 @@ export default function DashboardNav() {
                                     <span className="mr-3 text-cyan-400">
                                       {getResultIcon("task")}
                                     </span>
-                                    <span className="flex-1 text-left truncate">
-                                      {getResultDisplayName(task, "task")}
+                                    <span className="flex-1 text-left min-w-0">
+                                      <span className="block truncate">
+                                        {getResultDisplayName(task, "task")}
+                                      </span>
+                                      {getResultRecordNumber(task, "task") && (
+                                        <span className="block truncate text-xs text-gray-400">
+                                          {getResultRecordNumber(task, "task")}
+                                        </span>
+                                      )}
                                     </span>
                                   </button>
                                 ))}
@@ -1344,10 +1419,17 @@ export default function DashboardNav() {
                                         <span className="mr-3 text-yellow-400">
                                           {getResultIcon("hiringManager")}
                                         </span>
-                                        <span className="flex-1 text-left truncate">
-                                          {getResultDisplayName(
-                                            hm,
-                                            "hiringManager"
+                                        <span className="flex-1 text-left min-w-0">
+                                          <span className="block truncate">
+                                            {getResultDisplayName(
+                                              hm,
+                                              "hiringManager"
+                                            )}
+                                          </span>
+                                          {getResultRecordNumber(hm, "hiringManager") && (
+                                            <span className="block truncate text-xs text-gray-400">
+                                              {getResultRecordNumber(hm, "hiringManager")}
+                                            </span>
                                           )}
                                         </span>
                                       </button>
@@ -1386,10 +1468,17 @@ export default function DashboardNav() {
                                         <span className="mr-3 text-pink-400">
                                           {getResultIcon("placement")}
                                         </span>
-                                        <span className="flex-1 text-left truncate">
-                                          {getResultDisplayName(
-                                            placement,
-                                            "placement"
+                                        <span className="flex-1 text-left min-w-0">
+                                          <span className="block truncate">
+                                            {getResultDisplayName(
+                                              placement,
+                                              "placement"
+                                            )}
+                                          </span>
+                                          {getResultRecordNumber(placement, "placement") && (
+                                            <span className="block truncate text-xs text-gray-400">
+                                              {getResultRecordNumber(placement, "placement")}
+                                            </span>
                                           )}
                                         </span>
                                       </button>
