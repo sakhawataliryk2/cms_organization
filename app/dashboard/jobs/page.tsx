@@ -1872,7 +1872,7 @@ export default function JobList() {
       />
 
       <div className="w-full max-w-full overflow-x-hidden">
-        <div className="overflow-x-auto overflow-y-auto h-[100vh]">
+        <div className="overflow-x-auto overflow-y-auto h-[80vh]">
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">

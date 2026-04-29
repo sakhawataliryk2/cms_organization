@@ -1120,7 +1120,7 @@ export default function ArchivedHiringManagersList() {
       />
 
       {/* Hiring Managers Table */}
-      <div className="overflow-x-auto overflow-y-auto h-[100vh]">
+      <div className="overflow-x-auto overflow-y-auto h-[80vh]">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
