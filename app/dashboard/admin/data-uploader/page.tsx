@@ -249,7 +249,7 @@ export default function DataUploader() {
                     const file = base64ToFile(pendingData.base64, pendingData.name, pendingData.type || 'text/csv');
                     setSelectedFile(file);
                     setRecordType('Job Seeker'); // Default for admin sidebar upload
-                    handleFileSelectForData(file);
+                    void handleFileSelectForData(file);
 
                     // Cleanup
                     sessionStorage.removeItem('adminParseDataPendingFile');
@@ -490,28 +490,21 @@ export default function DataUploader() {
         }
     };
 
-    const handleFileSelectForData = (file: File) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const text = e.target?.result as string;
-            if (text) {
-                const { headers, rows } = parseCSV(text);
-                if (headers.length > 0) {
-                    if (rows.length > MAX_IMPORT_ROWS_PER_FILE) {
-                        toast.error(
-                            `File has ${rows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
-                        );
-                        setCsvHeaders([]);
-                        setCsvRows([]);
-                        return;
-                    }
-                    setCsvHeaders(headers);
-                    setCsvRows(rows);
-                    setCurrentStep(2);
-                }
-            }
-        };
-        reader.readAsText(file);
+    const handleFileSelectForData = async (file: File) => {
+        const { headers, rows } = await parseSpreadsheetFile(file);
+        if (headers.length === 0) return;
+
+        if (rows.length > MAX_IMPORT_ROWS_PER_FILE) {
+            toast.error(
+                `File has ${rows.length} rows. Maximum ${MAX_IMPORT_ROWS_PER_FILE} rows per file are allowed to avoid database timeout.`
+            );
+            setCsvHeaders([]);
+            setCsvRows([]);
+            return;
+        }
+        setCsvHeaders(headers);
+        setCsvRows(rows);
+        setCurrentStep(2);
     };
 
     const normalizeFieldText = (value: string): string =>
@@ -608,62 +601,58 @@ export default function DataUploader() {
         setFieldMappings(autoMappings);
     }, [currentStep, csvHeaders, availableFields, fieldMappings]);
 
-    const parseCSV = (text: string): { headers: string[]; rows: CSVRow[] } => {
-        const lines = text.split('\n').filter(line => line.trim());
-        if (lines.length === 0) return { headers: [], rows: [] };
+    const normalizeSpreadsheetCellValue = (value: unknown): string => {
+        const text = String(value ?? '').trim();
+        // Keep CSV and XLSX line-break representation consistent with Excel-style values.
+        return text.replace(/\r\n|\n|\r/g, '_x000D_');
+    };
 
-        // Improved CSV parser that handles quoted fields with commas
-        const parseCSVLine = (line: string): string[] => {
-            const result: string[] = [];
-            let current = '';
-            let inQuotes = false;
+    const parseWorkbookToRows = async (workbook: any): Promise<{ headers: string[]; rows: CSVRow[] }> => {
+        const XLSX = await import('xlsx');
+        const firstSheetName = workbook?.SheetNames?.[0];
+        if (!firstSheetName) return { headers: [], rows: [] };
 
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                const nextChar = line[i + 1];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
+            header: 1,
+            defval: '',
+            raw: false,
+        });
 
-                if (char === '"') {
-                    if (inQuotes && nextChar === '"') {
-                        // Escaped quote
-                        current += '"';
-                        i++; // Skip next quote
-                    } else {
-                        // Toggle quote state
-                        inQuotes = !inQuotes;
-                    }
-                } else if (char === ',' && !inQuotes) {
-                    // End of field
-                    result.push(current.trim());
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
+        if (!matrix.length) return { headers: [], rows: [] };
 
-            // Add last field
-            result.push(current.trim());
-            return result;
-        };
-
-        // Parse headers
-        const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
-
-        // Parse rows — skip completely empty rows (ghost rows)
-        const rows: CSVRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-            const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
-            // Skip if every cell is empty
-            if (values.every(v => v.trim() === '')) continue;
-            const row: CSVRow = {};
-            headers.forEach((header, index) => {
-                row[header] = values[index] || '';
+        const headers = (matrix[0] || []).map((cell) => normalizeSpreadsheetCellValue(cell)).filter(Boolean);
+        const rows = matrix
+            .slice(1)
+            .filter((row) => row.some((cell) => normalizeSpreadsheetCellValue(cell) !== ''))
+            .map((row) => {
+                const csvRow: CSVRow = {};
+                headers.forEach((header, index) => {
+                    csvRow[header] = normalizeSpreadsheetCellValue(row[index]);
+                });
+                return csvRow;
             });
-            // Skip if every value in the mapped row is empty
-            if (Object.values(row).every(v => String(v).trim() === '')) continue;
-            rows.push(row);
-        }
 
         return { headers, rows };
+    };
+
+    const parseSpreadsheetFile = async (file: File): Promise<{ headers: string[]; rows: CSVRow[] }> => {
+        const XLSX = await import('xlsx');
+        const lowerCaseName = file.name.toLowerCase();
+        const isCSV = lowerCaseName.endsWith('.csv');
+
+        if (isCSV) {
+            // Convert CSV -> XLSX first, then parse exactly like Excel imports.
+            const text = await file.text();
+            const csvWorkbook = XLSX.read(text, { type: 'string', raw: false });
+            const xlsxBuffer = XLSX.write(csvWorkbook, { type: 'array', bookType: 'xlsx' });
+            const normalizedWorkbook = XLSX.read(xlsxBuffer, { type: 'array' });
+            return parseWorkbookToRows(normalizedWorkbook);
+        }
+
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        return parseWorkbookToRows(workbook);
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -680,50 +669,7 @@ export default function DataUploader() {
 
             setSelectedFile(file);
 
-            let parsedHeaders: string[] = [];
-            let parsedRows: CSVRow[] = [];
-
-            if (isCSV) {
-                const text = await file.text();
-                const { headers, rows } = parseCSV(text);
-                parsedHeaders = headers;
-                parsedRows = rows;
-            } else {
-                const XLSX = await import('xlsx');
-                const arrayBuffer = await file.arrayBuffer();
-                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-
-                if (!firstSheetName) {
-                    toast.error('Excel file appears to be empty');
-                    return;
-                }
-
-                const worksheet = workbook.Sheets[firstSheetName];
-                const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
-                    header: 1,
-                    defval: '',
-                    raw: false,
-                });
-
-                if (!matrix.length) {
-                    toast.error('Excel file appears to be empty');
-                    return;
-                }
-
-                parsedHeaders = (matrix[0] || []).map((cell) => String(cell ?? '').trim()).filter(Boolean);
-                const dataRows = matrix.slice(1).filter((row) =>
-                    row.some((cell) => String(cell ?? '').trim() !== '')
-                );
-
-                parsedRows = dataRows.map((row) => {
-                    const csvRow: CSVRow = {};
-                    parsedHeaders.forEach((header, index) => {
-                        csvRow[header] = String(row[index] ?? '').trim();
-                    });
-                    return csvRow;
-                });
-            }
+            const { headers: parsedHeaders, rows: parsedRows } = await parseSpreadsheetFile(file);
 
             if (parsedHeaders.length === 0) {
                 toast.error('File appears to be empty or invalid');
