@@ -418,6 +418,19 @@ export default function LeadList() {
       .trim();
 
   const columnsCatalog = useMemo(() => {
+    const coreBackendColumns = LEAD_BACKEND_COLUMN_KEYS.map((key) => {
+      let filterType: "text" | "select" | "number" = "text";
+      if (key === "status") filterType = "select";
+      return {
+        key,
+        label: humanize(key),
+        sortable: true,
+        filterType,
+        fieldType: "",
+        lookupType: "",
+      };
+    });
+
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
@@ -455,6 +468,7 @@ export default function LeadList() {
 
     const merged = [
       { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const },
+      ...coreBackendColumns,
       ...fromApi,
     ];
     const seen = new Set<string>();
@@ -463,7 +477,7 @@ export default function LeadList() {
       seen.add(x.key);
       return true;
     });
-  }, [leads, availableFields]);
+  }, [availableFields]);
 
   // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
@@ -481,7 +495,15 @@ export default function LeadList() {
           }
           const wouldCollapseToRecordNumberOnly =
             parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+          const isOnlyRecordNumberPreference =
+            validOrder.length === 1 && validOrder[0] === "record_number";
+          const shouldIgnoreStaleRecordOnlyPreference =
+            isOnlyRecordNumberPreference && catalogKeys.length > 1;
+          if (
+            !wouldCollapseToRecordNumberOnly &&
+            !shouldIgnoreStaleRecordOnlyPreference &&
+            validOrder.length > 0
+          ) {
             setColumnFields(validOrder);
             return;
           }
@@ -490,7 +512,13 @@ export default function LeadList() {
         // ignore
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+    setColumnFields((prev) => {
+      if (prev.length === 0) return catalogKeys;
+      const isOnlyRecordNumber =
+        prev.length === 1 && prev[0] === "record_number";
+      if (isOnlyRecordNumber && catalogKeys.length > 1) return catalogKeys;
+      return prev;
+    });
   }, [columnsCatalog]);
 
   const getColumnLabel = (key: string) =>

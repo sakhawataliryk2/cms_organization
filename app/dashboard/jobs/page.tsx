@@ -714,6 +714,7 @@ export default function JobList() {
     let cancelled = false;
     const loadAllJobs = async () => {
       setIsAdvancedDatasetLoading(true);
+      setAdvancedJobsDataset([]);
       try {
         const limit = 500;
         let page = 1;
@@ -742,6 +743,9 @@ export default function JobList() {
                   ? data.pagination.total
                   : null;
           all.push(...batch);
+          if (!cancelled) {
+            setAdvancedJobsDataset((prev) => [...(prev ?? []), ...batch]);
+          }
 
           if (batch.length < limit) break;
           if (total != null && all.length >= total) break;
@@ -750,7 +754,6 @@ export default function JobList() {
 
         if (!cancelled) {
           advancedJobsCacheRef.current.set(cacheKey, all);
-          setAdvancedJobsDataset(all);
         }
       } catch (err) {
         if (!cancelled) {
@@ -777,6 +780,22 @@ export default function JobList() {
       .trim();
 
   const columnsCatalog = useMemo(() => {
+    const coreBackendColumns = JOB_BACKEND_COLUMN_KEYS.map((key) => {
+      let filterType: "text" | "select" | "number" = "text";
+      if (key === "status") filterType = "select";
+      return {
+        key,
+        label: humanize(key),
+        name: key,
+        sortable: true,
+        filterType,
+        fieldType: "",
+        lookupType: "",
+        multiSelectLookupType: "",
+        customFieldLabel: undefined as string | undefined,
+      };
+    });
+
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any, idx: number) => {
@@ -803,6 +822,7 @@ export default function JobList() {
 
     const merged = [
       { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "", multiSelectLookupType: "", customFieldLabel: undefined as string | undefined },
+      ...coreBackendColumns,
       ...fromApi,
     ];
     const seen = new Set<string>();
@@ -863,7 +883,15 @@ export default function JobList() {
           }
           const wouldCollapseToRecordNumberOnly =
             parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+          const isOnlyRecordNumberPreference =
+            validOrder.length === 1 && validOrder[0] === "record_number";
+          const shouldIgnoreStaleRecordOnlyPreference =
+            isOnlyRecordNumberPreference && catalogKeys.length > 1;
+          if (
+            !wouldCollapseToRecordNumberOnly &&
+            !shouldIgnoreStaleRecordOnlyPreference &&
+            validOrder.length > 0
+          ) {
             if (JSON.stringify(validOrder) !== JSON.stringify(parsed)) {
               localStorage.setItem("jobsColumnOrder", JSON.stringify(validOrder));
             }
@@ -877,7 +905,15 @@ export default function JobList() {
     }
 
     const defaultColumns = getRequiredAdminColumnKeys();
-    setColumnFields((prev) => (prev.length === 0 ? defaultColumns : prev));
+    setColumnFields((prev) => {
+      if (prev.length === 0) return defaultColumns;
+      const isOnlyRecordNumber =
+        prev.length === 1 && prev[0] === "record_number";
+      if (isOnlyRecordNumber && catalogKeys.length > 1) {
+        return defaultColumns.length > 0 ? defaultColumns : catalogKeys;
+      }
+      return prev;
+    });
   }, [columnCatalogKeys, getRequiredAdminColumnKeys, sanitizeColumnKeys]);
 
   const getColumnLabel = (key: string) =>
