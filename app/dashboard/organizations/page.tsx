@@ -949,14 +949,30 @@ export default function OrganizationList() {
     };
   }, [isAdvancedFullMode, searchTerm]);
 
+  // Find custom field definitions for individual row actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find((f) => {
+      const fieldLabel = (f.field_label || "").toLowerCase();
+      const fieldName = (f.field_name || "").toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel("Owner");
+  const statusField = findFieldByLabel("Status");
+
   // Get unique status values for filter dropdown
   const statusOptions = useMemo(() => {
+    if (statusField?.options && statusField.options.length > 0) {
+      return statusField.options.map((s: string) => ({ label: s, value: s }));
+    }
     const statuses = new Set<string>();
     organizations.forEach((org) => {
       if (org.status) statuses.add(org.status);
     });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
-  }, [organizations]);
+  }, [statusField, organizations]);
 
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const shouldApplyClientGlobalSearch = totalOrganizationsCount == null;
@@ -992,18 +1008,6 @@ export default function OrganizationList() {
     }
     return items;
   }, [currentPage, totalPages]);
-  // Find custom field definitions for individual row actions
-  const findFieldByLabel = (label: string) => {
-    return availableFields.find((f) => {
-      const fieldLabel = (f.field_label || "").toLowerCase();
-      const fieldName = (f.field_name || "").toLowerCase();
-      const searchLabel = label.toLowerCase();
-      return fieldLabel === searchLabel || fieldName === searchLabel;
-    });
-  };
-
-  const ownerField = findFieldByLabel("Owner");
-  const statusField = findFieldByLabel("Status");
 
   const handleIndividualActionSuccess = () => {
     organizationsQueryCacheRef.current.clear();

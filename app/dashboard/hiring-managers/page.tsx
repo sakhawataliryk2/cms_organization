@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
@@ -257,7 +257,12 @@ export default function HiringManagerList() {
   const [hiringManagers, setHiringManagers] = useState<HiringManager[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [pageSize, setPageSize] = useState<number>(50);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [isPageLoading, setIsPageLoading] = useState<boolean>(false);
+  const [totalHmCount, setTotalHmCount] = useState<number | null>(null);
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
     AdvancedSearchCriterion[]
   >([]);
@@ -265,6 +270,11 @@ export default function HiringManagerList() {
   const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
   const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const activeFetchControllerRef = useRef<AbortController | null>(null);
+  const latestRequestIdRef = useRef(0);
+
+  const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -296,6 +306,14 @@ export default function HiringManagerList() {
       }
     }
   }, []);
+
+  // Debounce search keystrokes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchTerm(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -333,6 +351,7 @@ export default function HiringManagerList() {
     }
 
     // 4. Apply everything
+    setSearchInput(fav.searchTerm || "");
     setSearchTerm(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
@@ -362,7 +381,7 @@ export default function HiringManagerList() {
     const newFav: HiringManagerFavorite = {
       id: crypto.randomUUID(),
       name: trimmed,
-      searchTerm,
+      searchTerm: searchInput,
       columnFilters,
       columnSorts,
       columnFields,
@@ -387,6 +406,7 @@ export default function HiringManagerList() {
   };
 
   const handleClearAllFilters = () => {
+    setSearchInput("");
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
@@ -486,6 +506,19 @@ export default function HiringManagerList() {
       .trim();
 
   const hmColumnsCatalog = useMemo(() => {
+    const coreBackendColumns = HM_BACKEND_COLUMN_KEYS.map((key) => {
+      let filterType: "text" | "select" | "number" = "text";
+      if (key === "status") filterType = "select";
+      return {
+        key,
+        label: humanize(key),
+        sortable: true,
+        filterType,
+        fieldType: "",
+        lookupType: "",
+      };
+    });
+
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
@@ -496,9 +529,30 @@ export default function HiringManagerList() {
         const isBackendCol = name && HM_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
+
+        let options: { label: string; value: string }[] | undefined;
+        const rawOptions = (f as any)?.options;
+        if (rawOptions) {
+          try {
+            const parsed = typeof rawOptions === "string" ? JSON.parse(rawOptions) : rawOptions;
+            if (Array.isArray(parsed)) {
+              options = parsed
+                .map((opt: any) => {
+                  if (typeof opt === "string") return { label: opt, value: opt };
+                  const label = String(opt?.label ?? opt?.value ?? "").trim();
+                  const value = String(opt?.value ?? opt?.label ?? "").trim();
+                  if (!label && !value) return null;
+                  return { label: label || value, value: value || label };
+                })
+                .filter(Boolean) as { label: string; value: string }[];
+            }
+          } catch { }
+        }
+
         return {
           fieldType,
           lookupType,
+          options,
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
@@ -506,39 +560,18 @@ export default function HiringManagerList() {
         };
       });
 
-    // console.log("availableFields", availableFields);
-
-    // console.log("fromApi", fromApi);
-
-    // const customKeySet = new Set<string>();
-    // (hiringManagers || []).forEach((hm: any) => {
-    //   const cf = hm?.customFields || hm?.custom_fields || {};
-    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
-    // });
-    // const alreadyHaveCustom = new Set(
-    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    // );
-    // const fromList = Array.from(customKeySet)
-    //   .filter((k) => !alreadyHaveCustom.has(k))
-    //   .map((k) => ({
-    //     key: `custom:${k}`,
-    //     label: humanize(k),
-    //     sortable: false,
-    //     filterType: "text" as const,
-    //   }));
-
     const merged = [
-      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const },
+      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "" },
+      ...coreBackendColumns,
       ...fromApi,
     ];
-    console.log("merged", merged);
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
       seen.add(x.key);
       return true;
     });
-  }, [availableFields, hiringManagers]);
+  }, [availableFields]);
   const getColumnLabel = (key: string) =>
     hmColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
@@ -549,50 +582,35 @@ export default function HiringManagerList() {
     if (key === "record_number") {
       return hm.record_number ?? hm.id;
     }
-    // ✅ custom
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = hm?.customFields || hm?.custom_fields || {};
-      // console.log("customFields", cf);
-      // console.log("getColumnInfo", getColumnInfo(key));
       const val = cf?.[rawKey];
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
-    // ✅ standard
-    // switch (key) {
-    //   case "full_name":
-    //     return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
-    //   case "status":
-    //     return hm.status || "—";
-    //   case "title":
-    //     return hm.title || "—";
-    //   case "organization_name": {
-    //     const orgId = hm.organization_id != null && hm.organization_id !== "" ? String(hm.organization_id) : null;
-    //     const orgName = hm.organization_name_from_org || hm.organization_name || null;
-    //     console.log("organization_name", orgId, orgName);
-    //     if (orgId && orgName) return `${orgId} - ${orgName}`;
-    //     if (orgName) return orgName;
-    //     if (orgId) return orgId;
-    //     return "—";
-    //   }
-    //   case "email":
-    //     return hm.email || "—";
-    //   case "phone":
-    //     return hm.phone || "—";
-    //   case "created_by_name":
-    //     return hm.created_by_name || "—";
-    //   case "created_at":
-    //     return formatDate(hm.created_at);
-    //   default:
-    //     return "—";
-    // }
+    switch (key) {
+      case "full_name":
+        return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
+      case "status":
+        return hm.status || "—";
+      case "title":
+        return hm.title || "—";
+      case "organization_name":
+        return hm.organization_name_from_org || hm.organization_name || "—";
+      case "email":
+        return hm.email || "—";
+      case "phone":
+        return hm.phone || "—";
+      case "created_by_name":
+        return hm.created_by_name || "—";
+      case "created_at":
+        return formatDate(hm.created_at);
+      default:
+        return "—";
+    }
   };
 
-  // Fetch hiring managers data when component mounts
-  useEffect(() => {
-    fetchHiringManagers();
-  }, []);
   const {
     columnFields,
     setColumnFields,
@@ -652,36 +670,99 @@ export default function HiringManagerList() {
     localStorage.setItem("hiringManagerColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
-  const fetchHiringManagers = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/hiring-managers", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+  const fetchHiringManagers = useCallback(
+    async (page: number) => {
+      const normalizedSearch = searchTerm.trim().toLowerCase();
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
+      if (activeFetchControllerRef.current) {
+        activeFetchControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeFetchControllerRef.current = controller;
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch hiring managers");
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
+        setError(null);
+      } else {
+        setIsPageLoading(true);
       }
 
-      const data = await response.json();
-      console.log("Hiring managers data:", data);
-      setHiringManagers(data.hiringManagers || []);
-    } catch (err) {
-      console.error("Error fetching hiring managers:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching hiring managers"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      try {
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(pageSize),
+        });
+        if (normalizedSearch !== "") {
+          query.set("search", searchTerm.trim());
+        }
+
+        const response = await fetch(`/api/hiring-managers?${query.toString()}`, {
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch hiring managers");
+        }
+
+        const data = await response.json();
+        if (requestId !== latestRequestIdRef.current) return;
+
+        const incoming: HiringManager[] = Array.isArray(data?.hiringManagers) ? data.hiringManagers : [];
+        const total =
+          typeof data?.total === "number"
+            ? data.total
+            : typeof data?.count === "number"
+              ? data.count
+              : typeof data?.pagination?.total === "number"
+                ? data.pagination.total
+                : null;
+        setTotalHmCount(total);
+
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const pageData = incoming.length > pageSize ? incoming.slice(start, end) : incoming;
+        setHiringManagers(pageData);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Error fetching hiring managers:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching hiring managers"
+        );
+      } finally {
+        if (requestId !== latestRequestIdRef.current) return;
+        hasLoadedOnceRef.current = true;
+        setIsLoading(false);
+        setIsPageLoading(false);
+      }
+    },
+    [pageSize, searchTerm]
+  );
+
+  const isAdvancedFullMode = advancedSearchCriteria.length > 0;
+
+  useEffect(() => {
+    if (isAdvancedFullMode) return;
+    void fetchHiringManagers(currentPage);
+  }, [currentPage, fetchHiringManagers, isAdvancedFullMode]);
+
+  useEffect(() => {
+    return () => {
+      activeFetchControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
 
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
@@ -725,15 +806,6 @@ export default function HiringManagerList() {
     }
   };
 
-  // Get unique status values for filter dropdown
-  const statusOptions = useMemo(() => {
-    const statuses = new Set<string>();
-    hiringManagers.forEach((hm) => {
-      if (hm.status) statuses.add(hm.status);
-    });
-    return Array.from(statuses).map((s) => ({ label: s, value: s }));
-  }, [hiringManagers]);
-
   // Find custom field definitions for individual row actions
   const findFieldByLabel = (label: string) => {
     return availableFields.find(f => {
@@ -747,6 +819,18 @@ export default function HiringManagerList() {
   const ownerField = findFieldByLabel('Owner');
   const statusField = findFieldByLabel('Status');
 
+  // Get unique status values for filter dropdown
+  const statusOptions = useMemo(() => {
+    if (statusField?.options && statusField.options.length > 0) {
+      return statusField.options.map((s: string) => ({ label: s, value: s }));
+    }
+    const statuses = new Set<string>();
+    hiringManagers.forEach((hm) => {
+      if (hm.status) statuses.add(hm.status);
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [statusField, hiringManagers]);
+
   const handleIndividualActionSuccess = () => {
     setShowOwnershipModal(false);
     setShowStatusModal(false);
@@ -754,7 +838,7 @@ export default function HiringManagerList() {
     setShowNoteModal(false);
     setShowTaskModal(false);
     setSelectedHmId(null);
-    fetchHiringManagers();
+    void fetchHiringManagers(currentPage);
   };
 
   // CSV Export function for selected records
@@ -803,6 +887,9 @@ export default function HiringManagerList() {
     URL.revokeObjectURL(url);
   };
 
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const shouldApplyClientGlobalSearch = totalHmCount == null;
+
   // Apply per-column filtering and sorting (exclude archived in main overview)
   const filteredAndSortedHiringManagers = useMemo(() => {
     let result = hiringManagers.filter(
@@ -825,6 +912,23 @@ export default function HiringManagerList() {
       );
     }
 
+    // Apply global search
+    if (shouldApplyClientGlobalSearch && deferredSearchTerm.trim() !== "") {
+      const term = deferredSearchTerm.toLowerCase();
+      result = result.filter((hm) =>
+        (hm.full_name || `${hm.last_name || ""} ${hm.first_name || ""}` || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(hm.id || "").toLowerCase().includes(term) ||
+        String(hm.record_number ?? "").toLowerCase().includes(term) ||
+        (hm.email || "").toLowerCase().includes(term) ||
+        (hm.title || "").toLowerCase().includes(term) ||
+        (hm.organization_name || "").toLowerCase().includes(term) ||
+        (hm.organization_name_from_org || "").toLowerCase().includes(term) ||
+        String(hm.organization_id ?? "").toLowerCase().includes(term)
+      );
+    }
+
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
@@ -844,23 +948,6 @@ export default function HiringManagerList() {
         return valueStr.includes(filterStr);
       });
     });
-
-    // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((hm) =>
-        (hm.full_name || `${hm.last_name || ""} ${hm.first_name || ""}` || "")
-          .toLowerCase()
-          .includes(term) ||
-        String(hm.id || "").toLowerCase().includes(term) ||
-        String(hm.record_number ?? "").toLowerCase().includes(term) ||
-        (hm.email || "").toLowerCase().includes(term) ||
-        (hm.title || "").toLowerCase().includes(term) ||
-        (hm.organization_name || "").toLowerCase().includes(term) ||
-        (hm.organization_name_from_org || "").toLowerCase().includes(term) ||
-        String(hm.organization_id ?? "").toLowerCase().includes(term)
-      );
-    }
 
     // Apply sorting (multiple columns supported, but we'll use the first active sort)
     const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
@@ -890,15 +977,50 @@ export default function HiringManagerList() {
     }
 
     return result;
-  }, [hiringManagers, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
+  }, [hiringManagers, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
 
-  const showTableSkeleton = isLoading;
+  const visibleResultsCount =
+    totalHmCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
+      ? totalHmCount
+      : filteredAndSortedHiringManagers.length;
+  const totalPages = isAdvancedFullMode
+    ? 1
+    : totalHmCount != null
+      ? Math.max(1, Math.ceil(totalHmCount / pageSize))
+      : null;
+  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
+  const canGoNext =
+    !isAdvancedFullMode &&
+    (totalPages != null
+      ? currentPage < totalPages
+      : hiringManagers.length === pageSize) &&
+    !isPageLoading &&
+    !isLoading;
+  const paginationItems = useMemo<(number | "...")[]>(() => {
+    if (totalPages == null || totalPages <= 1) return [1];
+    const pages = new Set<number>();
+    pages.add(1);
+    pages.add(totalPages);
+    for (let p = currentPage - 1; p <= currentPage + 1; p += 1) {
+      if (p > 1 && p < totalPages) pages.add(p);
+    }
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const items: (number | "...")[] = [];
+    for (let i = 0; i < sorted.length; i += 1) {
+      const value = sorted[i];
+      if (i > 0 && value - sorted[i - 1] > 1) items.push("...");
+      items.push(value);
+    }
+    return items;
+  }, [currentPage, totalPages]);
+
+  const showTableSkeleton = isLoading || isPageLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>
     hmColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
-  const skeletonRowCount = 12;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
@@ -974,18 +1096,18 @@ export default function HiringManagerList() {
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <input
-                  type="text"
-                  placeholder="Search hiring managers..."
-                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
-                  {isLoading && (
-                    <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  )}
-                  <span>{isLoading ? "…" : `${filteredAndSortedHiringManagers.length} found`}</span>
+                  <input
+                    type="text"
+                    placeholder="Search hiring managers..."
+                    className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                  />
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                    {(isLoading || isPageLoading) && (
+                      <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                    )}
+                    <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
                 </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
@@ -1013,7 +1135,7 @@ export default function HiringManagerList() {
               >
                 <IoFilterSharp /> Filter
               </button>
-              {(searchTerm ||
+              {(searchInput || searchTerm ||
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
@@ -1042,7 +1164,7 @@ export default function HiringManagerList() {
                 entityIds={selectedHiringManagers}
                 availableFields={availableFields}
                 onSuccess={() => {
-                  fetchHiringManagers();
+                  void fetchHiringManagers(currentPage);
                   setSelectedHiringManagers([]);
                   setSelectAll(false);
                 }}
@@ -1090,7 +1212,7 @@ export default function HiringManagerList() {
               entityIds={selectedHiringManagers}
               availableFields={availableFields}
               onSuccess={() => {
-                fetchHiringManagers();
+                void fetchHiringManagers(currentPage);
                 setSelectedHiringManagers([]);
                 setSelectAll(false);
               }}

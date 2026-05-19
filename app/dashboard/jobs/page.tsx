@@ -962,6 +962,9 @@ export default function JobList() {
 
   // Status filter: legacy column + custom Field_4 (label e.g. "Status") when present
   const statusOptions = useMemo(() => {
+    if (statusField?.options && statusField.options.length > 0) {
+      return statusField.options.map((s: string) => ({ label: s, value: s }));
+    }
     const statuses = new Set<string>();
     const cfLabel = statusField?.field_label
       ? String(statusField.field_label).trim()
