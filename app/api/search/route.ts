@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { parseRecordId } from '@/lib/recordIdFormatter';
 
 // Global search across all entities
 export async function GET(request: NextRequest) {
@@ -32,318 +31,299 @@ export async function GET(request: NextRequest) {
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const trimmedQuery = query.trim();
-        // Split into terms so "o 54" → ["o", "54"]: a record must match ALL terms (in ID or in title/other fields)
+        
+        // Prefix mapping
+        const PREFIX_MAP: Record<string, string> = {
+            'O': 'organization', 'J': 'job', 'JS': 'jobSeeker', 'L': 'lead',
+            'HM': 'hiringManager', 'T': 'task', 'P': 'placement'
+        };
+        
+        // Parse prefixed ID from query (e.g., "O10", "O 10", "JS13" -> {type: 'organization', recordNumber: 10})
+        const parsePrefixedId = (q: string): { type: string; recordNumber: number } | null => {
+            const upper = q.toUpperCase().replace(/\s+/g, ' ').trim();
+            for (const [prefix, entityType] of Object.entries(PREFIX_MAP)) {
+                if (upper.startsWith(prefix)) {
+                    const numPart = upper.substring(prefix.length).replace(/^\s+/, '');
+                    const num = parseInt(numPart, 10);
+                    if (num && num > 0) {
+                        return { type: entityType, recordNumber: num };
+                    }
+                }
+            }
+            return null;
+        };
+        
+        // Check if query is a prefixed ID search (e.g., "O10", "J5")
+        const prefixedSearch = parsePrefixedId(trimmedQuery);
+        
+        // If it's a prefixed ID search, we need to fetch that specific table and filter by record_number
+        if (prefixedSearch) {
+            const { type, recordNumber } = prefixedSearch;
+            
+            // Define endpoint and response key for each type
+            const endpointConfig: Record<string, { endpoint: string; responseKey: string; usesQueryParam?: boolean }> = {
+                organization: { endpoint: '/api/organizations', responseKey: 'organizations' },
+                job: { endpoint: '/api/jobs', responseKey: 'jobs' },
+                lead: { endpoint: '/api/leads/search/query', responseKey: 'leads', usesQueryParam: true },
+                jobSeeker: { endpoint: '/api/job-seekers', responseKey: 'jobSeekers' },
+                task: { endpoint: '/api/tasks', responseKey: 'tasks' },
+                hiringManager: { endpoint: '/api/hiring-managers/search/query', responseKey: 'hiringManagers', usesQueryParam: true },
+                placement: { endpoint: '/api/placements', responseKey: 'placements' },
+            };
+            
+            const config = endpointConfig[type];
+            if (!config) {
+                return NextResponse.json({ success: true, query, results: getEmptyResults() });
+            }
+            
+            try {
+                // For prefixed ID searches, we need to find records by record_number
+                // Records are sorted by record_number descending, so low record_numbers are at higher page numbers
+                
+                const results = getEmptyResults();
+                const paramName = config.usesQueryParam ? 'query' : 'search';
+                
+                // Try fetching with search parameter first (faster if backend matches record_number)
+                let matchedRecords: any[] = [];
+                let found = false;
+                
+                // Strategy 1: Try with search parameter
+                const searchUrl = `${apiUrl}${config.endpoint}?${paramName}=${recordNumber}&limit=500&page=1`;
+                const searchResponse = await fetch(searchUrl, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (searchResponse.ok) {
+                    const searchData = await searchResponse.json();
+                    const searchCollection = searchData[config.responseKey] || [];
+                    
+                    matchedRecords = searchCollection.filter((record: any) => {
+                        const recNum = Number(record.record_number ?? record.recordNumber);
+                        return recNum === recordNumber;
+                    });
+                    
+                    if (matchedRecords.length > 0) {
+                        found = true;
+                    }
+                }
+                
+                // Strategy 2: If not found and we have total count, calculate which page the record would be on
+                // Records appear to be sorted by record_number descending, so lower numbers are on higher pages
+                if (!found && matchedRecords.length === 0) {
+                    const pageSize = 500;
+                    // Estimate page based on total records - records are sorted descending
+                    // If total is 44322 and we're looking for record_number 10, 
+                    // it would be near the end (page ~89)
+                    
+                    // Try fetching from estimated page
+                    for (const pageEstimate of [85, 86, 87, 88, 89, 90]) {
+                        const pageUrl = `${apiUrl}${config.endpoint}?${paramName}=&limit=${pageSize}&page=${pageEstimate}`;
+                        const pageResponse = await fetch(pageUrl, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        
+                        if (!pageResponse.ok) break;
+                        
+                        const pageData = await pageResponse.json();
+                        const pageCollection = pageData[config.responseKey] || [];
+                        
+                        if (!Array.isArray(pageCollection) || pageCollection.length === 0) break;
+                        
+                        // Find the record with matching record_number
+                        const foundInPage = pageCollection.filter((record: any) => {
+                            const recNum = Number(record.record_number ?? record.recordNumber);
+                            return recNum === recordNumber;
+                        });
+                        
+                        if (foundInPage.length > 0) {
+                            matchedRecords = foundInPage;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                
+                (results as any)[config.responseKey] = matchedRecords.slice(0, perEntityLimit);
+                
+                return NextResponse.json({
+                    success: true,
+                    query,
+                    results,
+                    matchedBy: 'record_number',
+                    matchedType: type,
+                    matchedNumber: recordNumber,
+                    found
+                });
+            } catch (e) {
+                console.error(`Error fetching ${type} for prefix search:`, e);
+            }
+            
+            return NextResponse.json({ success: true, query, results: getEmptyResults() });
+        }
+        
+        // Normal search - no prefixed ID, search across all entities
         const terms = trimmedQuery.split(/\s+/).filter(Boolean);
         
-        // Parse prefixed ID if present (e.g., "O54", "O 54" -> {id: 54, type: 'organization'})
-        const parsedId = parseRecordId(trimmedQuery);
-
-        // When user searches by prefixed ID (O54, J8, JS123, etc.), fetch that record by ID so it always appears
-        const backendPathByType: Record<string, string> = {
-            job: '/api/jobs',
-            lead: '/api/leads',
-            jobSeeker: '/api/job-seekers',
-            organization: '/api/organizations',
-            task: '/api/tasks',
-            hiringManager: '/api/hiring-managers',
-            placement: '/api/placements',
-        };
-        const fetchByIdPromise = parsedId && backendPathByType[parsedId.type]
-            ? (async () => {
-                const normalizeSingle = (data: any) =>
-                    data.organization ?? data.job ?? data.lead ?? data.jobSeeker ?? data.task ?? data.hiringManager ?? data.placement ?? data;
-                const isExactRecordMatch = (item: any) =>
-                    Number(item?.id) === Number(parsedId.id) ||
-                    Number(item?.record_number ?? item?.recordNumber) === Number(parsedId.id);
-
-                // 1) Try direct :id lookup first.
-                try {
-                    const byPkRes = await fetch(`${apiUrl}${backendPathByType[parsedId.type]}/${parsedId.id}`, {
-                        headers: { 'Authorization': `Bearer ${token}` },
-                    });
-                    if (byPkRes.ok) {
-                        const byPkData = normalizeSingle(await byPkRes.json());
-                        if (byPkData && isExactRecordMatch(byPkData)) {
-                            return { type: parsedId.type, data: byPkData };
-                        }
-                    }
-                } catch {
-                    // ignore and continue with fallback strategy
-                }
-
-                // 2) Fallback by searching list endpoint with numeric part and exact record_number match.
-                try {
-                    let listUrl = `${apiUrl}${backendPathByType[parsedId.type]}?search=${encodeURIComponent(String(parsedId.id))}&limit=200&page=1`;
-                    // Leads and hiring managers use dedicated search endpoints in this backend.
-                    if (parsedId.type === 'lead') {
-                        listUrl = `${apiUrl}/api/leads/search/query?query=${encodeURIComponent(String(parsedId.id))}`;
-                    } else if (parsedId.type === 'hiringManager') {
-                        listUrl = `${apiUrl}/api/hiring-managers/search/query?query=${encodeURIComponent(String(parsedId.id))}`;
-                    }
-                    const listRes = await fetch(listUrl, {
-                        headers: { 'Authorization': `Bearer ${token}` },
-                    });
-                    if (listRes.ok) {
-                        const listData = await listRes.json();
-                        const collection =
-                            listData.organizations ??
-                            listData.jobs ??
-                            listData.leads ??
-                            listData.jobSeekers ??
-                            listData.tasks ??
-                            listData.hiringManagers ??
-                            listData.placements ??
-                            [];
-                        if (Array.isArray(collection)) {
-                            const exact = collection.find(isExactRecordMatch);
-                            if (exact) return { type: parsedId.type, data: exact };
-                        }
-                    }
-                } catch {
-                    // ignore
-                }
-
-                return { type: parsedId.type, data: null };
-            })()
-            : null;
-
-        // Search across all entities in parallel
-        const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes, byIdRes] = await Promise.allSettled([
-            // Jobs - backend query with paging
+        // Fetch all entities in parallel
+        const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes] = await Promise.allSettled([
             fetch(`${apiUrl}/api/jobs?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { jobs: [] }).catch(() => ({ jobs: [] })),
             
-            // Leads - use search endpoint or fetch all
-            fetch(`${apiUrl}/api/leads/search/query?query=${encodeURIComponent(query)}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            }).then(res => res.ok ? res.json() : { leads: [] }).catch(() => 
-                // Fallback: fetch all leads if search endpoint fails
-                fetch(`${apiUrl}/api/leads`, {
+            fetch(`${apiUrl}/api/leads/search/query?query=${encodeURIComponent(query)}&limit=200`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).then(res => res.ok ? res.json() : 
+                fetch(`${apiUrl}/api/leads?search=${encodeURIComponent(query)}&limit=200`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }).then(res => res.ok ? res.json() : { leads: [] }).catch(() => ({ leads: [] }))
             ),
             
-            // Job Seekers - no dedicated search endpoint yet, fallback to list + in-route filtering
-            fetch(`${apiUrl}/api/job-seekers`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            fetch(`${apiUrl}/api/job-seekers?search=${encodeURIComponent(query)}&limit=200`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { jobSeekers: [] }).catch(() => ({ jobSeekers: [] })),
             
-            // Organizations - backend query with paging
             fetch(`${apiUrl}/api/organizations?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { organizations: [] }).catch(() => ({ organizations: [] })),
             
-            // Tasks - no dedicated search endpoint yet, fallback to list + in-route filtering
-            fetch(`${apiUrl}/api/tasks`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            fetch(`${apiUrl}/api/tasks?search=${encodeURIComponent(query)}&limit=200`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { tasks: [] }).catch(() => ({ tasks: [] })),
             
-            // Hiring Managers - backend search endpoint
-            fetch(`${apiUrl}/api/hiring-managers/search/query?query=${encodeURIComponent(query)}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            fetch(`${apiUrl}/api/hiring-managers/search/query?query=${encodeURIComponent(query)}&limit=200`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { hiringManagers: [] }).catch(() => ({ hiringManagers: [] })),
             
-            // Placements - no dedicated search endpoint yet, fallback to list + in-route filtering
-            fetch(`${apiUrl}/api/placements`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+            fetch(`${apiUrl}/api/placements?search=${encodeURIComponent(query)}&limit=200`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { placements: [] }).catch(() => ({ placements: [] })),
-            // Prefixed-ID lookup (e.g. O54, J8) – ensures the exact record is always included
-            ...(fetchByIdPromise ? [fetchByIdPromise] : [Promise.resolve(null)])
         ]);
 
-        const results: any = {
-            jobs: [],
-            leads: [],
-            jobSeekers: [],
-            organizations: [],
-            tasks: [],
-            hiringManagers: [],
-            placements: []
-        };
-
-        // Require ALL terms to appear in a single value (used by recordMatchesAllTerms across fields)
-        // Record matches text if every term appears in at least one of the given fields
-        const recordMatchesAllTerms = (record: any, fieldKeys: string[]): boolean => {
+        // Helper to check if record matches terms
+        const recordMatchesTerms = (record: any, fieldKeys: string[]): boolean => {
             if (terms.length === 0) return false;
-            return terms.every((term) =>
+            
+            const getFieldValue = (rec: any, key: string): string => {
+                const parts = key.split('.');
+                let val: any = rec;
+                for (const part of parts) {
+                    if (val === null || val === undefined) return '';
+                    val = val[part];
+                }
+                return String(val ?? '');
+            };
+            
+            // Check if ANY term matches in ANY field
+            return terms.some((term) =>
                 fieldKeys.some((key) =>
-                    String(record[key] ?? '').toLowerCase().includes(term.toLowerCase())
+                    getFieldValue(record, key).toLowerCase().includes(term.toLowerCase())
                 )
             );
         };
-        // Helper: record ID matches prefixed ID (e.g. O 54 → org 54) or id string contains all terms
-        const matchesId = (
-            id: any,
-            type: 'job' | 'jobSeeker' | 'organization' | 'lead' | 'task' | 'placement' | 'hiringManager',
-            recordNumber?: any,
-        ): boolean => {
-            if ((id === undefined || id === null) && (recordNumber === undefined || recordNumber === null)) {
-                return false;
-            }
-            if (
-                parsedId &&
-                parsedId.type === type &&
-                (parsedId.id === Number(id) || parsedId.id === Number(recordNumber))
-            ) {
-                return true;
-            }
-            if (terms.length === 0) return false;
-            const idStr = String(id ?? '').toLowerCase();
-            const recordNumberStr = String(recordNumber ?? '').toLowerCase();
-            return terms.every((t) => {
-                const needle = t.toLowerCase();
-                return idStr.includes(needle) || recordNumberStr.includes(needle);
-            });
-        };
 
-        // Process jobs results: match prefixed ID (e.g. J8) OR all terms in id/title/other fields
-        const jobFields = ['job_title', 'title', 'company_name', 'organization_name', 'location', 'description', 'id'];
+        const results: any = getEmptyResults();
+
+        // Process jobs
+        const jobFields = ['job_title', 'title', 'company_name', 'organization_name', 'location', 'description', 'id',
+            'skills', 'requirements', 'organization.website'];
         if (jobsRes.status === 'fulfilled') {
             try {
                 const data = jobsRes.value;
                 const jobs = data.jobs || data || [];
                 results.jobs = jobs
-                    .filter((job: any) =>
-                        matchesId(job.id, 'job', job.record_number ?? job.recordNumber) ||
-                        recordMatchesAllTerms(job, [...jobFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((job: any) => recordMatchesTerms(job, [...jobFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing jobs results:', e);
             }
         }
 
-        // Process leads results
-        const leadFields = ['name', 'first_name', 'last_name', 'company_name', 'email', 'phone', 'id'];
+        // Process leads
+        const leadFields = ['name', 'first_name', 'last_name', 'company_name', 'email', 'phone', 'id', 
+            'organization.name', 'organization.website'];
         if (leadsRes.status === 'fulfilled') {
             try {
                 const data = leadsRes.value;
                 const leads = data.leads || data || [];
                 results.leads = Array.isArray(leads)
-                    ? leads
-                        .filter((lead: any) =>
-                            matchesId(lead.id, 'lead', lead.record_number ?? lead.recordNumber) ||
-                            recordMatchesAllTerms(lead, [...leadFields, 'record_number', 'recordNumber'])
-                        )
-                        .slice(0, perEntityLimit)
+                    ? leads.filter((lead: any) => recordMatchesTerms(lead, [...leadFields, 'record_number', 'recordNumber'])).slice(0, perEntityLimit)
                     : leads;
             } catch (e) {
                 console.error('Error processing leads results:', e);
             }
         }
 
-        // Process job seekers results
-        const jobSeekerFields = ['first_name', 'last_name', 'name', 'email', 'phone', 'title', 'id'];
+        // Process job seekers
+        const jobSeekerFields = ['first_name', 'last_name', 'name', 'email', 'phone', 'title', 'id',
+            'skills', 'current_position', 'location'];
         if (jobSeekersRes.status === 'fulfilled') {
             try {
                 const data = jobSeekersRes.value;
                 const jobSeekers = data.jobSeekers || data || [];
                 results.jobSeekers = jobSeekers
-                    .filter((js: any) =>
-                        matchesId(js.id, 'jobSeeker', js.record_number ?? js.recordNumber) ||
-                        recordMatchesAllTerms(js, [...jobSeekerFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((js: any) => recordMatchesTerms(js, [...jobSeekerFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing job seekers results:', e);
             }
         }
 
-        // Process organizations results
-        const orgFields = ['name', 'website', 'phone', 'address', 'overview', 'id'];
+        // Process organizations
+        const orgFields = ['name', 'website', 'phone', 'address', 'overview', 'id',
+            'industry', 'notes'];
         if (organizationsRes.status === 'fulfilled') {
             try {
                 const data = organizationsRes.value;
                 const organizations = data.organizations || data || [];
                 results.organizations = organizations
-                    .filter((org: any) =>
-                        matchesId(org.id, 'organization', org.record_number ?? org.recordNumber) ||
-                        recordMatchesAllTerms(org, [...orgFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((org: any) => recordMatchesTerms(org, [...orgFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing organizations results:', e);
             }
         }
 
-        // Process tasks results
-        const taskFields = ['title', 'task_title', 'description', 'notes', 'id'];
+        // Process tasks
+        const taskFields = ['title', 'task_title', 'description', 'notes', 'id', 'status'];
         if (tasksRes.status === 'fulfilled') {
             try {
                 const data = tasksRes.value;
                 const tasks = data.tasks || data || [];
                 results.tasks = tasks
-                    .filter((task: any) =>
-                        matchesId(task.id, 'task', task.record_number ?? task.recordNumber) ||
-                        recordMatchesAllTerms(task, [...taskFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((task: any) => recordMatchesTerms(task, [...taskFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing tasks results:', e);
             }
         }
 
-        // Process hiring managers results
-        const hmFields = ['name', 'first_name', 'last_name', 'email', 'phone', 'organization_name', 'id'];
+        // Process hiring managers
+        const hmFields = ['name', 'first_name', 'last_name', 'email', 'phone', 'id',
+            'organization.name', 'organization_name', 'title', 'department'];
         if (hiringManagersRes.status === 'fulfilled') {
             try {
                 const data = hiringManagersRes.value;
                 const hiringManagers = data.hiringManagers || data.hiring_managers || data || [];
                 results.hiringManagers = (Array.isArray(hiringManagers) ? hiringManagers : [])
-                    .filter((hm: any) =>
-                        matchesId(hm.id, 'hiringManager', hm.record_number ?? hm.recordNumber) ||
-                        recordMatchesAllTerms(hm, [...hmFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((hm: any) => recordMatchesTerms(hm, [...hmFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing hiring managers results:', e);
             }
         }
 
-        // Process placements results
-        const placementFields = ['job_title', 'jobSeekerName', 'job_seeker_name', 'status', 'id'];
+        // Process placements
+        const placementFields = ['job_title', 'jobSeekerName', 'job_seeker_name', 'status', 'id',
+            'organization.name', 'organization_name', 'notes'];
         if (placementsRes.status === 'fulfilled') {
             try {
                 const data = placementsRes.value;
                 const placements = data.placements || data || [];
                 results.placements = (Array.isArray(placements) ? placements : [])
-                    .filter((placement: any) =>
-                        matchesId(placement.id, 'placement', placement.record_number ?? placement.recordNumber) ||
-                        recordMatchesAllTerms(placement, [...placementFields, 'record_number', 'recordNumber'])
-                    )
+                    .filter((placement: any) => recordMatchesTerms(placement, [...placementFields, 'record_number', 'recordNumber']))
                     .slice(0, perEntityLimit);
             } catch (e) {
                 console.error('Error processing placements results:', e);
-            }
-        }
-
-        // When user searched by prefixed ID (O54, J8, O 54, etc.), ensure that exact record is in results
-        const resultsKeyByType: Record<string, keyof typeof results> = {
-            organization: 'organizations', job: 'jobs', lead: 'leads', jobSeeker: 'jobSeekers',
-            task: 'tasks', hiringManager: 'hiringManagers', placement: 'placements',
-        };
-        if (byIdRes?.status === 'fulfilled' && byIdRes.value?.data) {
-            const { type, data } = byIdRes.value;
-            const key = resultsKeyByType[type];
-            if (key) {
-                const arr = results[key];
-                const exists = Array.isArray(arr) && arr.some((r: any) => Number(r?.id) === Number(data?.id));
-                if (!exists) (results as any)[key] = [data, ...(Array.isArray(arr) ? arr : [])];
             }
         }
 
@@ -361,3 +341,14 @@ export async function GET(request: NextRequest) {
     }
 }
 
+function getEmptyResults() {
+    return {
+        jobs: [],
+        leads: [],
+        jobSeekers: [],
+        organizations: [],
+        tasks: [],
+        hiringManagers: [],
+        placements: []
+    };
+}
