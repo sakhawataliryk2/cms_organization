@@ -178,14 +178,29 @@ function SortableColumnHeader({
             e.stopPropagation();
             onSort();
           }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+          className="flex flex-col items-center leading-none transition-colors hover:text-gray-700"
+          title={
+            sortState === null
+              ? "Sort ascending"
+              : sortState === "asc"
+                ? "Sort descending"
+                : "Remove sort"
+          }
         >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
+          <FiArrowUp
+            size={12}
+            className={
+              sortState === "asc" ? "text-blue-600" : "text-gray-300"
+            }
+          />
+          <FiArrowDown
+            size={12}
+            className={
+              sortState === "desc"
+                ? "text-blue-600 -mt-1"
+                : "text-gray-300 -mt-1"
+            }
+          />
         </button>
 
         {/* Filter Toggle */}
@@ -674,7 +689,17 @@ export default function PlacementList() {
     setError(null);
 
     try {
-      const response = await fetch("/api/placements");
+      const activeSorts = Object.entries(columnSorts).filter(
+        ([_, dir]) => dir !== null,
+      );
+      const query = new URLSearchParams();
+      if (activeSorts.length > 0) {
+        const [sortKey, sortDir] = activeSorts[0];
+        query.set("sort", sortKey);
+        query.set("order", sortDir === "asc" ? "ASC" : "DESC");
+      }
+      const qs = query.toString();
+      const response = await fetch(`/api/placements${qs ? `?${qs}` : ""}`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -770,34 +795,8 @@ export default function PlacementList() {
       });
     });
 
-    // Apply sorting
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        let aValue = getColumnValue(a, sortKey);
-        let bValue = getColumnValue(b, sortKey);
-
-        // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-        }
-
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
     return result;
-  }, [placements, searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
+  }, [placements, searchTerm, columnFilters, advancedSearchCriteria]);
 
   const showTableSkeleton = isLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>

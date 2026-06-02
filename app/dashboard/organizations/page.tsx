@@ -190,14 +190,29 @@ function SortableColumnHeader({
             e.stopPropagation();
             onSort();
           }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+          className="flex flex-col items-center leading-none transition-colors hover:text-gray-700"
+          title={
+            sortState === null
+              ? "Sort ascending"
+              : sortState === "asc"
+                ? "Sort descending"
+                : "Remove sort"
+          }
         >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
+          <FiArrowUp
+            size={12}
+            className={
+              sortState === "asc" ? "text-blue-600" : "text-gray-300"
+            }
+          />
+          <FiArrowDown
+            size={12}
+            className={
+              sortState === "desc"
+                ? "text-blue-600 -mt-1"
+                : "text-gray-300 -mt-1"
+            }
+          />
         </button>
 
         {/* Filter Toggle */}
@@ -362,7 +377,7 @@ export default function OrganizationList() {
     null,
   );
 
-  // Handle column sort toggle
+  // Handle column sort toggle — re-fetches from server with sort params
   const handleColumnSort = (columnKey: string) => {
     setColumnSorts((prev) => {
       const current = prev[columnKey];
@@ -376,6 +391,8 @@ export default function OrganizationList() {
         return { ...prev, [columnKey]: "asc" };
       }
     });
+    setCurrentPage(1);
+    organizationsQueryCacheRef.current.clear();
   };
 
   // Handle column filter change
@@ -752,7 +769,12 @@ export default function OrganizationList() {
   const fetchOrganizations = useCallback(
     async (page: number) => {
       const normalizedSearch = searchTerm.trim().toLowerCase();
-      const cacheKey = `${page}|${pageSize}|${normalizedSearch}`;
+      const activeSorts = Object.entries(columnSorts).filter(
+        ([_, dir]) => dir !== null,
+      );
+      const sortKey = activeSorts.length > 0 ? activeSorts[0][0] : '';
+      const sortDir = activeSorts.length > 0 ? activeSorts[0][1] : '';
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}|${sortKey}|${sortDir}`;
       const cached = organizationsQueryCacheRef.current.get(cacheKey);
       if (cached) {
         setOrganizations(cached.organizations);
@@ -784,6 +806,11 @@ export default function OrganizationList() {
         });
         if (normalizedSearch !== "") {
           query.set("search", searchTerm.trim());
+        }
+
+        if (sortKey) {
+          query.set("sort", sortKey);
+          query.set("order", sortDir === "asc" ? "ASC" : "DESC");
         }
 
         const response = await fetch(`/api/organizations?${query.toString()}`, {
@@ -839,7 +866,7 @@ export default function OrganizationList() {
         setIsPageLoading(false);
       }
     },
-    [pageSize, searchTerm],
+    [pageSize, searchTerm, columnSorts],
   );
 
   const isAdvancedFullMode = advancedSearchCriteria.length > 0;
@@ -1147,46 +1174,12 @@ export default function OrganizationList() {
       );
     }
 
-    // Apply sorting (multiple columns supported, but we'll use the first active sort)
-    const activeSorts = Object.entries(columnSorts).filter(
-      ([_, dir]) => dir !== null,
-    );
-    if (activeSorts.length > 0) {
-      // Sort by the first active sort column
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        const aValue = getColumnValue(a, sortKey);
-        const bValue = getColumnValue(b, sortKey);
-
-        // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(
-            String(bValue ?? ""),
-            undefined,
-            {
-              numeric: true,
-              sensitivity: "base",
-            },
-          );
-        }
-
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
     return result;
   }, [
     organizations,
     advancedOrganizationsDataset,
     isAdvancedFullMode,
     columnFilters,
-    columnSorts,
     deferredSearchTerm,
     advancedSearchCriteria,
     shouldApplyClientGlobalSearch,
