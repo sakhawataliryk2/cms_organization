@@ -1,25 +1,27 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
+import { FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import CountdownTimer from "@/components/CountdownTimer";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import SortableColumnHeader, {
+  type ColumnFilterState,
+  type ColumnSortState,
+} from "@/components/SortableColumnHeader";
+import ServerListPagination from "@/components/ServerListPagination";
 
 interface Job {
   id: string;
@@ -38,9 +40,6 @@ interface Job {
   archive_reason?: string | null;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
 type JobFavorite = {
   id: string;
   name: string;
@@ -53,186 +52,53 @@ type JobFavorite = {
 
 const FAVORITES_STORAGE_KEY = "jobsArchivedFavorites";
 
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) { setFilterPosition(null); return; }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({ top: btnRect.bottom + 4, left: thRect.left, width: Math.max(150, Math.min(250, thRect.width)) });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => { thRef.current = node; setNodeRef(node); }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        <span className="flex-1">{label}</span>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
-        >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
-        </button>
-
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => { onFilterChange(""); setShowFilter(false); }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-    </th>
-  );
-}
-
 export default function ArchivedJobsList() {
   const router = useRouter();
+
+  const {
+    items: jobs,
+    searchInput,
+    setSearchInput,
+    searchTerm,
+    columnSorts,
+    setColumnSorts,
+    columnFilters,
+    setColumnFilters,
+    pageSize,
+    setPageSize,
+    currentPage,
+    setCurrentPage,
+    totalCount: totalJobsCount,
+    totalPages,
+    visibleResultsCount,
+    isLoading,
+    isPageLoading,
+    error,
+    setError,
+    fetchPage,
+    clearCache,
+    handleColumnSort,
+    handleColumnFilter,
+    handleClearAllFilters: clearListFilters,
+    PAGE_SIZE_OPTIONS,
+    canGoPrev,
+    canGoNext,
+    paginationItems,
+    showTableSkeleton,
+  } = useServerEntityList<Job>({
+    apiPath: "/api/jobs",
+    responseKey: "jobs",
+    extraQueryParams: { archivedOnly: "1" },
+  });
+
+  const refreshList = () => {
+    clearCache();
+    void fetchPage(currentPage);
+  };
+
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [favorites, setFavorites] = useState<JobFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
@@ -252,9 +118,6 @@ export default function ArchivedJobsList() {
       }
     }
   }, []);
-
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   const persistFavorites = (updated: JobFavorite[]) => {
     setFavorites(updated);
@@ -504,7 +367,7 @@ export default function ArchivedJobsList() {
       nextSorts[k] = v;
     }
 
-    setSearchTerm(fav.searchTerm || "");
+    setSearchInput(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
@@ -551,61 +414,8 @@ export default function ArchivedJobsList() {
   };
 
   const handleClearAllFilters = () => {
-    setSearchTerm("");
-    setColumnFilters({});
-    setColumnSorts({});
+    clearListFilters();
     setSelectedFavoriteId(null);
-  };
-
-  const fetchJobs = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/jobs", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch jobs");
-      const data = await response.json();
-      setJobs(data.jobs || []);
-    } catch (err) {
-      console.error("Error fetching jobs:", err);
-      setError(err instanceof Error ? err.message : "An error occurred while fetching jobs");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchJobs();
-  }, []);
-
-  const handleColumnSort = (columnKey: string) => {
-    setColumnSorts((prev) => {
-      const current = prev[columnKey];
-      if (current === "asc") return { ...prev, [columnKey]: "desc" };
-      if (current === "desc") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      }
-      return { ...prev, [columnKey]: "asc" };
-    });
-  };
-
-  const handleColumnFilter = (columnKey: string, value: string) => {
-    setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      }
-      return { ...prev, [columnKey]: value };
-    });
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -635,62 +445,14 @@ export default function ArchivedJobsList() {
     []
   );
 
-  const filteredAndSortedJobs = useMemo(() => {
-    let result = jobs.filter((j) => j.status === "Archived" || !!j.archived_at);
+  const filteredAndSortedJobs = jobs;
 
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
-      result = result.filter((job) => {
-        const value = getColumnValue(job, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
-        const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo && (columnInfo as any).filterType === "number") {
-          return String(value) === String(filterValue);
-        }
-        return valueStr.includes(filterStr);
-      });
-    });
-
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((job) =>
-        (job.job_title || "").toLowerCase().includes(term) ||
-        String(job.id || "").toLowerCase().includes(term) ||
-        String(job.record_number ?? "").toLowerCase().includes(term) ||
-        (job.organization_name || "").toLowerCase().includes(term) ||
-        (job.category || "").toLowerCase().includes(term) ||
-        (job.job_type || "").toLowerCase().includes(term) ||
-        (job.worksite_location || "").toLowerCase().includes(term) ||
-        (job.archive_reason || "").toLowerCase().includes(term)
-      );
-    }
-
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        const aValue = getColumnValue(a, sortKey);
-        const bValue = getColumnValue(b, sortKey);
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) cmp = aNum - bNum;
-        else cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, { numeric: true, sensitivity: "base" });
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [jobs, columnFilters, columnSorts, searchTerm]);
-
-  const showTableSkeleton = isLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>
     jobColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
-  const skeletonRowCount = 12;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleViewJob = (id: string) => {
     router.push(`/dashboard/jobs/view?id=${id}`);
@@ -727,7 +489,7 @@ export default function ArchivedJobsList() {
 
     if (!window.confirm(confirmMessage)) return;
 
-    setIsLoading(true);
+    setIsDeleting(true);
 
     try {
       const deletePromises = selectedJobs.map((id) =>
@@ -746,14 +508,14 @@ export default function ArchivedJobsList() {
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length > 0) throw new Error(`Failed to delete ${failures.length} jobs`);
 
-      await fetchJobs();
+      await refreshList();
       setSelectedJobs([]);
       setSelectAll(false);
     } catch (err) {
       console.error("Error deleting jobs:", err);
       setError(err instanceof Error ? err.message : "An error occurred while deleting jobs");
     } finally {
-      setIsLoading(false);
+      setIsDeleting(false);
     }
   };
 
@@ -779,22 +541,23 @@ export default function ArchivedJobsList() {
                 <input
                   type="text"
                   placeholder="Search archived jobs..."
-                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
-                {isLoading && (
-                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                  {(isLoading || isPageLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  </div>
-                )}
+                  )}
+                  <span>{isLoading ? "…" : `${visibleResultsCount} found`}</span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
                   </svg>
                 </div>
               </div>
-              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+              {(searchInput || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
                 <button onClick={handleClearAllFilters} className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2">
                   <FiX /> Clear All
                 </button>
@@ -942,7 +705,7 @@ export default function ArchivedJobsList() {
                             label: "Delete",
                             action: async () => {
                               if (!window.confirm("Are you sure you want to delete this job?")) return;
-                              setIsLoading(true);
+                              setIsDeleting(true);
                               try {
                                 const token = document.cookie
                                   .split("; ")
@@ -953,11 +716,11 @@ export default function ArchivedJobsList() {
                                   headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                                 });
                                 if (!res.ok) throw new Error("Failed to delete job");
-                                await fetchJobs();
+                                await refreshList();
                               } catch (err) {
                                 setError(err instanceof Error ? err.message : "Delete failed");
                               } finally {
-                                setIsLoading(false);
+                                setIsDeleting(false);
                               }
                             },
                           },
@@ -1017,50 +780,26 @@ export default function ArchivedJobsList() {
         </DndContext>
       </div>
 
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            {showTableSkeleton ? (
-              <p className="text-sm text-gray-500">Loading results…</p>
-            ) : (
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-                of{" "}
-                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-                results
-              </p>
-            )}
-          </div>
-          {!showTableSkeleton && filteredAndSortedJobs.length > 0 && (
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">1</button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
-        </div>
-      </div>
+      <ServerListPagination
+        entityLabel="jobs"
+        currentPage={currentPage}
+        pageSize={pageSize}
+        itemsOnPage={filteredAndSortedJobs.length}
+        totalCount={totalJobsCount}
+        totalPages={totalPages}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        canGoPrev={canGoPrev}
+        canGoNext={canGoNext}
+        paginationItems={paginationItems}
+        isLoading={showTableSkeleton}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setCurrentPage(1);
+          setSelectedJobs([]);
+          setSelectAll(false);
+        }}
+      />
 
       <SortableFieldsEditModal
         open={showColumnModal}

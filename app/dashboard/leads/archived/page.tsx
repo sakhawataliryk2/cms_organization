@@ -1,24 +1,18 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
 import {
-  FiArrowUp,
-  FiArrowDown,
-  FiFilter,
   FiStar,
   FiChevronDown,
   FiChevronLeft,
@@ -28,6 +22,11 @@ import ActionDropdown from "@/components/ActionDropdown";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
+import SortableColumnHeader, {
+  type ColumnFilterState,
+  type ColumnSortState,
+} from "@/components/SortableColumnHeader";
+import ServerListPagination from "@/components/ServerListPagination";
 
 interface Lead {
   id: string;
@@ -51,9 +50,6 @@ interface Lead {
   archive_reason?: string | null;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
 type LeadFavorite = {
   id: string;
   name: string;
@@ -64,209 +60,50 @@ type LeadFavorite = {
   createdAt: number;
 };
 
-// Sortable Column Header Component
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-  children,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-  children?: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) {
-      setFilterPosition(null);
-      return;
-    }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({
-      top: btnRect.bottom + 4,
-      left: thRect.left,
-      width: Math.max(150, Math.min(250, thRect.width)),
-    });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => {
-        thRef.current = node;
-        setNodeRef(node);
-      }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        {/* Column Label */}
-        <span className="flex-1">{label}</span>
-
-        {/* Sort Control */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
-        >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
-        </button>
-
-
-        {/* Filter Toggle */}
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {/* Filter Dropdown (portal so it stays on top) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{
-            position: "fixed",
-            top: filterPosition.top,
-            left: filterPosition.left,
-            width: filterPosition.width,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => {
-                onFilterChange("");
-                setShowFilter(false);
-              }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-    </th>
-  );
-}
-
 export default function ArchivedLeadsList() {
   const router = useRouter();
 
   const FAVORITES_STORAGE_KEY = "leadArchivedFavorites";
+
+  const {
+    items: leads,
+    searchInput,
+    setSearchInput,
+    searchTerm,
+    columnSorts,
+    setColumnSorts,
+    columnFilters,
+    setColumnFilters,
+    pageSize,
+    setPageSize,
+    currentPage,
+    setCurrentPage,
+    totalCount: totalLeadsCount,
+    totalPages,
+    visibleResultsCount,
+    isLoading,
+    isPageLoading,
+    error,
+    fetchPage,
+    clearCache,
+    handleColumnSort,
+    handleColumnFilter,
+    handleClearAllFilters: clearListFilters,
+    PAGE_SIZE_OPTIONS,
+    canGoPrev,
+    canGoNext,
+    paginationItems,
+    showTableSkeleton,
+  } = useServerEntityList<Lead>({
+    apiPath: "/api/leads",
+    responseKey: "leads",
+    extraQueryParams: { archivedOnly: "1" },
+  });
+
+  const refreshList = () => {
+    clearCache();
+    void fetchPage(currentPage);
+  };
 
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management + archive_reason
@@ -316,12 +153,6 @@ export default function ArchivedLeadsList() {
     localStorage.setItem("leadArchivedColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
-
   const [favorites, setFavorites] = useState<LeadFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
@@ -332,34 +163,6 @@ export default function ArchivedLeadsList() {
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  // Handle column sort toggle
-  const handleColumnSort = (columnKey: string) => {
-    setColumnSorts((prev) => {
-      const current = prev[columnKey];
-      if (current === "asc") {
-        return { ...prev, [columnKey]: "desc" };
-      } else if (current === "desc") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      } else {
-        return { ...prev, [columnKey]: "asc" };
-      }
-    });
-  };
-
-  // Handle column filter change
-  const handleColumnFilter = (columnKey: string, value: string) => {
-    setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      }
-      return { ...prev, [columnKey]: value };
-    });
-  };
 
   // Handle drag end for column reordering
   const handleDragEnd = (event: DragEndEvent) => {
@@ -451,14 +254,10 @@ export default function ArchivedLeadsList() {
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [favoritesMenuOpen]);
 
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -587,37 +386,6 @@ export default function ArchivedLeadsList() {
     }
   };
 
-  // Fetch leads on component mount
-  useEffect(() => {
-    fetchLeads();
-  }, []);
-
-  const fetchLeads = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/leads");
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch leads");
-      }
-
-      const data = await response.json();
-      setLeads(data.leads || []);
-    } catch (err) {
-      console.error("Error fetching leads:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching leads"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Get unique status values for filter dropdown
   const statusOptions = useMemo(() => {
     const statuses = new Set<string>();
@@ -656,7 +424,7 @@ export default function ArchivedLeadsList() {
       nextSorts[k] = v;
     }
 
-    setSearchTerm(fav.searchTerm || "");
+    setSearchInput(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
@@ -698,101 +466,18 @@ export default function ArchivedLeadsList() {
   };
 
   const handleClearAllFilters = () => {
-    setSearchTerm("");
-    setColumnFilters({});
-    setColumnSorts({});
+    clearListFilters();
     setSelectedFavoriteId("");
   };
 
-  // Apply per-column filtering and sorting (only archived records)
-  const filteredAndSortedLeads = useMemo(() => {
-    let result = leads.filter(
-      (lead) => lead.status === "Archived" || !!lead.archived_at
-    );
+  const filteredAndSortedLeads = leads;
 
-    // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((lead) =>
-        (lead.first_name || "").toLowerCase().includes(term) ||
-        (lead.last_name || "").toLowerCase().includes(term) ||
-        (lead.full_name || "").toLowerCase().includes(term) ||
-        String(lead.id || "").toLowerCase().includes(term) ||
-        String(lead.record_number ?? "").toLowerCase().includes(term) ||
-        (lead.email || "").toLowerCase().includes(term) ||
-        (lead.phone || "").toLowerCase().includes(term) ||
-        (lead.status || "").toLowerCase().includes(term) ||
-        (lead.title || "").toLowerCase().includes(term) ||
-        (lead.organization_name_from_org || "").toLowerCase().includes(term) ||
-        (lead.owner || "").toLowerCase().includes(term) ||
-        (lead.archive_reason || "").toLowerCase().includes(term)
-      );
-    }
-
-    // Apply filters
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
-
-      result = result.filter((lead) => {
-        const value = getColumnValue(lead, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
-
-        // For number columns, do exact match
-        const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo && (columnInfo.filterType as string) === "number") {
-          return String(value) === String(filterValue);
-        }
-
-        // For text columns, do contains match
-        return valueStr.includes(filterStr);
-      });
-    });
-
-    // Apply sorting (multiple columns supported, but we'll use the first active sort)
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      // Sort by the first active sort column
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        const aValue = getColumnValue(a, sortKey);
-        const bValue = getColumnValue(b, sortKey);
-
-        // Handle dates properly
-        if (sortKey === "created_at") {
-          const aDate = new Date(a.created_at).getTime();
-          const bDate = new Date(b.created_at).getTime();
-          return sortDir === "asc" ? aDate - bDate : bDate - aDate;
-        }
-
-        // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-        }
-
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [leads, columnFilters, columnSorts, searchTerm]);
-
-  const showTableSkeleton = isLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>
-    columnsCatalog.some((c) => c.key === k)
+    columnsCatalog.some((c) => c.key === k),
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
-  const skeletonRowCount = 12;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleBackToLeads = () => {
     router.push("/dashboard/leads");
@@ -854,7 +539,7 @@ export default function ArchivedLeadsList() {
         throw new Error(`Failed to delete ${failures.length} leads`);
       }
 
-      await fetchLeads();
+      await refreshList();
       setSelectedLeads([]);
       setSelectAll(false);
     } catch (err) {
@@ -895,15 +580,18 @@ export default function ArchivedLeadsList() {
                 <input
                   type="text"
                   placeholder="Search archived leads..."
-                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
-                {isLoading && (
-                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                  {(isLoading || isPageLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  </div>
-                )}
+                  )}
+                  <span>
+                    {isLoading ? "…" : `${visibleResultsCount} found`}
+                  </span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -919,7 +607,7 @@ export default function ArchivedLeadsList() {
                   </svg>
                 </div>
               </div>
-              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+              {(searchInput || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
                 <button
                   onClick={handleClearAllFilters}
                   className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
@@ -1246,7 +934,7 @@ export default function ArchivedLeadsList() {
                                   );
                                   if (!response.ok)
                                     throw new Error("Failed to delete lead");
-                                  await fetchLeads();
+                                  await refreshList();
                                 } catch (err) {
                                   setDeleteError(
                                     err instanceof Error
@@ -1330,80 +1018,26 @@ export default function ArchivedLeadsList() {
           </DndContext>
         </div>
 
-        {/* Pagination */}
-        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-              Previous
-            </button>
-            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-              Next
-            </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              {showTableSkeleton ? (
-                <p className="text-sm text-gray-500">Loading results…</p>
-              ) : (
-                <p className="text-sm text-gray-700">
-                  Showing <span className="font-medium">1</span> to{" "}
-                  <span className="font-medium">
-                    {filteredAndSortedLeads.length}
-                  </span>{" "}
-                  of{" "}
-                  <span className="font-medium">
-                    {filteredAndSortedLeads.length}
-                  </span>{" "}
-                  results
-                </p>
-              )}
-            </div>
-            {!showTableSkeleton && filteredAndSortedLeads.length > 0 && (
-              <div>
-                <nav
-                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                  aria-label="Pagination"
-                >
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Previous</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    1
-                  </button>
-                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                    <span className="sr-only">Next</span>
-                    <svg
-                      className="h-5 w-5"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                </nav>
-              </div>
-            )}
-          </div>
-        </div>
+        <ServerListPagination
+          entityLabel="leads"
+          currentPage={currentPage}
+          pageSize={pageSize}
+          itemsOnPage={filteredAndSortedLeads.length}
+          totalCount={totalLeadsCount}
+          totalPages={totalPages}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          canGoPrev={canGoPrev}
+          canGoNext={canGoNext}
+          paginationItems={paginationItems}
+          isLoading={showTableSkeleton}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+            setSelectedLeads([]);
+            setSelectAll(false);
+          }}
+        />
       </div>
 
       {/* Column Customization Modal - uses universal SortableFieldsEditModal */}

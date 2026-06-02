@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import jwt from 'jsonwebtoken';  // Add this import
+import jwt from 'jsonwebtoken';
+import { buildListQueryString } from '@/lib/apiListParams';
 const CREATE_ORGANIZATION_TIMEOUT_MS = 20000;
 
 export async function GET(request: NextRequest) {
@@ -16,15 +17,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Forward pagination/sorting/search params to backend when provided
-        const incomingParams = request.nextUrl.searchParams;
-        const passthroughKeys = ["page", "limit", "offset", "q", "search", "sort", "order"];
-        const qs = new URLSearchParams();
-        for (const key of passthroughKeys) {
-            const value = incomingParams.get(key);
-            if (value !== null && value !== "") qs.set(key, value);
-        }
-        const queryString = qs.toString();
+        const queryString = buildListQueryString(request.nextUrl.searchParams);
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';

@@ -1,33 +1,34 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
-import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
+import { FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
+import { IoFilterSharp } from "react-icons/io5";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
 import BulkActionsButton from "@/components/BulkActionsButton";
 import { toast } from "sonner";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import SortableColumnHeader, {
+  type ColumnFilterState,
+  type ColumnSortState,
+} from "@/components/SortableColumnHeader";
+import ServerListPagination from "@/components/ServerListPagination";
 import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
-import { IoFilterSharp } from "react-icons/io5";
 
 type PlacementFavorite = {
   id: string;
@@ -66,199 +67,6 @@ interface Placement {
   custom_fields?: Record<string, any>;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
-// Sortable Column Header Component
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-  children,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-  children?: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) {
-      setFilterPosition(null);
-      return;
-    }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({
-      top: btnRect.bottom + 4,
-      left: thRect.left,
-      width: Math.max(150, Math.min(250, thRect.width)),
-    });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => {
-        thRef.current = node;
-        setNodeRef(node);
-      }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        {/* Column Label */}
-        <span className="flex-1">{label}</span>
-
-        {/* Sort Control */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
-        >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
-        </button>
-
-        {/* Filter Toggle */}
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {/* Filter Dropdown (portal) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => { onFilterChange(""); setShowFilter(false); }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-    </th>
-  );
-}
-
 const getStatusColor = (status?: string) => {
   const s = (status || "").toLowerCase();
   if (s === "active") return "bg-green-100 text-green-800";
@@ -279,27 +87,57 @@ const formatDate = (dateString: string) => {
 
 export default function PlacementList() {
   const router = useRouter();
-  const [searchTerm, setSearchTerm] = useState("");
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
     AdvancedSearchCriterion[]
   >([]);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
-  const [placements, setPlacements] = useState<Placement[]>([]);
   const [selectedPlacements, setSelectedPlacements] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const {
+    items: placements,
+    searchInput,
+    setSearchInput,
+    searchTerm,
+    columnSorts,
+    setColumnSorts,
+    columnFilters,
+    setColumnFilters,
+    pageSize,
+    setPageSize,
+    currentPage,
+    setCurrentPage,
+    totalCount: totalPlacementsCount,
+    totalPages,
+    visibleResultsCount: serverVisibleResultsCount,
+    isLoading,
+    isPageLoading,
+    error,
+    fetchPage,
+    clearCache,
+    handleColumnSort,
+    handleColumnFilter,
+    handleClearAllFilters: clearListFilters,
+    PAGE_SIZE_OPTIONS,
+    canGoPrev,
+    canGoNext,
+    paginationItems,
+    showTableSkeleton,
+  } = useServerEntityList<Placement>({
+    apiPath: "/api/placements",
+    responseKey: "placements",
+    extraQueryParams: { archivedOnly: "1" },
+  });
 
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const refreshList = useCallback(() => {
+    clearCache();
+    void fetchPage(currentPage);
+  }, [clearCache, fetchPage, currentPage]);
 
   // Favorites State
   const [favorites, setFavorites] = useState<PlacementFavorite[]>([]);
@@ -346,9 +184,10 @@ export default function PlacementList() {
       nextSorts[k] = v;
     }
 
-    setSearchTerm(fav.searchTerm || "");
+    setSearchInput(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
+    clearCache();
     if (validColumnFields.length > 0) {
       setColumnFields(validColumnFields);
     }
@@ -400,9 +239,7 @@ export default function PlacementList() {
   };
 
   const handleClearAllFilters = () => {
-    setSearchTerm("");
-    setColumnFilters({});
-    setColumnSorts({});
+    clearListFilters();
     setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
   };
@@ -427,6 +264,33 @@ export default function PlacementList() {
       .replace(/([a-z])([A-Z])/g, "$1 $2")
       .replace(/\b\w/g, (c) => c.toUpperCase())
       .trim();
+
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    placements.forEach((p) => { if (p.status) statuses.add(p.status); });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [placements]);
+
+  const placementTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    placements.forEach((p) => { if (p.placement_type) types.add(p.placement_type); });
+    if (types.size === 0) {
+      return [
+        { label: "Contract", value: "Contract" },
+        { label: "Direct Hire", value: "Direct Hire" },
+        { label: "Executive Search", value: "Executive Search" },
+      ];
+    }
+    return Array.from(types).map((t) => ({ label: t, value: t }));
+  }, [placements]);
+
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
 
   const placementColumnsCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
@@ -481,7 +345,7 @@ export default function PlacementList() {
       seen.add(x.key);
       return true;
     });
-  }, [availableFields]);
+  }, [availableFields, statusOptions, placementTypeOptions]);
 
   const getColumnLabel = (key: string) =>
     placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
@@ -569,34 +433,6 @@ export default function PlacementList() {
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
   }, [placementColumnsCatalog]);
 
-  // Handle column sort toggle
-  const handleColumnSort = (columnKey: string) => {
-    setColumnSorts((prev) => {
-      const current = prev[columnKey];
-      if (current === "asc") {
-        return { ...prev, [columnKey]: "desc" };
-      } else if (current === "desc") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      } else {
-        return { ...prev, [columnKey]: "asc" };
-      }
-    });
-  };
-
-  // Handle column filter change
-  const handleColumnFilter = (columnKey: string, value: string) => {
-    setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      }
-      return { ...prev, [columnKey]: value };
-    });
-  };
-
   // Handle drag end for column reordering
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -630,35 +466,6 @@ export default function PlacementList() {
     localStorage.setItem("placementsArchivedColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
-  // Unique options for select filters
-  const statusOptions = useMemo(() => {
-    const statuses = new Set<string>();
-    placements.forEach((p) => { if (p.status) statuses.add(p.status); });
-    return Array.from(statuses).map((s) => ({ label: s, value: s }));
-  }, [placements]);
-
-  const placementTypeOptions = useMemo(() => {
-    const types = new Set<string>();
-    placements.forEach((p) => { if (p.placement_type) types.add(p.placement_type); });
-    // Ensure the main 3 types are always there if we want, or just what's in the data
-    if (types.size === 0) {
-      return [
-        { label: "Contract", value: "Contract" },
-        { label: "Direct Hire", value: "Direct Hire" },
-        { label: "Executive Search", value: "Executive Search" }
-      ];
-    }
-    return Array.from(types).map((t) => ({ label: t, value: t }));
-  }, [placements]);
-
-  const archiveReasonOptions = useMemo(
-    () => [
-      { label: "Deletion", value: "Deletion" },
-      { label: "Transfer", value: "Transfer" },
-    ],
-    []
-  );
-
   useEffect(() => {
     const fetchAvailableFields = async () => {
       setIsLoadingFields(true);
@@ -687,39 +494,12 @@ export default function PlacementList() {
     fetchAvailableFields();
   }, []);
 
-  // Fetch placements on component mount
   useEffect(() => {
-    fetchPlacements();
-  }, []);
-  const fetchPlacements = async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/placements");
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch placements");
-      }
-
-      const data = await response.json();
-      setPlacements(data.placements || []);
-    } catch (err) {
-      console.error("Error fetching placements:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching placements"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setCurrentPage(1);
+  }, [advancedSearchCriteria, setCurrentPage]);
 
   const filteredAndSortedPlacements = useMemo(() => {
-    // Show only archived placements on this page
-    let result = placements.filter((p) => p.status === "Archived" || !!p.archived_at);
+    if (advancedSearchCriteria.length === 0) return placements;
 
     const matchesAdvancedCriterion = (
       p: Placement,
@@ -731,104 +511,22 @@ export default function PlacementList() {
       return matchesAdvancedValue(raw, fieldType, c);
     };
 
-    if (advancedSearchCriteria.length > 0) {
-      result = result.filter((p) =>
-        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(p, c))
-      );
-    }
+    return placements.filter((p) =>
+      advancedSearchCriteria.every((c) => matchesAdvancedCriterion(p, c))
+    );
+  }, [placements, advancedSearchCriteria]);
 
-    // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((placement) => {
-        // ID search and record_number
-        const idMatch =
-          String(placement.id).toLowerCase().includes(term) ||
-          `p${placement.id}`.toLowerCase().includes(term) ||
-          String(placement.record_number ?? "").toLowerCase().includes(term);
+  const visibleResultsCount =
+    advancedSearchCriteria.length === 0
+      ? serverVisibleResultsCount
+      : filteredAndSortedPlacements.length;
 
-        // Core fields
-        const coreMatch =
-          (placement.job_seeker_name || "").toLowerCase().includes(term) ||
-          (placement.job_title || placement.job_name || "").toLowerCase().includes(term) ||
-          (placement.status || "").toLowerCase().includes(term) ||
-          (placement.owner || placement.owner_name || "").toLowerCase().includes(term) ||
-          (placement.salary || "").toLowerCase().includes(term) ||
-          (placement.archive_reason || "").toLowerCase().includes(term);
-
-        // Dates
-        const dateMatch =
-          (placement.start_date || "").toLowerCase().includes(term) ||
-          (placement.end_date || "").toLowerCase().includes(term) ||
-          (placement.created_at || "").toLowerCase().includes(term);
-
-        // Custom fields
-        const cf = placement.customFields || placement.custom_fields || {};
-        const customMatch = Object.values(cf).some((val) =>
-          String(val || "").toLowerCase().includes(term)
-        );
-
-        return idMatch || coreMatch || dateMatch || customMatch;
-      });
-    }
-
-    // Apply column filters
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
-
-      result = result.filter((p) => {
-        const value = getColumnValue(p, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
-
-        const columnInfo = getColumnInfo(columnKey);
-        if ((columnInfo?.filterType as string) === "number") {
-          return String(value) === String(filterValue);
-        }
-        if (columnInfo?.filterType === "select") {
-          return valueStr === filterStr;
-        }
-
-        return valueStr.includes(filterStr);
-      });
-    });
-
-    // Apply sorting
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        let aValue = getColumnValue(a, sortKey);
-        let bValue = getColumnValue(b, sortKey);
-
-        // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-        }
-
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [placements, searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
-
-  const showTableSkeleton = isLoading;
   const visibleTableColumnKeys = columnFields.filter((k) =>
     placementColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
-  const skeletonRowCount = 12;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   // Email handlers for single placement (kept for potential bulk or future use)
   const handleEmailCandidates = async (placementId: string) => {
@@ -1056,7 +754,7 @@ export default function PlacementList() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.message || "Failed to delete placement");
       }
-      await fetchPlacements();
+      await refreshList();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "An error occurred while deleting");
     } finally {
@@ -1174,15 +872,18 @@ export default function PlacementList() {
                 <input
                   type="text"
                   placeholder="Search archived placements..."
-                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
-                {isLoading && (
-                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                  {(isLoading || isPageLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  </div>
-                )}
+                  )}
+                  <span>
+                    {isLoading ? "…" : `${visibleResultsCount} found`}
+                  </span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -1209,7 +910,7 @@ export default function PlacementList() {
               >
                 <IoFilterSharp /> Filter
               </button>
-              {(searchTerm ||
+              {(searchInput ||
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
@@ -1234,7 +935,7 @@ export default function PlacementList() {
                 entityIds={selectedPlacements}
                 availableFields={availableFields}
                 onSuccess={() => {
-                  fetchPlacements();
+                  refreshList();
                   setSelectedPlacements([]);
                   setSelectAll(false);
                 }}
@@ -1395,60 +1096,6 @@ export default function PlacementList() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Search archived placements..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              ref={advancedSearchButtonRef}
-              type="button"
-              onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${showAdvancedSearch || advancedSearchCriteria.length > 0
-                ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-            >
-              Advanced
-            </button>
-            {(searchTerm ||
-              Object.keys(columnFilters).length > 0 ||
-              Object.keys(columnSorts).length > 0 ||
-              advancedSearchCriteria.length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="px-4 py-2.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-                >
-                  <FiX />
-                  Clear All
-                </button>
-              )}
-          </div>
-        </div>
-      </div>
-
       <AdvancedSearchPanel
         open={showAdvancedSearch}
         onClose={() => setShowAdvancedSearch(false)}
@@ -1571,19 +1218,29 @@ export default function PlacementList() {
                         />
                       </td>
 
-                      {/* Fixed ID */}
-                      <td className="px-6 py-4 text-black whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <span>P {placement.record_number ?? placement.id}</span>
-                          {placement.archived_at && (
-                            <CountdownTimer archivedAt={placement.archived_at} />
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Dynamic cells */}
                       {columnFields.map((key) => {
+                        if (key === "record_number") {
+                          return (
+                            <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                              <div className="flex flex-col gap-1">
+                                <span>P {getColumnValue(placement, key)}</span>
+                                {placement.archived_at && (
+                                  <CountdownTimer archivedAt={placement.archived_at} />
+                                )}
+                              </div>
+                            </td>
+                          );
+                        }
                         const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                        const val = getColumnValue(placement, key);
+                        const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
+                        const isStatusCol = getColumnLabel(key).toLowerCase() === "status";
+                        const statusVariant =
+                          isArchiveReason
+                            ? ((val || "").toLowerCase() === "deletion" ? "deletion" : "blue")
+                            : isStatusCol
+                              ? "gray"
+                              : undefined;
                         const fieldInfo = colInfo
                           ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
                           : { key, label: getColumnLabel(key) };
@@ -1592,14 +1249,15 @@ export default function PlacementList() {
                           <td
                             key={key}
                             className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          // onClick={(e) => e.stopPropagation()}
                           >
                             <FieldValueRenderer
-                              value={getColumnValue(placement, key)}
+                              value={val}
                               fieldInfo={fieldInfo}
                               emptyPlaceholder="—"
                               clickable
                               stopPropagation
+                              statusVariant={statusVariant}
+                              forceRenderAsStatus={isArchiveReason}
                             />
                           </td>
                         );
@@ -1612,7 +1270,7 @@ export default function PlacementList() {
                       colSpan={3 + visibleTableColumnKeys.length}
                       className="px-6 py-4 text-center text-gray-500"
                     >
-                      {searchTerm
+                      {searchInput || Object.keys(columnFilters).length > 0 || advancedSearchCriteria.length > 0
                         ? "No archived placements match your search."
                         : "No archived placements found."}
                     </td>
@@ -1622,81 +1280,27 @@ export default function PlacementList() {
             </table>
           </DndContext>
         </div>
-      </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            {showTableSkeleton ? (
-              <p className="text-sm text-gray-500">Loading results…</p>
-            ) : (
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">
-                  {filteredAndSortedPlacements.length}
-                </span>{" "}
-                of{" "}
-                <span className="font-medium">
-                  {filteredAndSortedPlacements.length}
-                </span>{" "}
-                results
-              </p>
-            )}
-          </div>
-          {!showTableSkeleton && filteredAndSortedPlacements.length > 0 && (
-            <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
-        </div>
+        <ServerListPagination
+          entityLabel="placements"
+          currentPage={currentPage}
+          pageSize={pageSize}
+          itemsOnPage={filteredAndSortedPlacements.length}
+          totalCount={totalPlacementsCount}
+          totalPages={totalPages}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          canGoPrev={canGoPrev}
+          canGoNext={canGoNext}
+          paginationItems={paginationItems}
+          isLoading={showTableSkeleton}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+            setSelectedPlacements([]);
+            setSelectAll(false);
+          }}
+        />
       </div>
       {showColumnModal && (
         <SortableFieldsEditModal
