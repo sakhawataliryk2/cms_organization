@@ -165,14 +165,29 @@ function SortableColumnHeader({
             e.stopPropagation();
             onSort();
           }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+          className="flex flex-col items-center leading-none transition-colors hover:text-gray-700"
+          title={
+            sortState === null
+              ? "Sort ascending"
+              : sortState === "asc"
+                ? "Sort descending"
+                : "Remove sort"
+          }
         >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
+          <FiArrowUp
+            size={12}
+            className={
+              sortState === "asc" ? "text-blue-600" : "text-gray-300"
+            }
+          />
+          <FiArrowDown
+            size={12}
+            className={
+              sortState === "desc"
+                ? "text-blue-600 -mt-1"
+                : "text-gray-300 -mt-1"
+            }
+          />
         </button>
 
         {/* Filter Toggle */}
@@ -658,7 +673,12 @@ export default function LeadList() {
   const fetchLeads = useCallback(
     async (page: number) => {
       const normalizedSearch = searchTerm.trim().toLowerCase();
-      const cacheKey = `${page}|${pageSize}|${normalizedSearch}`;
+      const activeSorts = Object.entries(columnSorts).filter(
+        ([_, dir]) => dir !== null,
+      );
+      const sortKey = activeSorts.length > 0 ? activeSorts[0][0] : '';
+      const sortDir = activeSorts.length > 0 ? activeSorts[0][1] : '';
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}|${sortKey}|${sortDir}`;
       const cached = leadsQueryCacheRef.current.get(cacheKey);
       if (cached) {
         setLeads(cached.leads);
@@ -690,6 +710,11 @@ export default function LeadList() {
         });
         if (normalizedSearch !== "") {
           query.set("search", searchTerm.trim());
+        }
+
+        if (sortKey) {
+          query.set("sort", sortKey);
+          query.set("order", sortDir === "asc" ? "ASC" : "DESC");
         }
 
         const response = await fetch(`/api/leads?${query.toString()}`, {
@@ -736,7 +761,7 @@ export default function LeadList() {
         setIsPageLoading(false);
       }
     },
-    [pageSize, searchTerm]
+    [pageSize, searchTerm, columnSorts]
   );
 
   useEffect(() => {
@@ -813,43 +838,8 @@ export default function LeadList() {
       });
     });
 
-    // Apply sorting
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        let aValue: any = getColumnValue(a, sortKey);
-        let bValue: any = getColumnValue(b, sortKey);
-
-        // Handle dates properly
-        if (sortKey === "created_at") {
-          aValue = new Date(a.created_at).getTime();
-          bValue = new Date(b.created_at).getTime();
-        } else if (sortKey === "id") {
-          aValue = parseInt(a.id) || a.id;
-          bValue = parseInt(b.id) || b.id;
-        }
-
-        // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-        }
-
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
     return result;
-  }, [leads, columnFilters, columnSorts, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  }, [leads, columnFilters, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -878,6 +868,8 @@ export default function LeadList() {
         return { ...prev, [columnKey]: "asc" };
       }
     });
+    setCurrentPage(1);
+    leadsQueryCacheRef.current.clear();
   };
 
   // Handle column filter change
