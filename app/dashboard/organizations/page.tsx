@@ -44,11 +44,17 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import SortableColumnHeader, {
+  type ColumnFilterState,
+  type ColumnSortState,
+} from "@/components/SortableColumnHeader";
+import { SEARCH_DEBOUNCE_MS } from "@/lib/apiListParams";
 
 interface Organization {
   record_number: number;
   id: string;
   name: string;
+  nicknames?: string;
   website: string;
   status: string;
   contact_phone: string;
@@ -63,9 +69,6 @@ interface Organization {
   archive_reason?: string | null;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
 type OrganizationFavorite = {
   id: string;
   name: string;
@@ -79,228 +82,6 @@ type OrganizationFavorite = {
 
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
-// Sortable Column Header Component
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-  children,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-  children?: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) {
-      setFilterPosition(null);
-      return;
-    }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({
-      top: btnRect.bottom + 4,
-      left: thRect.left,
-      width: Math.max(150, Math.min(250, thRect.width)),
-    });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => {
-        thRef.current = node;
-        setNodeRef(node);
-      }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        {/* Column Label */}
-        <span className="flex-1">{label}</span>
-
-        {/* Sort Control */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="flex flex-col items-center leading-none transition-colors hover:text-gray-700"
-          title={
-            sortState === null
-              ? "Sort ascending"
-              : sortState === "asc"
-                ? "Sort descending"
-                : "Remove sort"
-          }
-        >
-          <FiArrowUp
-            size={12}
-            className={
-              sortState === "asc" ? "text-blue-600" : "text-gray-300"
-            }
-          />
-          <FiArrowDown
-            size={12}
-            className={
-              sortState === "desc"
-                ? "text-blue-600 -mt-1"
-                : "text-gray-300 -mt-1"
-            }
-          />
-        </button>
-
-        {/* Filter Toggle */}
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${
-            filterValue ? "text-blue-600" : ""
-          }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {/* Filter Dropdown (portal so it stays on top) */}
-      {showFilter &&
-        filterPosition &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            ref={filterRef}
-            className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-            style={{
-              position: "fixed",
-              top: filterPosition.top,
-              left: filterPosition.left,
-              width: filterPosition.width,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {filterType === "text" && (
-              <input
-                type="text"
-                value={filterValue || ""}
-                onChange={(e) => onFilterChange(e.target.value)}
-                placeholder={`Filter ${label.toLowerCase()}...`}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              />
-            )}
-            {filterType === "number" && (
-              <input
-                type="number"
-                value={filterValue || ""}
-                onChange={(e) => onFilterChange(e.target.value)}
-                placeholder={`Filter ${label.toLowerCase()}...`}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              />
-            )}
-            {filterType === "select" && filterOptions && (
-              <select
-                value={filterValue || ""}
-                onChange={(e) => onFilterChange(e.target.value)}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              >
-                <option value="">All</option>
-                {filterOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            )}
-            {filterValue && (
-              <button
-                onClick={() => {
-                  onFilterChange("");
-                  setShowFilter(false);
-                }}
-                className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-              >
-                Clear Filter
-              </button>
-            )}
-          </div>,
-          document.body,
-        )}
-    </th>
-  );
-}
-
 export default function OrganizationList() {
   const router = useRouter();
 
@@ -311,6 +92,7 @@ export default function OrganizationList() {
   // =====================
   const ORG_BACKEND_COLUMN_KEYS = [
     "name",
+    "nicknames",
     "status",
     "contact_phone",
     "address",
@@ -395,16 +177,25 @@ export default function OrganizationList() {
     organizationsQueryCacheRef.current.clear();
   };
 
-  // Handle column filter change
+  // Handle column filter change — applied after debounce in header inputs
   const handleColumnFilter = (columnKey: string, value: string) => {
+    let didChange = false;
     setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
+      const nextValue = value.trim();
+      const prevValue = (prev[columnKey] ?? "").trim();
+      if (nextValue === prevValue) return prev;
+
+      didChange = true;
+      if (!nextValue) {
         const updated = { ...prev };
         delete updated[columnKey];
         return updated;
       }
       return { ...prev, [columnKey]: value };
     });
+    if (!didChange) return;
+    setCurrentPage(1);
+    organizationsQueryCacheRef.current.clear();
   };
 
   // Handle drag end for column reordering
@@ -525,6 +316,7 @@ export default function OrganizationList() {
   );
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
     AdvancedSearchCriterion[]
@@ -740,6 +532,8 @@ export default function OrganizationList() {
     switch (key) {
       case "name":
         return org.name || "N/A";
+      case "nicknames":
+        return org.nicknames || "N/A";
       case "status":
         return org.status || "N/A";
       case "contact_phone":
@@ -766,6 +560,11 @@ export default function OrganizationList() {
     return matchesAdvancedValue(raw, fieldType, c);
   };
 
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const fetchOrganizations = useCallback(
     async (page: number) => {
       const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -774,7 +573,13 @@ export default function OrganizationList() {
       );
       const sortKey = activeSorts.length > 0 ? activeSorts[0][0] : '';
       const sortDir = activeSorts.length > 0 ? activeSorts[0][1] : '';
-      const cacheKey = `${page}|${pageSize}|${normalizedSearch}|${sortKey}|${sortDir}`;
+      const activeFilters = Object.fromEntries(
+        Object.entries(columnFilters).filter(
+          ([, value]) => value != null && String(value).trim() !== "",
+        ),
+      );
+      const filtersKey = JSON.stringify(activeFilters);
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}|${sortKey}|${sortDir}|${filtersKey}`;
       const cached = organizationsQueryCacheRef.current.get(cacheKey);
       if (cached) {
         setOrganizations(cached.organizations);
@@ -811,6 +616,10 @@ export default function OrganizationList() {
         if (sortKey) {
           query.set("sort", sortKey);
           query.set("order", sortDir === "asc" ? "ASC" : "DESC");
+        }
+
+        if (Object.keys(activeFilters).length > 0) {
+          query.set("filters", JSON.stringify(activeFilters));
         }
 
         const response = await fetch(`/api/organizations?${query.toString()}`, {
@@ -866,7 +675,7 @@ export default function OrganizationList() {
         setIsPageLoading(false);
       }
     },
-    [pageSize, searchTerm, columnSorts],
+    [pageSize, searchTerm, columnSorts, columnFilters],
   );
 
   const isAdvancedFullMode = advancedSearchCriteria.length > 0;
@@ -1068,6 +877,7 @@ export default function OrganizationList() {
       nextSorts[k] = v;
     }
 
+    setSearchInput(fav.searchTerm || "");
     setSearchTerm(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
@@ -1113,12 +923,17 @@ export default function OrganizationList() {
   };
 
   const handleClearAllFilters = () => {
+    setSearchInput("");
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
     setAdvancedSearchCriteria([]);
     setSelectedFavoriteId("");
+    organizationsQueryCacheRef.current.clear();
   };
+
+  const shouldApplyClientColumnFilters =
+    isAdvancedFullMode || totalOrganizationsCount == null;
 
   // Apply per-column filtering and sorting (exclude archived in main overview)
   const filteredAndSortedOrganizations = useMemo(() => {
@@ -1129,43 +944,51 @@ export default function OrganizationList() {
       (org) => org.status !== "Archived" && !org.archived_at,
     );
 
-    // Apply global search
+    // Apply global search (fallback when server total is unavailable)
     if (shouldApplyClientGlobalSearch && deferredSearchTerm.trim() !== "") {
       const term = deferredSearchTerm.toLowerCase();
-      result = result.filter(
-        (org) =>
+      const recordNumberSearch = /^\d+$/.test(deferredSearchTerm.trim())
+        ? Number.parseInt(deferredSearchTerm.trim(), 10)
+        : null;
+      result = result.filter((org) => {
+        if (recordNumberSearch !== null) {
+          return Number(org.record_number) === recordNumberSearch;
+        }
+        return (
           (org.name || "").toLowerCase().includes(term) ||
           String(org.id || "")
             .toLowerCase()
             .includes(term) ||
-          String(org.record_number ?? "")
-            .toLowerCase()
-            .includes(term) ||
           (org.status || "").toLowerCase().includes(term) ||
           (org.contact_phone || "").toLowerCase().includes(term) ||
-          (org.address || "").toLowerCase().includes(term),
-      );
+          (org.address || "").toLowerCase().includes(term)
+        );
+      });
     }
 
-    // Apply filters
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
+    // Apply column filters client-side only in advanced mode or offline fallback
+    if (shouldApplyClientColumnFilters) {
+      Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+        if (!filterValue || filterValue.trim() === "") return;
 
-      result = result.filter((org) => {
-        const value = getColumnValue(org, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
+        result = result.filter((org) => {
+          const value = getColumnValue(org, columnKey);
+          const valueStr = String(value).toLowerCase();
+          const filterStr = String(filterValue).toLowerCase();
 
-        // For number columns, do exact match
-        const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo?.filterType === "number") {
-          return String(value) === String(filterValue);
-        }
+          const columnInfo = getColumnInfo(columnKey);
+          if (columnInfo?.filterType === "number") {
+            return String(value) === String(filterValue);
+          }
 
-        // For text columns, do contains match
-        return valueStr.includes(filterStr);
+          if (columnInfo?.filterType === "select") {
+            return valueStr === filterStr;
+          }
+
+          return valueStr.includes(filterStr);
+        });
       });
-    });
+    }
 
     // Apply advanced search criteria (AND)
     if (advancedSearchCriteria.length > 0) {
@@ -1183,11 +1006,12 @@ export default function OrganizationList() {
     deferredSearchTerm,
     advancedSearchCriteria,
     shouldApplyClientGlobalSearch,
+    shouldApplyClientColumnFilters,
   ]);
   const visibleResultsCount =
     totalOrganizationsCount != null &&
     advancedSearchCriteria.length === 0 &&
-    Object.keys(columnFilters).length === 0
+    !shouldApplyClientColumnFilters
       ? totalOrganizationsCount
       : filteredAndSortedOrganizations.length;
 
@@ -1358,8 +1182,8 @@ export default function OrganizationList() {
                   type="text"
                   placeholder="Search organizations..."
                   className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
                   {(isLoading || isPageLoading || isAdvancedDatasetLoading) && (
@@ -1397,7 +1221,7 @@ export default function OrganizationList() {
                 <IoFilterSharp /> Filter
               </button>
 
-              {(searchTerm ||
+              {(searchInput ||
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (

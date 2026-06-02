@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { buildListQueryString } from '@/lib/apiListParams';
 
 async function normalizePlacementCustomFields(
     customFields: Record<string, unknown>,
@@ -69,15 +70,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Forward pagination/sorting/search params to backend when provided
-        const incomingParams = request.nextUrl.searchParams;
-        const passthroughKeys = ["page", "limit", "offset", "q", "search", "sort", "order"];
-        const qs = new URLSearchParams();
-        for (const key of passthroughKeys) {
-            const value = incomingParams.get(key);
-            if (value !== null && value !== "") qs.set(key, value);
-        }
-        const queryString = qs.toString();
+        const queryString = buildListQueryString(request.nextUrl.searchParams);
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';

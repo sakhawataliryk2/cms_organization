@@ -1,26 +1,27 @@
-'use client'
+"use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
-import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
 import { IoFilterSharp } from "react-icons/io5";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
+import { FiStar, FiChevronDown, FiChevronLeft, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import SortableColumnHeader, {
+  type ColumnFilterState,
+  type ColumnSortState,
+} from "@/components/SortableColumnHeader";
+import ServerListPagination from "@/components/ServerListPagination";
 import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
@@ -45,9 +46,6 @@ interface JobSeeker {
   archive_reason?: string | null;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
 type JobSeekerFavorite = {
   id: string;
   name: string;
@@ -61,202 +59,57 @@ type JobSeekerFavorite = {
 
 const FAVORITES_STORAGE_KEY = "jobSeekersArchivedFavorites";
 
-// Sortable Column Header Component
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-  children,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-  children?: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) { setFilterPosition(null); return; }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({ top: btnRect.bottom + 4, left: thRect.left, width: Math.max(150, Math.min(250, thRect.width)) });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => { thRef.current = node; setNodeRef(node); }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        {/* Column Label */}
-        <span className="flex-1">{label}</span>
-
-        {/* Sort Control */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
-        >
-          {sortState === "asc" ? (
-            <FiArrowUp size={14} />
-          ) : (
-            <FiArrowDown size={14} />
-          )}
-        </button>
-
-        {/* Filter Toggle */}
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {/* Filter Dropdown (portal) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => { onFilterChange(""); setShowFilter(false); }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-    </th>
-  );
-}
-
 export default function ArchivedJobSeekersList() {
   const router = useRouter();
   const [archivedActionsOpen, setArchivedActionsOpen] = useState(false);
-  const [selectedJobSeekers, setSelectedJobSeekers] = useState<
-    string[]
-  >([]);
+  const [selectedJobSeekers, setSelectedJobSeekers] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
-  const [jobSeekers, setJobSeekers] = useState<JobSeeker[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
     AdvancedSearchCriterion[]
   >([]);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
+  const [isMutating, setIsMutating] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+
+  const {
+    items: jobSeekers,
+    searchInput,
+    setSearchInput,
+    searchTerm,
+    columnSorts,
+    setColumnSorts,
+    columnFilters,
+    setColumnFilters,
+    pageSize,
+    setPageSize,
+    currentPage,
+    setCurrentPage,
+    totalCount: totalJobSeekersCount,
+    totalPages,
+    isLoading,
+    isPageLoading,
+    error,
+    fetchPage,
+    clearCache,
+    handleColumnSort,
+    handleColumnFilter,
+    handleClearAllFilters: clearListFilters,
+    PAGE_SIZE_OPTIONS,
+    canGoPrev,
+    canGoNext,
+    paginationItems,
+    showTableSkeleton,
+  } = useServerEntityList<JobSeeker>({
+    apiPath: "/api/job-seekers",
+    responseKey: "jobSeekers",
+    extraQueryParams: { archived: "true" },
+  });
+
+  const refreshList = useCallback(() => {
+    clearCache();
+    void fetchPage(currentPage);
+  }, [clearCache, fetchPage, currentPage]);
 
   // Favorites State
   const [favorites, setFavorites] = useState<JobSeekerFavorite[]>([]);
@@ -280,12 +133,6 @@ export default function ArchivedJobSeekersList() {
       }
     }
   }, []);
-
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   // Favorites Logic
   const persistFavorites = (updated: JobSeekerFavorite[]) => {
@@ -317,9 +164,10 @@ export default function ArchivedJobSeekersList() {
     }
 
     // 4. Apply everything
-    setSearchTerm(fav.searchTerm || "");
+    setSearchInput(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
+    clearCache();
     if (validColumnFields.length > 0) {
       setColumnFields(validColumnFields);
     }
@@ -371,9 +219,7 @@ export default function ArchivedJobSeekersList() {
   };
 
   const handleClearAllFilters = () => {
-    setSearchTerm("");
-    setColumnFilters({});
-    setColumnSorts({});
+    clearListFilters();
     setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
   };
@@ -593,10 +439,6 @@ export default function ArchivedJobSeekersList() {
     // }
   };
 
-  // Fetch hiring managers data when component mounts
-  useEffect(() => {
-    fetchJobSeekers();
-  }, []);
   const {
     columnFields,
     setColumnFields,
@@ -656,63 +498,12 @@ export default function ArchivedJobSeekersList() {
     localStorage.setItem("jobSeekerArchivedColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
-  const fetchJobSeekers = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/job-seekers?archived=true", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [advancedSearchCriteria, setCurrentPage]);
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch archived job seekers");
-      }
-
-      const data = await response.json();
-      setJobSeekers(data.jobSeekers || []);
-    } catch (err) {
-      console.error("Error fetching archived job seekers:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching archived job seekers"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle column sort toggle
-  const handleColumnSort = (columnKey: string) => {
-    setColumnSorts((prev) => {
-      const current = prev[columnKey];
-      if (current === "asc") {
-        return { ...prev, [columnKey]: "desc" };
-      } else if (current === "desc") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      } else {
-        return { ...prev, [columnKey]: "asc" };
-      }
-    });
-  };
-
-  // Handle column filter change
-  const handleColumnFilter = (columnKey: string, value: string) => {
-    setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
-        const updated = { ...prev };
-        delete updated[columnKey];
-        return updated;
-      }
-      return { ...prev, [columnKey]: value };
-    });
-  };
+  const shouldApplyClientColumnFilters =
+    advancedSearchCriteria.length > 0 || totalJobSeekersCount == null;
 
   // Handle drag end for column reordering
   const handleDragEnd = (event: DragEndEvent) => {
@@ -745,9 +536,8 @@ export default function ArchivedJobSeekersList() {
     []
   );
 
-  // Apply per-column filtering and sorting (API returns only archived)
   const filteredAndSortedJobSeekers = useMemo(() => {
-    let result = jobSeekers.filter((js) => js.status === "Archived" || !!js.archived_at);
+    let result = jobSeekers;
 
     const matchesAdvancedCriterion = (
       js: JobSeeker,
@@ -765,70 +555,42 @@ export default function ArchivedJobSeekersList() {
       );
     }
 
-    // Apply filters
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
+    if (shouldApplyClientColumnFilters) {
+      Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+        if (!filterValue || filterValue.trim() === "") return;
 
-      result = result.filter((js) => {
-        const value = getColumnValue(js, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
-
-        const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo && (columnInfo as any).filterType === "number") {
-          return String(value) === String(filterValue);
-        }
-        return valueStr.includes(filterStr);
-      });
-    });
-
-    // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter((js) =>
-        (js.full_name || `${js.last_name || ""} ${js.first_name || ""}` || "")
-          .toLowerCase()
-          .includes(term) ||
-        String(js.id || "").toLowerCase().includes(term) ||
-        String(js.record_number ?? "").toLowerCase().includes(term) ||
-        (js.email || "").toLowerCase().includes(term) ||
-        (js.status || "").toLowerCase().includes(term) ||
-        (js.owner || "").toLowerCase().includes(term) ||
-        (js.archive_reason || "").toLowerCase().includes(term)
-      );
-    }
-
-    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
-    if (activeSorts.length > 0) {
-      const [sortKey, sortDir] = activeSorts[0];
-      result.sort((a, b) => {
-        const aValue = getColumnValue(a, sortKey);
-        const bValue = getColumnValue(b, sortKey);
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-        let cmp = 0;
-        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-          cmp = aNum - bNum;
-        } else {
-          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-        }
-        return sortDir === "asc" ? cmp : -cmp;
+        result = result.filter((js) => {
+          const value = getColumnValue(js, columnKey);
+          const valueStr = String(value).toLowerCase();
+          const filterStr = String(filterValue).toLowerCase();
+          const columnInfo = getColumnInfo(columnKey);
+          if (columnInfo && (columnInfo as any).filterType === "number") {
+            return String(value) === String(filterValue);
+          }
+          if (columnInfo && (columnInfo as any).filterType === "select") {
+            return valueStr === filterStr;
+          }
+          return valueStr.includes(filterStr);
+        });
       });
     }
 
     return result;
-  }, [jobSeekers, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
+  }, [jobSeekers, columnFilters, advancedSearchCriteria, shouldApplyClientColumnFilters]);
 
-  const showTableSkeleton = isLoading;
+  const displayResultsCount =
+    totalJobSeekersCount != null &&
+    advancedSearchCriteria.length === 0 &&
+    !shouldApplyClientColumnFilters
+      ? totalJobSeekersCount
+      : filteredAndSortedJobSeekers.length;
+
   const visibleTableColumnKeys = columnFields.filter((k) =>
     jsColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
-  const skeletonRowCount = 12;
+  const skeletonRowCount = Math.min(pageSize, 12);
 
   const handleViewJobSeeker = (id: string) => {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
@@ -875,18 +637,18 @@ export default function ArchivedJobSeekersList() {
 
     if (!window.confirm(confirmMessage)) return;
 
-    setIsLoading(true);
+    setIsMutating(true);
+    setMutationError(null);
 
     try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
       const deletePromises = selectedJobSeekers.map((id) =>
         fetch(`/api/job-seekers/${id}`, {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         })
       );
 
@@ -897,18 +659,52 @@ export default function ArchivedJobSeekersList() {
         throw new Error(`Failed to delete ${failures.length} job seekers`);
       }
 
-      await fetchJobSeekers();
+      refreshList();
       setSelectedJobSeekers([]);
       setSelectAll(false);
     } catch (err) {
       console.error("Error deleting job seekers:", err);
-      setError(
+      setMutationError(
         err instanceof Error
           ? err.message
           : "An error occurred while deleting job seekers"
       );
     } finally {
-      setIsLoading(false);
+      setIsMutating(false);
+    }
+  };
+
+  const unarchiveSelectedJobSeekers = async () => {
+    if (selectedJobSeekers.length === 0) return;
+    if (
+      !window.confirm(
+        `Unarchive ${selectedJobSeekers.length} record(s)? An unarchive request will be sent.`
+      )
+    ) {
+      return;
+    }
+
+    setIsMutating(true);
+    setMutationError(null);
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      for (const id of selectedJobSeekers) {
+        const res = await fetch(`/api/job-seekers/${id}/unarchive-request`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error("Unarchive request failed");
+      }
+      refreshList();
+      setSelectedJobSeekers([]);
+      setSelectAll(false);
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : "Unarchive failed");
+    } finally {
+      setIsMutating(false);
     }
   };
 
@@ -957,15 +753,16 @@ export default function ArchivedJobSeekersList() {
                 <input
                   type="text"
                   placeholder="Search archived job seekers..."
-                  className="w-full p-2 pl-10 pr-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full p-2 pl-10 pr-36 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
-                {isLoading && (
-                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-gray-500">
+                  {(isLoading || isPageLoading) && (
                     <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  </div>
-                )}
+                  )}
+                  <span>{isLoading ? "…" : `${displayResultsCount} found`}</span>
+                </div>
                 <div className="absolute left-3 top-2.5 text-gray-400">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -993,7 +790,7 @@ export default function ArchivedJobSeekersList() {
               >
                 <IoFilterSharp /> Filter
               </button>
-              {(searchTerm ||
+              {(searchInput ||
                 Object.keys(columnFilters).length > 0 ||
                 Object.keys(columnSorts).length > 0 ||
                 advancedSearchCriteria.length > 0) && (
@@ -1030,26 +827,12 @@ export default function ArchivedJobSeekersList() {
                       Delete Permanently
                     </button>
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         setArchivedActionsOpen(false);
-                        if (!window.confirm(`Unarchive ${selectedJobSeekers.length} record(s)? An unarchive request will be sent.`)) return;
-                        setIsLoading(true);
-                        try {
-                          const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-                          for (const id of selectedJobSeekers) {
-                            const res = await fetch(`/api/job-seekers/${id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
-                            if (!res.ok) throw new Error("Unarchive request failed");
-                          }
-                          await fetchJobSeekers();
-                          setSelectedJobSeekers([]);
-                          setSelectAll(false);
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "Unarchive failed");
-                        } finally {
-                          setIsLoading(false);
-                        }
+                        void unarchiveSelectedJobSeekers();
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      disabled={isMutating}
                     >
                       Unarchive
                     </button>
@@ -1096,26 +879,12 @@ export default function ArchivedJobSeekersList() {
               <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1">
                 <button onClick={() => { setArchivedActionsOpen(false); deleteSelectedJobSeekers(); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">Delete Permanently</button>
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     setArchivedActionsOpen(false);
-                    if (!window.confirm(`Unarchive ${selectedJobSeekers.length} record(s)?`)) return;
-                    setIsLoading(true);
-                    try {
-                      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-                      for (const id of selectedJobSeekers) {
-                        const res = await fetch(`/api/job-seekers/${id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
-                        if (!res.ok) throw new Error("Unarchive request failed");
-                      }
-                      await fetchJobSeekers();
-                      setSelectedJobSeekers([]);
-                      setSelectAll(false);
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Unarchive failed");
-                    } finally {
-                      setIsLoading(false);
-                    }
+                    void unarchiveSelectedJobSeekers();
                   }}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  disabled={isMutating}
                 >
                   Unarchive
                 </button>
@@ -1155,6 +924,11 @@ export default function ArchivedJobSeekersList() {
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
           <p>{error}</p>
+        </div>
+      )}
+      {mutationError && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
+          <p>{mutationError}</p>
         </div>
       )}
 
@@ -1215,7 +989,7 @@ export default function ArchivedJobSeekersList() {
                         filterValue={columnFilters[key] || null}
                         onSort={() => handleColumnSort(key)}
                         onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={(columnInfo as any).filterType || "text"}
+                        filterType={columnInfo.filterType || "text"}
                         filterOptions={
                           key === "status"
                             ? statusOptions
@@ -1267,16 +1041,17 @@ export default function ArchivedJobSeekersList() {
                             label: "Delete Permanently",
                             action: async () => {
                               if (!window.confirm("Are you sure you want to permanently delete this job seeker?")) return;
-                              setIsLoading(true);
+                              setIsMutating(true);
+                              setMutationError(null);
                               try {
                                 const token = document.cookie.split("; ").find((row) => row.startsWith("token="))?.split("=")[1];
                                 const res = await fetch(`/api/job-seekers/${js.id}`, { method: "DELETE", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
                                 if (!res.ok) throw new Error("Failed to delete job seeker");
-                                await fetchJobSeekers();
+                                refreshList();
                               } catch (err) {
-                                setError(err instanceof Error ? err.message : "Delete failed");
+                                setMutationError(err instanceof Error ? err.message : "Delete failed");
                               } finally {
-                                setIsLoading(false);
+                                setIsMutating(false);
                               }
                             },
                           },
@@ -1284,16 +1059,17 @@ export default function ArchivedJobSeekersList() {
                             label: "Unarchive",
                             action: async () => {
                               if (!window.confirm("Send unarchive request for this job seeker?")) return;
-                              setIsLoading(true);
+                              setIsMutating(true);
+                              setMutationError(null);
                               try {
                                 const token = document.cookie.split("; ").find((row) => row.startsWith("token="))?.split("=")[1];
                                 const res = await fetch(`/api/job-seekers/${js.id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
                                 if (!res.ok) throw new Error("Unarchive request failed");
-                                await fetchJobSeekers();
+                                refreshList();
                               } catch (err) {
-                                setError(err instanceof Error ? err.message : "Unarchive failed");
+                                setMutationError(err instanceof Error ? err.message : "Unarchive failed");
                               } finally {
-                                setIsLoading(false);
+                                setIsMutating(false);
                               }
                             },
                           },
@@ -1340,11 +1116,9 @@ export default function ArchivedJobSeekersList() {
                     colSpan={3 + visibleTableColumnKeys.length}
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                   >
-                    {Object.keys(columnFilters).length > 0
-                      ? "No archived job seekers match your filters."
-                      : searchTerm
-                        ? "No archived job seekers match your search."
-                        : "No archived job seekers found."}
+                    {searchInput || Object.keys(columnFilters).length > 0 || advancedSearchCriteria.length > 0
+                      ? "No archived job seekers match your search."
+                      : "No archived job seekers found."}
                   </td>
                 </tr>
               )}
@@ -1353,76 +1127,26 @@ export default function ArchivedJobSeekersList() {
         </DndContext>
       </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            {showTableSkeleton ? (
-              <p className="text-sm text-gray-500">Loading results…</p>
-            ) : (
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">{filteredAndSortedJobSeekers.length}</span>{" "}
-                of{" "}
-                <span className="font-medium">{filteredAndSortedJobSeekers.length}</span>{" "}
-                results
-              </p>
-            )}
-          </div>
-          {!showTableSkeleton && filteredAndSortedJobSeekers.length > 0 && (
-            <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
-        </div>
-      </div>
+      <ServerListPagination
+        entityLabel="job seekers"
+        currentPage={currentPage}
+        pageSize={pageSize}
+        itemsOnPage={filteredAndSortedJobSeekers.length}
+        totalCount={totalJobSeekersCount}
+        totalPages={totalPages}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        canGoPrev={canGoPrev}
+        canGoNext={canGoNext}
+        paginationItems={paginationItems}
+        isLoading={showTableSkeleton}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setCurrentPage(1);
+          setSelectedJobSeekers([]);
+          setSelectAll(false);
+        }}
+      />
       {/* Column Modal - uses universal SortableFieldsEditModal */}
       {showColumnModal && (
         <SortableFieldsEditModal

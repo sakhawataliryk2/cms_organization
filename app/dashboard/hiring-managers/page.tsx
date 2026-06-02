@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
@@ -11,13 +10,15 @@ import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { IoFilterSharp } from "react-icons/io5";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import { FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import SortableColumnHeader, {
+  type ColumnSortState,
+  type ColumnFilterState,
+} from "@/components/SortableColumnHeader";
+import { SEARCH_DEBOUNCE_MS } from "@/lib/apiListParams";
 import ActionDropdown from "@/components/ActionDropdown";
 import BulkActionsButton from "@/components/BulkActionsButton";
 import BulkOwnershipModal from "@/components/BulkOwnershipModal";
@@ -52,9 +53,6 @@ interface HiringManager {
   archive_reason?: string | null;
 }
 
-type ColumnSortState = "asc" | "desc" | null;
-type ColumnFilterState = string | null;
-
 type HiringManagerFavorite = {
   id: string;
   name: string;
@@ -67,201 +65,6 @@ type HiringManagerFavorite = {
 };
 
 const FAVORITES_STORAGE_KEY = "hiringManagersFavorites";
-
-// Sortable Column Header Component
-function SortableColumnHeader({
-  id,
-  columnKey,
-  label,
-  sortState,
-  filterValue,
-  onSort,
-  onFilterChange,
-  filterType,
-  filterOptions,
-  children,
-}: {
-  id: string;
-  columnKey: string;
-  label: string;
-  sortState: ColumnSortState;
-  filterValue: ColumnFilterState;
-  onSort: () => void;
-  onFilterChange: (value: string) => void;
-  filterType: "text" | "select" | "number";
-  filterOptions?: { label: string; value: string }[];
-  children?: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const [showFilter, setShowFilter] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const filterToggleRef = useRef<HTMLButtonElement>(null);
-  const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    if (!showFilter || !filterToggleRef.current || !thRef.current) { setFilterPosition(null); return; }
-    const btnRect = filterToggleRef.current.getBoundingClientRect();
-    const thRect = thRef.current.getBoundingClientRect();
-    setFilterPosition({ top: btnRect.bottom + 4, left: thRect.left, width: Math.max(150, Math.min(250, thRect.width)) });
-  }, [showFilter]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        filterRef.current &&
-        !filterRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
-      ) {
-        setShowFilter(false);
-      }
-    };
-
-    if (showFilter) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilter, id]);
-
-  return (
-    <th
-      ref={(node) => { thRef.current = node; setNodeRef(node); }}
-      style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
-    >
-      <div className="flex items-center gap-2">
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Drag to reorder column"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={16} />
-        </button>
-
-        {/* Column Label */}
-        <span className="flex-1">{label}</span>
-
-        {/* Sort Control */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onSort();
-          }}
-          className="flex flex-col items-center leading-none transition-colors hover:text-gray-700"
-          title={
-            sortState === null
-              ? "Sort ascending"
-              : sortState === "asc"
-                ? "Sort descending"
-                : "Remove sort"
-          }
-        >
-          <FiArrowUp
-            size={12}
-            className={
-              sortState === "asc" ? "text-blue-600" : "text-gray-300"
-            }
-          />
-          <FiArrowDown
-            size={12}
-            className={
-              sortState === "desc"
-                ? "text-blue-600 -mt-1"
-                : "text-gray-300 -mt-1"
-            }
-          />
-        </button>
-
-        {/* Filter Toggle */}
-        <button
-          ref={filterToggleRef}
-          data-filter-toggle={id}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowFilter(!showFilter);
-          }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
-          title="Filter column"
-        >
-          <FiFilter size={14} />
-        </button>
-      </div>
-
-      {/* Filter Dropdown (portal) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
-          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => { onFilterChange(""); setShowFilter(false); }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-    </th>
-  );
-}
 
 export default function HiringManagerList() {
   const router = useRouter();
@@ -288,6 +91,9 @@ export default function HiringManagerList() {
   const hasLoadedOnceRef = useRef(false);
   const activeFetchControllerRef = useRef<AbortController | null>(null);
   const latestRequestIdRef = useRef(0);
+  const hmQueryCacheRef = useRef<
+    Map<string, { hiringManagers: HiringManager[]; total: number | null }>
+  >(new Map());
 
   const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
@@ -322,11 +128,8 @@ export default function HiringManagerList() {
     }
   }, []);
 
-  // Debounce search keystrokes
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchTerm(searchInput);
-    }, 300);
+    const timer = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -427,6 +230,7 @@ export default function HiringManagerList() {
     setColumnSorts({});
     setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
+    hmQueryCacheRef.current.clear();
   };
 
   const HM_BACKEND_COLUMN_KEYS = [
@@ -693,6 +497,22 @@ export default function HiringManagerList() {
       );
       const sortKey = activeSorts.length > 0 ? activeSorts[0][0] : '';
       const sortDir = activeSorts.length > 0 ? activeSorts[0][1] : '';
+      const activeFilters = Object.fromEntries(
+        Object.entries(columnFilters).filter(
+          ([, value]) => value != null && String(value).trim() !== "",
+        ),
+      );
+      const filtersKey = JSON.stringify(activeFilters);
+      const cacheKey = `${page}|${pageSize}|${normalizedSearch}|${sortKey}|${sortDir}|${filtersKey}`;
+      const cached = hmQueryCacheRef.current.get(cacheKey);
+      if (cached) {
+        setHiringManagers(cached.hiringManagers);
+        setTotalHmCount(cached.total);
+        setIsLoading(false);
+        setIsPageLoading(false);
+        return;
+      }
+
       const requestId = latestRequestIdRef.current + 1;
       latestRequestIdRef.current = requestId;
       if (activeFetchControllerRef.current) {
@@ -720,6 +540,10 @@ export default function HiringManagerList() {
         if (sortKey) {
           query.set("sort", sortKey);
           query.set("order", sortDir === "asc" ? "ASC" : "DESC");
+        }
+
+        if (Object.keys(activeFilters).length > 0) {
+          query.set("filters", JSON.stringify(activeFilters));
         }
 
         const response = await fetch(`/api/hiring-managers?${query.toString()}`, {
@@ -754,6 +578,10 @@ export default function HiringManagerList() {
         const end = start + pageSize;
         const pageData = incoming.length > pageSize ? incoming.slice(start, end) : incoming;
         setHiringManagers(pageData);
+        hmQueryCacheRef.current.set(cacheKey, {
+          hiringManagers: pageData,
+          total,
+        });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("Error fetching hiring managers:", err);
@@ -769,7 +597,7 @@ export default function HiringManagerList() {
         setIsPageLoading(false);
       }
     },
-    [pageSize, searchTerm, columnSorts]
+    [pageSize, searchTerm, columnSorts, columnFilters]
   );
 
   const isAdvancedFullMode = advancedSearchCriteria.length > 0;
@@ -804,18 +632,27 @@ export default function HiringManagerList() {
       }
     });
     setCurrentPage(1);
+    hmQueryCacheRef.current.clear();
   };
 
-  // Handle column filter change
   const handleColumnFilter = (columnKey: string, value: string) => {
+    let didChange = false;
     setColumnFilters((prev) => {
-      if (!value || value.trim() === "") {
+      const nextValue = value.trim();
+      const prevValue = (prev[columnKey] ?? "").trim();
+      if (nextValue === prevValue) return prev;
+
+      didChange = true;
+      if (!nextValue) {
         const updated = { ...prev };
         delete updated[columnKey];
         return updated;
       }
       return { ...prev, [columnKey]: value };
     });
+    if (!didChange) return;
+    setCurrentPage(1);
+    hmQueryCacheRef.current.clear();
   };
 
   // Handle drag end for column reordering
@@ -864,6 +701,7 @@ export default function HiringManagerList() {
     setShowNoteModal(false);
     setShowTaskModal(false);
     setSelectedHmId(null);
+    hmQueryCacheRef.current.clear();
     void fetchHiringManagers(currentPage);
   };
 
@@ -915,6 +753,8 @@ export default function HiringManagerList() {
 
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const shouldApplyClientGlobalSearch = totalHmCount == null;
+  const shouldApplyClientColumnFilters =
+    isAdvancedFullMode || totalHmCount == null;
 
   // Apply per-column filtering and sorting (exclude archived in main overview)
   const filteredAndSortedHiringManagers = useMemo(() => {
@@ -955,31 +795,42 @@ export default function HiringManagerList() {
       );
     }
 
-    // Apply filters
-    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
-      if (!filterValue || filterValue.trim() === "") return;
+    if (shouldApplyClientColumnFilters) {
+      Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+        if (!filterValue || filterValue.trim() === "") return;
 
-      result = result.filter((hm) => {
-        const value = getColumnValue(hm, columnKey);
-        const valueStr = String(value).toLowerCase();
-        const filterStr = String(filterValue).toLowerCase();
+        result = result.filter((hm) => {
+          const value = getColumnValue(hm, columnKey);
+          const valueStr = String(value).toLowerCase();
+          const filterStr = String(filterValue).toLowerCase();
 
-        // For number columns, do exact match
-        const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo && (columnInfo as any).filterType === "number") {
-          return String(value) === String(filterValue);
-        }
+          const columnInfo = getColumnInfo(columnKey);
+          if (columnInfo?.filterType === "number") {
+            return String(value) === String(filterValue);
+          }
+          if (columnInfo?.filterType === "select") {
+            return valueStr === filterStr;
+          }
 
-        // For text columns, do contains match
-        return valueStr.includes(filterStr);
+          return valueStr.includes(filterStr);
+        });
       });
-    });
+    }
 
     return result;
-  }, [hiringManagers, columnFilters, deferredSearchTerm, advancedSearchCriteria, shouldApplyClientGlobalSearch]);
+  }, [
+    hiringManagers,
+    columnFilters,
+    deferredSearchTerm,
+    advancedSearchCriteria,
+    shouldApplyClientGlobalSearch,
+    shouldApplyClientColumnFilters,
+  ]);
 
   const visibleResultsCount =
-    totalHmCount != null && advancedSearchCriteria.length === 0 && Object.keys(columnFilters).length === 0
+    totalHmCount != null &&
+    advancedSearchCriteria.length === 0 &&
+    !shouldApplyClientColumnFilters
       ? totalHmCount
       : filteredAndSortedHiringManagers.length;
   const totalPages = isAdvancedFullMode
@@ -1163,6 +1014,7 @@ export default function HiringManagerList() {
                 entityIds={selectedHiringManagers}
                 availableFields={availableFields}
                 onSuccess={() => {
+                  hmQueryCacheRef.current.clear();
                   void fetchHiringManagers(currentPage);
                   setSelectedHiringManagers([]);
                   setSelectAll(false);
@@ -1211,6 +1063,7 @@ export default function HiringManagerList() {
               entityIds={selectedHiringManagers}
               availableFields={availableFields}
               onSuccess={() => {
+                hmQueryCacheRef.current.clear();
                 void fetchHiringManagers(currentPage);
                 setSelectedHiringManagers([]);
                 setSelectAll(false);
