@@ -190,6 +190,21 @@ function extractRecordNumber(value: string): number | null {
 }
 
 /**
+ * Normalize an imported ID value to a numeric record number.
+ * Extracts the first contiguous digit sequence — handles prefixes, suffixes,
+ * mixed formatting, and plain numbers.
+ * e.g. "O100" → 100, "CAND-001" → 1, "Org #45" → 45, "100" → 100, "" → null
+ */
+function normalizeRecordNumber(value: string): number | null {
+    if (!value || String(value).trim() === '') return null;
+    const str = String(value).trim();
+    const match = str.match(/\d+/);
+    if (!match) return null;
+    const num = parseInt(match[0], 10);
+    return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+/**
  * Build the backend payload exactly the same way the individual add pages do:
  *  1. Every field goes into custom_fields keyed by its field_label.
  *  2. Fields whose label appears in the entity's BACKEND_COLUMN_BY_LABEL map
@@ -290,7 +305,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [], importId } = body;
+        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [], importId, importRecordNumbers = [] } = body;
 
         if (!entityType || !records || !Array.isArray(records)) {
             return NextResponse.json(
@@ -573,6 +588,15 @@ export async function POST(request: NextRequest) {
                 if (entityType === 'hiring-managers' && payload.custom_fields) {
                     payload.customFields = payload.custom_fields;
                     delete payload.custom_fields;
+                }
+
+                // ── Preserve imported record numbers ──────────────────────────────────
+                const importedRN = importRecordNumbers[i];
+                if (importedRN !== undefined && importedRN !== null && importedRN !== '') {
+                    const normalized = normalizeRecordNumber(String(importedRN));
+                    if (normalized !== null && normalized > 0) {
+                        payload.recordNumber = normalized;
+                    }
                 }
 
                 // ── Entity-specific defaults / fallbacks ──────────────────────────────

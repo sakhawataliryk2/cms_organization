@@ -158,6 +158,17 @@ async function consumeImportNdjsonStream(
     return summary;
 }
 
+const ID_COLUMN_NAMES = new Set([
+    'record number', 'record #', 'record#', 'record id', 'recordid',
+    'id', 'external id', 'externalid',
+    'candidate id', 'candidateid',
+    'organization id', 'organizationid',
+    'job id', 'jobid',
+    'lead id', 'leadid',
+    'task id', 'taskid',
+    'hiring manager id', 'hiringmanagerid',
+]);
+
 const RECORD_TYPE_TO_ENTITY_TYPE: Record<string, string> = {
     'Contact': 'organizations',
     'Organization': 'organizations',
@@ -178,6 +189,7 @@ export default function DataUploader() {
     const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
     const [csvRows, setCsvRows] = useState<CSVRow[]>([]);
     const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({});
+    const [idColumnMapping, setIdColumnMapping] = useState<string | null>(null);
     const [availableFields, setAvailableFields] = useState<CustomFieldDefinition[]>([]);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
     const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
@@ -501,6 +513,14 @@ export default function DataUploader() {
     const normalizeFieldText = (value: string): string =>
         (value || '').toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
 
+    const detectIdColumn = (headers: string[]): string | null => {
+        for (const header of headers) {
+            const normalized = normalizeFieldText(header);
+            if (ID_COLUMN_NAMES.has(normalized)) return header;
+        }
+        return null;
+    };
+
     const runAutoMapping = (
         headers: string[],
         fields: CustomFieldDefinition[]
@@ -590,6 +610,8 @@ export default function DataUploader() {
         if (Object.keys(fieldMappings).length > 0) return;
         const autoMappings = runAutoMapping(csvHeaders, availableFields);
         setFieldMappings(autoMappings);
+        const detectedIdColumn = detectIdColumn(csvHeaders);
+        setIdColumnMapping(detectedIdColumn);
     }, [currentStep, csvHeaders, availableFields, fieldMappings]);
 
     const normalizeSpreadsheetCellValue = (value: unknown): string => {
@@ -848,14 +870,17 @@ export default function DataUploader() {
             }));
 
             // Prepare import data
-            const importData = csvRows.map((row) => {
+            const importData: Record<string, any>[] = [];
+            const importRecordNumbers: string[] = [];
+            for (const row of csvRows) {
                 const record: Record<string, any> = {};
                 Object.keys(fieldMappings).forEach((fieldName) => {
                     const csvColumn = fieldMappings[fieldName];
                     record[fieldName] = row[csvColumn]?.trim() || '';
                 });
-                return record;
-            });
+                importData.push(record);
+                importRecordNumbers.push(idColumnMapping ? (row[idColumnMapping]?.trim() ?? '') : '');
+            }
 
             setImportLiveProgress({
                 scanned: 0,
@@ -885,7 +910,8 @@ export default function DataUploader() {
                     importId,
                     options: importOptions,
                     fieldNameToLabel,
-                    fieldDefinitions, // Pass full field defs so server can resolve lookup types
+                    fieldDefinitions,
+                    importRecordNumbers,
                 }),
             });
 
@@ -1372,6 +1398,12 @@ export default function DataUploader() {
                                 <p className="text-gray-600 mb-4">
                                     Map each CSV column to a system field. Required fields are marked with a red asterisk.
                                 </p>
+                                {idColumnMapping && (
+                                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                                        <strong>ID column detected:</strong> <code className="bg-blue-100 px-1.5 py-0.5 rounded">{idColumnMapping}</code>
+                                        {' '}&mdash; values from this column will be preserved as record numbers during import.
+                                    </div>
+                                )}
                                 {isLoadingFields ? (
                                     <div className="flex items-center justify-center py-8">
                                         <div className="text-gray-400">Loading available fields...</div>
@@ -1488,6 +1520,11 @@ export default function DataUploader() {
                                                     <th className="w-16 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b whitespace-nowrap">
                                                         Row
                                                     </th>
+                                                    {idColumnMapping && (
+                                                        <th className="px-4 py-3 text-left text-xs font-semibold text-blue-600 uppercase tracking-wider bg-blue-50 border-b whitespace-nowrap">
+                                                            Record #
+                                                        </th>
+                                                    )}
                                                     {availableFields
                                                         .filter((f) => fieldMappings[f.field_name])
                                                         .map((field) => (
@@ -1516,6 +1553,11 @@ export default function DataUploader() {
                                                             <td className="px-4 py-3 text-sm text-gray-500 font-medium border-r">
                                                                 {rowIndex + 2}
                                                             </td>
+                                                            {idColumnMapping && (
+                                                                <td className="px-4 py-3 text-sm text-blue-700 font-mono bg-blue-50/50">
+                                                                    {row[idColumnMapping]?.trim() || '—'}
+                                                                </td>
+                                                            )}
                                                             {availableFields
                                                                 .filter((f) => fieldMappings[f.field_name])
                                                                 .map((field) => {
