@@ -114,53 +114,6 @@ function ClearButton({
   );
 }
 
-/** Searchable multi-select for static options (same UI/UX as MultiSelectLookupField but with given options) */
-function SearchableMultiSelect({
-  options,
-  value,
-  onChange,
-  placeholder = "Type to search...",
-  disabled = false,
-  className = "w-full p-2 border-none! rounded focus:outline-none focus:ring-2 focus:ring-blue-500",
-  id,
-}: {
-  options: string[];
-  value: string[];
-  onChange: (value: string[]) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  className?: string;
-  id?: string;
-}) {
-  const selectOptions: StyledSelectOption[] = options.map((opt) => ({
-    label: opt,
-    value: opt,
-  }));
-  const selectedOptions = selectOptions.filter((opt) => value.includes(opt.value));
-
-  return (
-    <StyledReactSelect
-      variant="form"
-      inputId={id}
-      isMulti
-      isSearchable
-      isClearable={false}
-      isDisabled={disabled}
-      className={className}
-      options={selectOptions}
-      value={selectedOptions}
-      placeholder={placeholder}
-      noOptionsMessage={() => "No options"}
-      onChange={(selected) => {
-        const next = Array.isArray(selected)
-          ? selected.map((opt) => String(opt.value))
-          : [];
-        onChange(next);
-      }}
-    />
-  );
-}
-
 interface CustomFieldRendererProps {
   field: CustomFieldDefinition;
   value: any;
@@ -815,19 +768,32 @@ export default function CustomFieldRenderer({
       const selectedValues = normalizedOptions.filter((opt) =>
         rawSelected.some((v) => v.trim() === opt.trim())
       );
+      const multiselectOptions: StyledSelectOption[] = normalizedOptions.map((opt) => ({
+        label: opt,
+        value: opt,
+      }));
       const multiselectField = readOnly ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
           {selectedValues.length === 0 ? "—" : selectedValues.join(", ")}
         </div>
       ) : (
-        <SearchableMultiSelect
-          options={normalizedOptions}
-          value={selectedValues}
-          onChange={(val) => onChange(field.field_name, val)}
+        <StyledReactSelect
+          variant="form"
+          inputId={field.field_name}
+          isMulti
+          isSearchable
+          isClearable={false}
+          isDisabled={readOnly}
+          options={multiselectOptions}
+          value={multiselectOptions.filter((opt) => selectedValues.includes(opt.value))}
           placeholder={field.placeholder || "Type to search..."}
-          disabled={readOnly}
-          className={className}
-          id={field.field_name}
+          noOptionsMessage={() => "No options"}
+          onChange={(selected) => {
+            const next = Array.isArray(selected)
+              ? selected.map((opt) => String(opt.value))
+              : [];
+            onChange(field.field_name, next);
+          }}
         />
       );
       return withValidationWrapper(multiselectField, validationIndicator);

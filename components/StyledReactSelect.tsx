@@ -39,23 +39,43 @@ export default function StyledReactSelect<IsMulti extends boolean = false>({
           ...base,
           ...(isForm
             ? {
-                borderTop: 0,
-                borderLeft: 0,
-                borderRight: 0,
-                borderBottom: "1px solid",
-                borderRadius: 0,
-                boxShadow: "none",
-                borderBottomColor: hasError
-                  ? "#ef4444"
-                  : state.isFocused
-                    ? "#3b82f6"
-                    : "#d1d5db",
-                minHeight: 36,
                 fontSize: "1rem",
                 color: "#000000",
-                "&:hover": {
-                  borderBottomColor: hasError ? "#ef4444" : "#d1d5db",
-                },
+                ...(state.isMulti
+                  ? {
+                      borderColor: hasError
+                        ? "#ef4444"
+                        : state.isFocused
+                          ? "#3b82f6"
+                          : "#d1d5db",
+                      borderWidth: 1,
+                      boxShadow: state.isFocused
+                        ? hasError
+                          ? "0 0 0 2px rgba(239,68,68,0.28)"
+                          : "0 0 0 2px rgba(59,130,246,0.35)"
+                        : "none",
+                      minHeight: 42,
+                      "&:hover": {
+                        borderColor: hasError ? "#ef4444" : "#9ca3af",
+                      },
+                    }
+                  : {
+                      borderTop: 0,
+                      borderLeft: 0,
+                      borderRight: 0,
+                      borderBottom: "1px solid",
+                      borderRadius: 0,
+                      boxShadow: "none",
+                      borderBottomColor: hasError
+                        ? "#ef4444"
+                        : state.isFocused
+                          ? "#3b82f6"
+                          : "#d1d5db",
+                      minHeight: 36,
+                      "&:hover": {
+                        borderBottomColor: hasError ? "#ef4444" : "#d1d5db",
+                      },
+                    }),
               }
             : {
                 borderColor: hasError
@@ -77,7 +97,7 @@ export default function StyledReactSelect<IsMulti extends boolean = false>({
         }),
         valueContainer: (base) => ({
           ...base,
-          ...(isForm ? { padding: "2px 8px" } : {}),
+          ...(isForm ? { padding: "6px 8px" } : {}),
         }),
         placeholder: (base) => ({
           ...base,
