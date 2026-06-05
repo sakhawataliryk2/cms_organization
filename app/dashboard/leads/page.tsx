@@ -30,6 +30,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 
 interface Lead {
   id: string;
@@ -152,6 +154,9 @@ export default function LeadList() {
   const [showTearsheetModal, setShowTearsheetModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<LeadsFavorite[]>([]);
@@ -833,6 +838,11 @@ export default function LeadList() {
   const ownerField = findFieldByLabel('Owner');
   const statusField = findFieldByLabel('Status');
 
+  const handleDeleteLead = (lead: any) => {
+    setSelectedForDelete(lead);
+    setShowDeleteModal(true);
+  };
+
   const handleIndividualActionSuccess = () => {
     leadsQueryCacheRef.current.clear();
     void fetchLeads(currentPage);
@@ -926,6 +936,7 @@ export default function LeadList() {
                   setSelectedLeads([]);
                   setSelectAll(false);
                 }}
+                onDelete={() => setShowBulkDeleteModal(true)}
               />
             </div>
           )}
@@ -1110,6 +1121,7 @@ export default function LeadList() {
                 setSelectedLeads([]);
                 setSelectAll(false);
               }}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           </div>
         )}
@@ -1296,6 +1308,10 @@ export default function LeadList() {
                               action: () => {
                                 router.push(`/dashboard/jobs/add/contract?leadId=${lead.id}`);
                               },
+                            },
+                            {
+                              label: "Delete",
+                              action: () => handleDeleteLead(lead),
                             },
                           ]}
                         />
@@ -1660,6 +1676,32 @@ export default function LeadList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          leadsQueryCacheRef.current.clear();
+          void fetchLeads(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="leads"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          leadsQueryCacheRef.current.clear();
+          void fetchLeads(currentPage);
+          setSelectedLeads([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedLeads}
+        entityType="leads"
+        selectedCount={selectedLeads.length}
+      />
     </div>
   );
 }

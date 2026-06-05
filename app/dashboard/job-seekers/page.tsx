@@ -29,6 +29,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 
 interface JobSeeker {
   id: string;
@@ -224,6 +226,9 @@ export default function JobSeekerList() {
   const [showTearsheetModal, setShowTearsheetModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedJsId, setSelectedJsId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   const humanize = (s: string) =>
     s
@@ -598,6 +603,11 @@ export default function JobSeekerList() {
     }
   };
 
+  const handleDeleteJobSeeker = (js: any) => {
+    setSelectedForDelete(js);
+    setShowDeleteModal(true);
+  };
+
   // CSV Export function for selected records
   const handleCSVExport = () => {
     if (selectedJobSeekers.length === 0) return;
@@ -775,6 +785,7 @@ export default function JobSeekerList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
+                onDelete={() => setShowBulkDeleteModal(true)}
               />
             </div>
           )}
@@ -823,6 +834,7 @@ export default function JobSeekerList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           </div>
         )}
@@ -1012,6 +1024,10 @@ export default function JobSeekerList() {
                             action: () => {
                               router.push(`/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${jobSeeker.id}`);
                             },
+                          },
+                          {
+                            label: "Delete",
+                            action: () => handleDeleteJobSeeker(jobSeeker),
                           },
                         ]}
                       />
@@ -1378,6 +1394,32 @@ export default function JobSeekerList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="job-seekers"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+          setSelectedJobSeekers([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedJobSeekers}
+        entityType="job-seekers"
+        selectedCount={selectedJobSeekers.length}
+      />
     </div>
   );
 }

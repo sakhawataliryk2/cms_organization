@@ -199,6 +199,7 @@ export default function MultiSelectLookupField({
 
   return (
     <StyledReactSelect
+      variant="form"
       inputId={undefined}
       isMulti
       isSearchable

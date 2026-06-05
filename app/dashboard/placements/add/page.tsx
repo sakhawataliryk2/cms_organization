@@ -282,6 +282,7 @@ export default function AddPlacementLanding() {
             <label className="w-48 font-medium shrink-0">Job:</label>
             <div className="flex-1">
               <StyledReactSelect
+                variant="form"
                 value={jobOptions.find((opt) => opt.value === selectedJobId) || null}
                 options={jobOptions}
                 onChange={(opt) => setSelectedJobId((opt as StyledSelectOption)?.value || "")}

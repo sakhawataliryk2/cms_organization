@@ -31,6 +31,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 
 interface HiringManager {
   id: string;
@@ -104,6 +106,9 @@ export default function HiringManagerList() {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [selectedHmId, setSelectedHmId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
@@ -872,6 +877,11 @@ export default function HiringManagerList() {
     visibleTableColumnKeys.length > 0 ? visibleTableColumnKeys.length : 6;
   const skeletonRowCount = Math.min(pageSize, 12);
 
+  const handleDeleteHiringManager = (hm: any) => {
+    setSelectedForDelete(hm);
+    setShowDeleteModal(true);
+  };
+
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
   };
@@ -1020,6 +1030,7 @@ export default function HiringManagerList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
+                onDelete={() => setShowBulkDeleteModal(true)}
               />
             </>
           )}
@@ -1069,6 +1080,7 @@ export default function HiringManagerList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           </div>
         )}
@@ -1251,6 +1263,10 @@ export default function HiringManagerList() {
                                 )}`
                               );
                             },
+                          },
+                          {
+                            label: "Delete",
+                            action: () => handleDeleteHiringManager(hm),
                           },
                         ]}
                       />
@@ -1577,6 +1593,32 @@ export default function HiringManagerList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          hmQueryCacheRef.current.clear();
+          void fetchHiringManagers(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="hiring-managers"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          hmQueryCacheRef.current.clear();
+          void fetchHiringManagers(currentPage);
+          setSelectedHiringManagers([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedHiringManagers}
+        entityType="hiring-managers"
+        selectedCount={selectedHiringManagers.length}
+      />
     </div>
   );
 }

@@ -31,6 +31,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 
 type PlacementFavorite = {
   id: string;
@@ -136,6 +138,9 @@ export default function PlacementList() {
   const [showTearsheetModal, setShowTearsheetModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<PlacementFavorite[]>([]);
@@ -832,6 +837,11 @@ export default function PlacementList() {
     }
   };
 
+  const handleDeletePlacement = (placement: any) => {
+    setSelectedForDelete(placement);
+    setShowDeleteModal(true);
+  };
+
   // CSV Export function for selected records
   const handleCSVExport = () => {
     if (selectedPlacements.length === 0) return;
@@ -968,6 +978,7 @@ export default function PlacementList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
+                onDelete={() => setShowBulkDeleteModal(true)}
               />
             </div>
           )}
@@ -1123,6 +1134,7 @@ export default function PlacementList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           </div>
         )}
@@ -1317,6 +1329,10 @@ export default function PlacementList() {
                           {
                             label: "Email Approvers",
                             action: () => handleEmailApprovers(placement.id),
+                          },
+                          {
+                            label: "Delete",
+                            action: () => handleDeletePlacement(placement),
                           },
                         ]}
                       />
@@ -1667,6 +1683,32 @@ export default function PlacementList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="placements"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+          setSelectedPlacements([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedPlacements}
+        entityType="placements"
+        selectedCount={selectedPlacements.length}
+      />
     </div>
   );
 }
