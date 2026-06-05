@@ -208,6 +208,7 @@ export default function LookupField({
     return (
       <div className="relative">
         <StyledReactSelect
+          variant="form"
           className={className}
           value={selectedOption}
           options={selectOptions}
@@ -262,6 +263,7 @@ export default function LookupField({
         />
       )}
       <StyledReactSelect
+        variant="form"
         className={className}
         value={selectedOption}
         options={selectOptions}

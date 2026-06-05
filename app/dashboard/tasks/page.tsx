@@ -29,6 +29,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 
 interface Task {
   id: string;
@@ -165,6 +167,9 @@ export default function TaskList() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   const TASK_BACKEND_COLUMN_KEYS = [
     "completed",
@@ -672,6 +677,11 @@ export default function TaskList() {
     }
   };
 
+  const handleDeleteTask = (task: any) => {
+    setSelectedForDelete(task);
+    setShowDeleteModal(true);
+  };
+
   // CSV Export function for selected records
   const handleCSVExport = () => {
     if (selectedTasks.length === 0) return;
@@ -802,7 +812,7 @@ export default function TaskList() {
                   >
                     <path
                       fillRule="evenodd"
-                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      d="M8 4a4 4 0 100 8 6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
                       clipRule="evenodd"
                     />
                   </svg>
@@ -858,6 +868,7 @@ export default function TaskList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           )}
           <div className="relative" ref={favoritesMenuRef}>
@@ -1008,6 +1019,7 @@ export default function TaskList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
+                onDelete={() => setShowBulkDeleteModal(true)}
               />
             </div>
           )}
@@ -1162,6 +1174,10 @@ export default function TaskList() {
                                 setShowNoteModal(true);
                               },
                             },
+                            {
+                              label: "Delete",
+                              action: () => handleDeleteTask(task),
+                            },
                           ]}
                         />
                       </td>
@@ -1180,41 +1196,6 @@ export default function TaskList() {
                             key={key}
                             className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                           >
-                            {/* {getColumnLabel(key).toLowerCase() === "status" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                            >
-                              {getColumnValue(task, key)}
-                            </span>
-                          ) : (getColumnValue(task, key) || "").toLowerCase().includes("@") ? (
-                            <a
-                              href={`mailto:${getColumnValue(task, key)}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {getColumnValue(task, key)}
-                            </a>
-                          ) : (getColumnValue(task, key) || "").toLowerCase().startsWith("http") || (getColumnValue(task, key) || "").toLowerCase().startsWith("https") ? (
-                            <a
-                              href={(getColumnValue(task, key) || "")}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{(getColumnValue(task, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                            <RecordNameResolver
-                              id={String(getColumnValue(task, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "tasks"}
-                              clickable
-                              fallback={String(getColumnValue(task, key) || "") || ""}
-                            />
-                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(task, key) || "") ? (
-                              href={`tel:${(getColumnValue(task, key) || "").replace(/\D/g, "")}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{getColumnValue(task, key)}</a>
-                          ) : (
-                            getColumnValue(task, key)
-                          )} */}
                             <FieldValueRenderer
                               value={getColumnValue(task, key)}
                               fieldInfo={(() => {
@@ -1543,6 +1524,32 @@ export default function TaskList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="tasks"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+          setSelectedTasks([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedTasks}
+        entityType="tasks"
+        selectedCount={selectedTasks.length}
+      />
     </div>
   );
 }

@@ -12,7 +12,6 @@ import {
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
-import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -49,6 +48,8 @@ import SortableColumnHeader, {
   type ColumnSortState,
 } from "@/components/SortableColumnHeader";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/apiListParams";
+import { toast } from "sonner";
+import { formatRecordId } from "@/lib/recordIdFormatter";
 
 interface Organization {
   record_number: number;
@@ -314,8 +315,6 @@ export default function OrganizationList() {
   const advancedOrganizationsCacheRef = useRef<Map<string, Organization[]>>(
     new Map(),
   );
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
@@ -329,6 +328,26 @@ export default function OrganizationList() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showTearsheetModal, setShowTearsheetModal] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+
+  // Single delete request state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({ reason: "" });
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [selectedOrgForDelete, setSelectedOrgForDelete] = useState<string | null>(null);
+  const [selectedOrgForDeleteData, setSelectedOrgForDeleteData] = useState<Organization | null>(null);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+  const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+  const [isLoadingDependencies, setIsLoadingDependencies] = useState(false);
+  const [dependencyCounts, setDependencyCounts] = useState<any>(null);
+  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
+  const [deleteActionType, setDeleteActionType] = useState<"standard" | "cascade">("standard");
+  const [cascadeUserConsent, setCascadeUserConsent] = useState(false);
+
+  // Bulk delete state
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteForm, setBulkDeleteForm] = useState({ reason: "" });
+  const [isSubmittingBulkDelete, setIsSubmittingBulkDelete] = useState(false);
+  const [bulkDeleteResults, setBulkDeleteResults] = useState<{ success: number; failed: number; errors: { name: string; error: string }[] } | null>(null);
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -1065,50 +1084,6 @@ export default function OrganizationList() {
     }
   };
 
-  const deleteSelectedOrganizations = async () => {
-    if (selectedOrganizations.length === 0) return;
-
-    const confirmMessage =
-      selectedOrganizations.length === 1
-        ? "Are you sure you want to delete this organization?"
-        : `Are you sure you want to delete these ${selectedOrganizations.length} organizations?`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    try {
-      const deletePromises = selectedOrganizations.map((id) =>
-        fetch(`/api/organizations/${id}`, {
-          method: "DELETE",
-        }),
-      );
-
-      const results = await Promise.allSettled(deletePromises);
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} organizations`);
-      }
-
-      organizationsQueryCacheRef.current.clear();
-      advancedOrganizationsCacheRef.current.clear();
-      await fetchOrganizations(currentPage);
-      setSelectedOrganizations([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting organizations:", err);
-      setDeleteError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting organizations",
-      );
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
   // CSV Export function for selected records
   const handleCSVExport = () => {
     if (selectedOrganizations.length === 0) return;
@@ -1162,9 +1137,224 @@ export default function OrganizationList() {
     URL.revokeObjectURL(url);
   };
 
-  if (isDeleting) {
-    return <LoadingScreen message="Deleting organizations..." />;
-  }
+  // ─── Single Delete Request Flow ────────────────────────────────────────────
+  const getAuthToken = () =>
+    document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+
+  const getCurrentUser = () => {
+    try {
+      const raw = document.cookie.replace(/(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      return raw ? JSON.parse(decodeURIComponent(raw)) : null;
+    } catch { return null; }
+  };
+
+  const checkPendingDeleteRequest = async (orgId: string) => {
+    setIsLoadingDeleteRequest(true);
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/delete-request`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingDeleteRequest(data.deleteRequest || null);
+      } else {
+        setPendingDeleteRequest(null);
+      }
+    } catch {
+      setPendingDeleteRequest(null);
+    } finally {
+      setIsLoadingDeleteRequest(false);
+    }
+  };
+
+  const checkDependencies = async (orgId: string) => {
+    setIsLoadingDependencies(true);
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/dependencies`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDependencyCounts(data.counts);
+        const hasDeps = data.counts && (
+          (data.counts.hiring_managers > 0) ||
+          (data.counts.jobs > 0) ||
+          (data.counts.placements > 0) ||
+          (data.counts.child_organizations > 0) ||
+          (data.counts.details?.hiring_managers?.length > 0) ||
+          (data.counts.details?.jobs?.length > 0) ||
+          (data.counts.details?.placements?.length > 0) ||
+          (data.counts.details?.child_organizations?.length > 0)
+        );
+        if (hasDeps) {
+          setShowDependencyWarningModal(true);
+        } else {
+          setDeleteActionType("standard");
+          setShowDeleteModal(true);
+        }
+      } else {
+        setShowDeleteModal(true);
+      }
+    } catch {
+      setShowDeleteModal(true);
+    } finally {
+      setIsLoadingDependencies(false);
+    }
+  };
+
+  const handleSingleDelete = async (org: Organization) => {
+    setSelectedOrgForDelete(org.id);
+    setSelectedOrgForDeleteData(org);
+    setDeleteForm({ reason: "" });
+    setDeleteActionType("standard");
+    setCascadeUserConsent(false);
+    await checkPendingDeleteRequest(org.id);
+    await checkDependencies(org.id);
+  };
+
+  const handleDeleteRequestSubmit = async () => {
+    if (!deleteForm.reason.trim()) {
+      toast.error("Please enter a reason for deletion");
+      return;
+    }
+    if (!selectedOrgForDelete) {
+      toast.error("Organization ID is missing");
+      return;
+    }
+    setIsSubmittingDelete(true);
+    try {
+      const currentUser = getCurrentUser();
+
+      // Add "Delete requested" note
+      await fetch(`/api/organizations/${selectedOrgForDelete}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
+          action: "Delete Request",
+          about: selectedOrgForDeleteData
+            ? `${formatRecordId(selectedOrgForDeleteData.record_number ?? selectedOrgForDeleteData.id, "organization")} ${selectedOrgForDeleteData.name}`
+            : "",
+        }),
+      });
+
+      // Create delete request
+      const deleteReqRes = await fetch(`/api/organizations/${selectedOrgForDelete}/delete-request`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        body: JSON.stringify({
+          reason: deleteForm.reason.trim(),
+          record_type: "organization",
+          record_number: selectedOrgForDeleteData
+            ? formatRecordId(selectedOrgForDeleteData.record_number ?? selectedOrgForDeleteData.id, "organization")
+            : "",
+          requested_by: currentUser?.id || currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+          action_type: deleteActionType,
+          dependencies_summary: dependencyCounts || {},
+          user_consent: deleteActionType === "cascade" ? cascadeUserConsent : false,
+        }),
+      });
+
+      if (!deleteReqRes.ok) {
+        const errData = await deleteReqRes.json().catch(() => ({ message: "Failed to create delete request" }));
+        throw new Error(errData.message || "Failed to create delete request");
+      }
+
+      toast.success("Delete request submitted successfully. Payroll will be notified via email.");
+      setShowDeleteModal(false);
+      setDeleteForm({ reason: "" });
+      setSelectedOrgForDelete(null);
+      setSelectedOrgForDeleteData(null);
+      setPendingDeleteRequest(null);
+      setCascadeUserConsent(false);
+      organizationsQueryCacheRef.current.clear();
+      advancedOrganizationsCacheRef.current.clear();
+      void fetchOrganizations(currentPage);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit delete request");
+    } finally {
+      setIsSubmittingDelete(false);
+    }
+  };
+
+  // ─── Bulk Delete Request Flow ─────────────────────────────────────────────
+  const handleBulkDeleteRequestSubmit = async () => {
+    if (!bulkDeleteForm.reason.trim()) {
+      toast.error("Please enter a reason for deletion");
+      return;
+    }
+    if (selectedOrganizations.length === 0) return;
+
+    setIsSubmittingBulkDelete(true);
+    setBulkDeleteResults(null);
+
+    const currentUser = getCurrentUser();
+    const successes: string[] = [];
+    const failures: { name: string; error: string }[] = [];
+
+    for (const orgId of selectedOrganizations) {
+      try {
+        const org = organizations.find((o) => o.id === orgId);
+        const orgName = org ? `${formatRecordId(org.record_number ?? org.id, "organization")} ${org.name}` : orgId;
+
+        const res = await fetch(`/api/organizations/${orgId}/delete-request`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${getAuthToken()}`,
+          },
+          body: JSON.stringify({
+            reason: bulkDeleteForm.reason.trim(),
+            record_type: "organization",
+            record_number: org ? formatRecordId(org.record_number ?? org.id, "organization") : "",
+            requested_by: currentUser?.id || currentUser?.name || "Unknown",
+            requested_by_email: currentUser?.email || "",
+            action_type: "standard",
+            dependencies_summary: {},
+            user_consent: false,
+          }),
+        });
+
+        if (res.ok) {
+          successes.push(orgId);
+        } else {
+          const errData = await res.json().catch(() => ({ message: "Request failed" }));
+          failures.push({ name: orgName, error: errData.message || "Request failed" });
+        }
+      } catch (err) {
+        const org = organizations.find((o) => o.id === orgId);
+        const orgName = org ? `${formatRecordId(org.record_number ?? org.id, "organization")} ${org.name}` : orgId;
+        failures.push({ name: orgName, error: err instanceof Error ? err.message : "Unknown error" });
+      }
+    }
+
+    setBulkDeleteResults({ success: successes.length, failed: failures.length, errors: failures });
+
+    if (failures.length === 0) {
+      toast.success(`Delete requests submitted for all ${successes.length} organizations. Verification emails will be sent to payroll.`);
+      setShowBulkDeleteModal(false);
+      setBulkDeleteForm({ reason: "" });
+      setBulkDeleteResults(null);
+      setSelectedOrganizations([]);
+      setSelectAll(false);
+      organizationsQueryCacheRef.current.clear();
+      advancedOrganizationsCacheRef.current.clear();
+      void fetchOrganizations(currentPage);
+    } else if (successes.length > 0) {
+      toast.warning(`Delete requests submitted for ${successes.length} organizations. ${failures.length} failed.`);
+    } else {
+      toast.error("Failed to submit any delete requests.");
+    }
+
+    setIsSubmittingBulkDelete(false);
+  };
 
   // console.log('filteredAndSortedOrganizations', filteredAndSortedOrganizations)
 
@@ -1352,6 +1542,11 @@ export default function OrganizationList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
+                onDelete={() => {
+                  setBulkDeleteForm({ reason: "" });
+                  setBulkDeleteResults(null);
+                  setShowBulkDeleteModal(true);
+                }}
               />
             </div>
           )}
@@ -1482,9 +1677,18 @@ export default function OrganizationList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => {
+                setBulkDeleteForm({ reason: "" });
+                setBulkDeleteResults(null);
+                setShowBulkDeleteModal(true);
+              }}
             />
             <button
-              onClick={deleteSelectedOrganizations}
+              onClick={() => {
+                setBulkDeleteForm({ reason: "" });
+                setBulkDeleteResults(null);
+                setShowBulkDeleteModal(true);
+              }}
               className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2"
             >
               <svg
@@ -1528,13 +1732,6 @@ export default function OrganizationList() {
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
           <p>{error}</p>
-        </div>
-      )}
-
-      {/* Delete Error message */}
-      {deleteError && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
-          <p>{deleteError}</p>
         </div>
       )}
 
@@ -1673,6 +1870,10 @@ export default function OrganizationList() {
                                   setSelectedOrgId(org.id);
                                   setShowTearsheetModal(true);
                                 },
+                              },
+                              {
+                                label: "Delete",
+                                action: () => handleSingleDelete(org),
                               },
                             ]}
                           />
@@ -2113,6 +2314,386 @@ export default function OrganizationList() {
         resultsCount={visibleResultsCount}
         resultsLabel="records"
       />
+
+      {/* ─── Single Delete Request Modal ────────────────────────────────── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">
+                {deleteActionType === "cascade" ? "Request Cascade Deletion" : "Request Deletion"}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                  setSelectedOrgForDelete(null);
+                  setSelectedOrgForDeleteData(null);
+                  setCascadeUserConsent(false);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[65vh]">
+              {selectedOrgForDeleteData && (
+                <div className="bg-gray-50 p-4 rounded">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Organization to Delete
+                  </label>
+                  <p className="text-sm text-gray-900 font-medium">
+                    {formatRecordId(selectedOrgForDeleteData.record_number ?? selectedOrgForDeleteData.id, "organization")} {selectedOrgForDeleteData.name}
+                  </p>
+                  {deleteActionType === "cascade" && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-2">
+                      Cascade Delete Mode
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Pending Request:</strong> A delete request is already pending payroll approval.
+                  </p>
+                </div>
+              )}
+
+              {pendingDeleteRequest && pendingDeleteRequest.status === "denied" && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800">
+                    <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
+                  </p>
+                </div>
+              )}
+
+              {deleteActionType === "cascade" && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800 mb-3">
+                    <strong>Warning:</strong> You are requesting cascade archival. Linked records will not all be deleted; dependency rules below will be applied:
+                  </p>
+                  <ul className="list-disc list-inside text-xs text-red-700 mb-3 space-y-1">
+                    {dependencyCounts?.hiring_managers > 0 && <li>{dependencyCounts.hiring_managers} Hiring Managers - will be archived.</li>}
+                    {dependencyCounts?.jobs > 0 && <li>{dependencyCounts.jobs} Jobs - will be archived.</li>}
+                    {dependencyCounts?.placements > 0 && <li>{dependencyCounts.placements} Placements - organization link will be cleared where applicable.</li>}
+                    {dependencyCounts?.child_organizations > 0 && <li>{dependencyCounts.child_organizations} Child Organizations - parent organization will be cleared.</li>}
+                    {dependencyCounts?.leads > 0 && <li>{dependencyCounts.leads} Leads - organization link will be cleared where applicable.</li>}
+                    {dependencyCounts?.job_seekers > 0 && <li>{dependencyCounts.job_seekers} Job Seekers - organization lookup will be cleared where applicable.</li>}
+                    {dependencyCounts?.notes > 0 && <li>{dependencyCounts.notes} Notes - retained on the archived organization.</li>}
+                    {dependencyCounts?.documents > 0 && <li>{dependencyCounts.documents} Documents - retained on the archived organization.</li>}
+                  </ul>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cascadeUserConsent}
+                      onChange={(e) => setCascadeUserConsent(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                    />
+                    <span className="text-sm text-red-900">
+                      I understand this will archive the organization and apply the dependency rules listed above.
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Reason for Deletion
+                </label>
+                <textarea
+                  value={deleteForm.reason}
+                  onChange={(e) =>
+                    setDeleteForm((prev) => ({ ...prev, reason: e.target.value }))
+                  }
+                  placeholder="Please provide a detailed reason for deleting this organization..."
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
+                    ? "border-red-300 focus:ring-red-500"
+                    : "border-gray-300 focus:ring-blue-500"
+                  }`}
+                  rows={5}
+                  required
+                />
+                {!deleteForm.reason.trim() && (
+                  <p className="mt-1 text-sm text-red-500">Reason is required</p>
+                )}
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny it. If approved, the organization is archived and linked records are handled per dependency rules.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                  setSelectedOrgForDelete(null);
+                  setSelectedOrgForDeleteData(null);
+                  setCascadeUserConsent(false);
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingDelete}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleDeleteRequestSubmit}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={
+                  isSubmittingDelete ||
+                  !deleteForm.reason.trim() ||
+                  (pendingDeleteRequest && pendingDeleteRequest.status === "pending") ||
+                  (deleteActionType === "cascade" && !cascadeUserConsent)
+                }
+              >
+                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                {!isSubmittingDelete && (
+                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Dependency Warning Modal ───────────────────────────────────── */}
+      {showDependencyWarningModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Linked Records Found</h2>
+              <button
+                onClick={() => {
+                  setShowDependencyWarningModal(false);
+                  setSelectedOrgForDelete(null);
+                  setSelectedOrgForDeleteData(null);
+                }}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="bg-orange-100 p-2 rounded-full">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    This organization has linked records. Choose transfer to move records, or cascade archival to apply per-record dependency rules.
+                  </p>
+                </div>
+              </div>
+
+              {dependencyCounts?.details?.hiring_managers?.length > 0 && (
+                <div className="border rounded-lg overflow-hidden mb-4">
+                  <div className="bg-gray-50 px-4 py-2 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Hiring Managers ({dependencyCounts.details.hiring_managers.length})
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: these records will be archived.</p>
+                  </div>
+                </div>
+              )}
+
+              {dependencyCounts?.details?.jobs?.length > 0 && (
+                <div className="border rounded-lg overflow-hidden mb-4">
+                  <div className="bg-gray-50 px-4 py-2 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Jobs ({dependencyCounts.details.jobs.length})
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: these records will be archived.</p>
+                  </div>
+                </div>
+              )}
+
+              {dependencyCounts?.details?.placements?.length > 0 && (
+                <div className="border rounded-lg overflow-hidden mb-4">
+                  <div className="bg-gray-50 px-4 py-2 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Placements ({dependencyCounts.details.placements.length})
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: organization linkage will be cleared where applicable.</p>
+                  </div>
+                </div>
+              )}
+
+              {dependencyCounts?.details?.child_organizations?.length > 0 && (
+                <div className="border rounded-lg overflow-hidden mb-4">
+                  <div className="bg-gray-50 px-4 py-2 border-b">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      Child Organizations ({dependencyCounts.details.child_organizations.length})
+                    </h4>
+                    <p className="text-xs text-gray-600 mt-1">Action if cascade is approved: parent organization link will be cleared.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t bg-gray-50 space-y-3">
+              <button
+                onClick={() => {
+                  setShowDependencyWarningModal(false);
+                  setSelectedOrgForDelete(null);
+                  setSelectedOrgForDeleteData(null);
+                }}
+                className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowDependencyWarningModal(false);
+                  setDeleteActionType("cascade");
+                  setShowDeleteModal(true);
+                }}
+                className="w-full flex justify-center items-center px-4 py-2 border border-red-300 rounded shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+              >
+                Request Cascade Deletion (Apply Dependency Rules)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Bulk Delete Modal ──────────────────────────────────────────── */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Request Deletion for {selectedOrganizations.length} Organizations</h2>
+              <button
+                onClick={() => {
+                  setShowBulkDeleteModal(false);
+                  setBulkDeleteForm({ reason: "" });
+                  setBulkDeleteResults(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[65vh]">
+              {bulkDeleteResults ? (
+                <div className="space-y-4">
+                  <div className={`rounded p-4 ${bulkDeleteResults.failed === 0 ? "bg-green-50 border border-green-200" : "bg-yellow-50 border border-yellow-200"}`}>
+                    <p className={`text-sm font-medium ${bulkDeleteResults.failed === 0 ? "text-green-800" : "text-yellow-800"}`}>
+                      {bulkDeleteResults.success} delete request(s) submitted successfully.
+                      {bulkDeleteResults.failed > 0 && ` ${bulkDeleteResults.failed} failed.`}
+                    </p>
+                  </div>
+                  {bulkDeleteResults.errors.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded p-4">
+                      <p className="text-sm font-medium text-red-800 mb-2">Errors:</p>
+                      <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
+                        {bulkDeleteResults.errors.map((e, i) => (
+                          <li key={i}>{e.name}: {e.error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowBulkDeleteModal(false);
+                      setBulkDeleteForm({ reason: "" });
+                      setBulkDeleteResults(null);
+                      setSelectedOrganizations([]);
+                      setSelectAll(false);
+                      organizationsQueryCacheRef.current.clear();
+                      advancedOrganizationsCacheRef.current.clear();
+                      void fetchOrganizations(currentPage);
+                    }}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+                  >
+                    DONE
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-gray-50 p-4 rounded">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Selected Organizations
+                    </label>
+                    <p className="text-sm text-gray-900 font-medium">
+                      {selectedOrganizations.length} organization(s) selected
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="text-red-500 mr-1">•</span>
+                      Reason for Deletion (shared for all)
+                    </label>
+                    <textarea
+                      value={bulkDeleteForm.reason}
+                      onChange={(e) =>
+                        setBulkDeleteForm((prev) => ({ ...prev, reason: e.target.value }))
+                      }
+                      placeholder="Please provide a detailed reason for deleting these organizations..."
+                      className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!bulkDeleteForm.reason.trim()
+                        ? "border-red-300 focus:ring-red-500"
+                        : "border-gray-300 focus:ring-blue-500"
+                      }`}
+                      rows={5}
+                      required
+                    />
+                    {!bulkDeleteForm.reason.trim() && (
+                      <p className="mt-1 text-sm text-red-500">Reason is required</p>
+                    )}
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>Note:</strong> Delete requests will be created for each selected organization. Payroll will receive individual verification emails for each organization and must approve or deny them independently.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {!bulkDeleteResults && (
+              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowBulkDeleteModal(false);
+                    setBulkDeleteForm({ reason: "" });
+                    setBulkDeleteResults(null);
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingBulkDelete}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleBulkDeleteRequestSubmit}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  disabled={isSubmittingBulkDelete || !bulkDeleteForm.reason.trim()}
+                >
+                  {isSubmittingBulkDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUESTS"}
+                  {!isSubmittingBulkDelete && (
+                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

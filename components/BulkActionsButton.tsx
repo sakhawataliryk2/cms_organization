@@ -17,6 +17,7 @@ interface BulkActionsButtonProps {
     availableFields?: any[];
     onSuccess?: () => void;
     onCSVExport?: () => void;
+    onDelete?: () => void;
 }
 
 export default function BulkActionsButton({
@@ -25,7 +26,8 @@ export default function BulkActionsButton({
     entityIds,
     availableFields = [],
     onSuccess,
-    onCSVExport
+    onCSVExport,
+    onDelete
 }: BulkActionsButtonProps) {
     const router = useRouter();
     const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -348,6 +350,11 @@ export default function BulkActionsButton({
                 disabled: false
             }
         ] : []),
+        ...(onDelete ? [{
+            label: 'Delete',
+            action: () => onDelete(),
+            disabled: false
+        }] : []),
         ...(onCSVExport ? [{
             label: 'CSV Export',
             action: () => onCSVExport(),

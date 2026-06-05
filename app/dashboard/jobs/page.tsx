@@ -31,6 +31,8 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import EntityDeleteModal from "@/components/EntityDeleteModal";
+import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 import { toast } from "sonner";
 
 interface Job {
@@ -153,6 +155,9 @@ export default function JobList() {
   const [showTearsheetModal, setShowTearsheetModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // XML Feed In
   const [showXmlFeedModal, setShowXmlFeedModal] = useState(false);
@@ -1134,6 +1139,11 @@ export default function JobList() {
   };
 
   // CSV Export function for selected records
+  const handleDeleteJob = (job: any) => {
+    setSelectedForDelete(job);
+    setShowDeleteModal(true);
+  };
+
   const handleCSVExport = () => {
     if (selectedJobs.length === 0) return;
 
@@ -1652,6 +1662,7 @@ export default function JobList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
@@ -1705,6 +1716,7 @@ export default function JobList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
+              onDelete={() => setShowBulkDeleteModal(true)}
             />
           </div>
         )}
@@ -1864,6 +1876,10 @@ export default function JobList() {
                               action: () => {
                                 router.push(`/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${job.id}`);
                               },
+                            },
+                            {
+                              label: "Delete",
+                              action: () => handleDeleteJob(job),
                             },
                           ]}
                         />
@@ -2390,6 +2406,34 @@ export default function JobList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      <EntityDeleteModal
+        open={showDeleteModal}
+        onClose={() => { setShowDeleteModal(false); setSelectedForDelete(null); }}
+        onSuccess={() => {
+          jobsQueryCacheRef.current.clear();
+          advancedJobsCacheRef.current.clear();
+          void fetchJobs(currentPage);
+        }}
+        entityId={selectedForDelete?.id}
+        entityData={selectedForDelete}
+        entityType="jobs"
+      />
+
+      <EntityBulkDeleteModal
+        open={showBulkDeleteModal}
+        onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          jobsQueryCacheRef.current.clear();
+          advancedJobsCacheRef.current.clear();
+          void fetchJobs(currentPage);
+          setSelectedJobs([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedJobs}
+        entityType="jobs"
+        selectedCount={selectedJobs.length}
+      />
     </div>
   );
 }
