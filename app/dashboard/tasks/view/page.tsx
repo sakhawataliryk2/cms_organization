@@ -13,7 +13,14 @@ import { HiOutlineUser } from 'react-icons/hi';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+    headerCatalogKeyFromField,
+    panelCatalogKeyFromField,
+    remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import CountdownTimer from '@/components/CountdownTimer';
@@ -76,9 +83,10 @@ const TASK_HEADER_FIELD_LABELS: Record<string, string> = {
     website: "Website",
 };
 
-// Storage keys for Task Details and Task Overview – field lists come from admin (custom field definitions)
-const TASK_DETAILS_STORAGE_KEY = "taskDetailsFields";
-const TASK_OVERVIEW_STORAGE_KEY = "taskOverviewFields";
+const TASK_DEFAULT_SUMMARY_LAYOUT = {
+    left: ["taskOverview"],
+    right: ["details", "recentNotes"],
+};
 
 function DroppableContainer({
     id,
@@ -295,11 +303,36 @@ export default function TaskView() {
         setShowHeaderFieldModal,
         saveHeaderConfig,
         isSaving: isSavingHeaderConfig,
-    } = useHeaderConfig({
-        entityType: "TASK",
+    } = useHeaderViewConfig({
+        entityType: VIEW_ENTITY_TYPES.tasksDetail,
         configType: "header",
         defaultFields: TASK_DEFAULT_HEADER_FIELDS,
     });
+
+    const { value: panelFields, setValue: setPanelFields } = useUserViewConfig({
+        entityType: VIEW_ENTITY_TYPES.tasksDetail,
+        key: "panel_fields",
+        defaultValue: {},
+    });
+
+    const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
+        entityType: VIEW_ENTITY_TYPES.tasksDetail,
+        key: "summary_layout",
+        defaultValue: TASK_DEFAULT_SUMMARY_LAYOUT,
+    });
+
+    const columns = summaryLayout;
+    const setColumns = useCallback(
+        (
+            value:
+                | { left: string[]; right: string[] }
+                | ((prev: { left: string[]; right: string[] }) => { left: string[]; right: string[] })
+        ) => {
+            const next = typeof value === "function" ? value(summaryLayout) : value;
+            setSummaryLayout(next);
+        },
+        [summaryLayout, setSummaryLayout]
+    );
 
     // Drop animation config for drag overlay (used by main content DnD)
     const dropAnimationConfig = useMemo(() => ({
@@ -315,16 +348,13 @@ export default function TaskView() {
         const seen = new Set<string>();
         const fromApi = (availableFields || [])
             .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-            .map((f: any) => {
-                const k = f.field_name || f.field_key || f.field_label || f.id;
-                return {
-                    key: `custom:${String(k)}`,
-                    label: f.field_label || f.field_name || String(k),
-                    fieldType: (f.field_type ?? f.fieldType ?? "") as string,
-                    lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
-                    multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
-                };
-            })
+            .map((f: any) => ({
+                key: headerCatalogKeyFromField(f),
+                label: f.field_label || f.field_name || f.field_key || String(f.id),
+                fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+                lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+                multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
+            }))
             .filter((x) => {
                 if (seen.has(x.key)) return false;
                 seen.add(x.key);
@@ -394,13 +424,14 @@ export default function TaskView() {
     // Initialize headerFieldsOrder when headerFields or catalog changes
     useEffect(() => {
         if (headerFieldCatalog.length > 0 && headerFieldsOrder.length === 0) {
-            // Initialize order with headerFields, then add remaining catalog fields
             const catalogKeys = headerFieldCatalog.map((f) => f.key);
-            const selectedOrder = headerFields.filter((k) => catalogKeys.includes(k));
+            const selectedOrder = remapLegacyCustomKeys(headerFields, headerFieldCatalog).filter((k) =>
+                catalogKeys.includes(k)
+            );
             const newFields = catalogKeys.filter((k) => !selectedOrder.includes(k));
             setHeaderFieldsOrder([...selectedOrder, ...newFields]);
         }
-    }, [headerFieldCatalog.length, headerFields]);
+    }, [headerFieldCatalog.length, headerFields, headerFieldsOrder.length]);
 
     // Fetch task when component mounts
     useEffect(() => {
@@ -637,29 +668,16 @@ export default function TaskView() {
         }
     };
 
-    // Panel visibility state (availableFields declared above with header block)
-    const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-        if (typeof window === "undefined") {
-            return { taskOverview: [], details: [], recentNotes: ["notes"] };
-        }
-        let taskOverview: string[] = [];
-        let details: string[] = [];
-        try {
-            const to = localStorage.getItem(TASK_OVERVIEW_STORAGE_KEY);
-            if (to) {
-                const parsed = JSON.parse(to);
-                if (Array.isArray(parsed) && parsed.length > 0) taskOverview = Array.from(new Set(parsed));
-            }
-        } catch (_) { }
-        try {
-            const d = localStorage.getItem(TASK_DETAILS_STORAGE_KEY);
-            if (d) {
-                const parsed = JSON.parse(d);
-                if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-            }
-        } catch (_) { }
-        return { taskOverview, details, recentNotes: ["notes"] };
-    });
+    const [recentNotesFields, setRecentNotesFields] = useState<string[]>(["notes"]);
+
+    const visibleFields: Record<string, string[]> = useMemo(
+        () => ({
+            details: getPanelFieldPath(panelFields, "details") ?? [],
+            taskOverview: getPanelFieldPath(panelFields, "overview") ?? [],
+            recentNotes: recentNotesFields,
+        }),
+        [panelFields, recentNotesFields]
+    );
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -731,13 +749,13 @@ export default function TaskView() {
     }, [task, fetchAvailableFields]);
 
     const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-        setVisibleFields((prev) => {
-            const panelFields = prev[panelId] || [];
-            const uniqueFields = Array.from(new Set(panelFields));
+        if (panelId !== "recentNotes") return;
+        setRecentNotesFields((prev) => {
+            const uniqueFields = Array.from(new Set(prev));
             if (uniqueFields.includes(fieldKey)) {
-                return { ...prev, [panelId]: uniqueFields.filter((x) => x !== fieldKey) };
+                return uniqueFields.filter((x) => x !== fieldKey);
             }
-            return { ...prev, [panelId]: Array.from(new Set([...uniqueFields, fieldKey])) };
+            return Array.from(new Set([...uniqueFields, fieldKey]));
         });
     };
 
@@ -746,7 +764,7 @@ export default function TaskView() {
         const fromApi = (availableFields || [])
             .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
             .map((f: any) => ({
-                key: String(f.field_key || f.api_name || f.field_name || f.id),
+                key: panelCatalogKeyFromField(f),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
                 fieldType: String(f.field_type || f.fieldType),
                 lookupType: String(f.lookup_type || f.lookupType),
@@ -760,7 +778,7 @@ export default function TaskView() {
         const fromApi = (availableFields || [])
             .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
             .map((f: any) => ({
-                key: String(f.field_key || f.api_name || f.field_name || f.id),
+                key: panelCatalogKeyFromField(f),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
                 fieldType: String(f.field_type || f.fieldType),
                 lookupType: String(f.lookup_type || f.lookupType),
@@ -771,26 +789,36 @@ export default function TaskView() {
 
     // When catalog loads, if details/taskOverview visible list is empty, default to all catalog keys
     useEffect(() => {
-        const keys = taskDetailsFieldCatalog.map((f) => f.key);
-        if (keys.length > 0) {
-            setVisibleFields((prev) => {
-                const current = prev.details || [];
-                if (current.length > 0) return prev;
-                return { ...prev, details: keys };
-            });
+        const catalog = taskDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
+        const keys = catalog.map((f) => f.key);
+        if (keys.length === 0) return;
+
+        const current = getPanelFieldPath(panelFields, "details") ?? [];
+        if (current.length > 0) {
+            const remapped = remapLegacyCustomKeys(current, catalog);
+            if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+                setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
+            }
+            return;
         }
-    }, [taskDetailsFieldCatalog]);
+        setPanelFields(setPanelFieldPath(panelFields, "details", keys));
+    }, [taskDetailsFieldCatalog, panelFields, setPanelFields]);
 
     useEffect(() => {
-        const keys = taskOverviewFieldCatalog.map((f) => f.key);
-        if (keys.length > 0) {
-            setVisibleFields((prev) => {
-                const current = prev.taskOverview || [];
-                if (current.length > 0) return prev;
-                return { ...prev, taskOverview: keys };
-            });
+        const catalog = taskOverviewFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
+        const keys = catalog.map((f) => f.key);
+        if (keys.length === 0) return;
+
+        const current = getPanelFieldPath(panelFields, "overview") ?? [];
+        if (current.length > 0) {
+            const remapped = remapLegacyCustomKeys(current, catalog);
+            if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+                setPanelFields(setPanelFieldPath(panelFields, "overview", remapped));
+            }
+            return;
         }
-    }, [taskOverviewFieldCatalog]);
+        setPanelFields(setPanelFieldPath(panelFields, "overview", keys));
+    }, [taskOverviewFieldCatalog, panelFields, setPanelFields]);
 
     // Sync Task Details modal state when opening edit for details
     useEffect(() => {
@@ -829,22 +857,16 @@ export default function TaskView() {
     // Task Details modal: save order/visibility and persist for all records
     const handleSaveTaskDetailsFields = useCallback(() => {
         const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k])));
-        if (typeof window !== "undefined") {
-            localStorage.setItem(TASK_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-        }
-        setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+        setPanelFields(setPanelFieldPath(panelFields, "details", newOrder));
         setEditingPanel(null);
-    }, [modalDetailsOrder, modalDetailsVisible]);
+    }, [modalDetailsOrder, modalDetailsVisible, panelFields, setPanelFields]);
 
     // Task Overview modal: save order/visibility and persist for all records
     const handleSaveTaskOverviewFields = useCallback(() => {
         const newOrder = Array.from(new Set(modalTaskOverviewOrder.filter((k) => modalTaskOverviewVisible[k])));
-        if (typeof window !== "undefined") {
-            localStorage.setItem(TASK_OVERVIEW_STORAGE_KEY, JSON.stringify(newOrder));
-        }
-        setVisibleFields((prev) => ({ ...prev, taskOverview: newOrder }));
+        setPanelFields(setPanelFieldPath(panelFields, "overview", newOrder));
         setEditingPanel(null);
-    }, [modalTaskOverviewOrder, modalTaskOverviewVisible]);
+    }, [modalTaskOverviewOrder, modalTaskOverviewVisible, panelFields, setPanelFields]);
 
     const handleEditPanel = (panelId: string) => {
         setEditingPanel(panelId);
@@ -2016,10 +2038,6 @@ export default function TaskView() {
         </div>
     );
 
-    const [columns, setColumns] = useState<{ left: string[]; right: string[] }>({
-        left: ["taskOverview"],
-        right: ["details", "recentNotes"],
-    });
     const [activeId, setActiveId] = useState<string | null>(null);
     const [isPinned, setIsPinned] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -2056,66 +2074,6 @@ export default function TaskView() {
         }),
         []
     );
-
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const saved = localStorage.getItem("taskSummaryColumns");
-        if (!saved) return;
-        try {
-            const parsed = JSON.parse(saved);
-            if (
-                parsed &&
-                Array.isArray(parsed.left) &&
-                Array.isArray(parsed.right)
-            ) {
-                setColumns({ left: parsed.left, right: parsed.right });
-            }
-        } catch (e) {
-            console.error("Error loading task panel order:", e);
-        }
-    }, []);
-
-    // Initialize Task Details field order/visibility from localStorage (persists across all records)
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const saved = localStorage.getItem(TASK_DETAILS_STORAGE_KEY);
-        if (!saved) return;
-        try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                const unique = Array.from(new Set(parsed));
-                setVisibleFields((prev) => ({ ...prev, details: unique }));
-            }
-        } catch (_) {
-            /* keep default */
-        }
-    }, []);
-
-    // Initialize Task Overview field order/visibility from localStorage (persists across all records)
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const saved = localStorage.getItem(TASK_OVERVIEW_STORAGE_KEY);
-        if (!saved) return;
-        try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                const unique = Array.from(new Set(parsed));
-                setVisibleFields((prev) => ({ ...prev, taskOverview: unique }));
-            }
-        } catch (_) {
-            /* keep default */
-        }
-    }, []);
-
-    const prevColumnsRef = useRef<string>("");
-    useEffect(() => {
-        if (typeof window === "undefined") return;
-        const colsString = JSON.stringify(columns);
-        if (prevColumnsRef.current !== colsString) {
-            localStorage.setItem("taskSummaryColumns", colsString);
-            prevColumnsRef.current = colsString;
-        }
-    }, [columns]);
 
     const togglePin = () => {
         setIsPinned((p) => !p);
@@ -2887,9 +2845,9 @@ export default function TaskView() {
                     fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
                     onToggle={(key) => {
                         if (headerFields.includes(key)) {
-                            setHeaderFields((prev) => prev.filter((x) => x !== key));
+                            setHeaderFields(headerFields.filter((x) => x !== key));
                         } else {
-                            setHeaderFields((prev) => [...prev, key]);
+                            setHeaderFields([...headerFields, key]);
                             if (!headerFieldsOrder.includes(key)) {
                                 setHeaderFieldsOrder((prev) => [...prev, key]);
                             }
@@ -2904,12 +2862,11 @@ export default function TaskView() {
                             if (oldIndex === -1 || newIndex === -1) return prev;
                             return arrayMove(prev, oldIndex, newIndex);
                         });
-                        setHeaderFields((prev) => {
-                            const oldIndex = prev.indexOf(active.id as string);
-                            const newIndex = prev.indexOf(over.id as string);
-                            if (oldIndex === -1 || newIndex === -1) return prev;
-                            return arrayMove(prev, oldIndex, newIndex);
-                        });
+                        const oldIndex = headerFields.indexOf(active.id as string);
+                        const newIndex = headerFields.indexOf(over.id as string);
+                        if (oldIndex !== -1 && newIndex !== -1) {
+                            setHeaderFields(arrayMove(headerFields, oldIndex, newIndex));
+                        }
                     }}
                     onSave={async () => {
                         const success = await saveHeaderConfig();

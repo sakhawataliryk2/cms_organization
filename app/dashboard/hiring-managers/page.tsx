@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } f
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { IoFilterSharp } from "react-icons/io5";
@@ -66,8 +68,6 @@ type HiringManagerFavorite = {
   createdAt: number;
 };
 
-const FAVORITES_STORAGE_KEY = "hiringManagersFavorites";
-
 export default function HiringManagerList() {
   const router = useRouter();
   const [selectedHiringManagers, setSelectedHiringManagers] = useState<
@@ -111,32 +111,17 @@ export default function HiringManagerList() {
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
-  const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagers,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as HiringManagerFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  // Load favorites from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setFavorites(parsed);
-        }
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -146,8 +131,7 @@ export default function HiringManagerList() {
 
   // Favorites Logic
   const persistFavorites = (updated: HiringManagerFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+    setFavoritesConfig(updated);
   };
 
   const applyFavorite = (fav: HiringManagerFavorite) => {
@@ -336,6 +320,7 @@ export default function HiringManagerList() {
       return {
         key,
         label: humanize(key),
+        name: key,
         sortable: true,
         filterType,
         fieldType: "",
@@ -377,8 +362,9 @@ export default function HiringManagerList() {
           fieldType,
           lookupType,
           options,
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
         };
@@ -407,10 +393,9 @@ export default function HiringManagerList() {
       return hm.record_number ?? hm.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = hm?.customFields || hm?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === "" ? "—" : String(val);
+      const resolved = resolveCustomColumnValue(hm, key, getColumnInfo(key));
+      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      return String(resolved);
     }
 
     switch (key) {
@@ -442,8 +427,8 @@ export default function HiringManagerList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "HIRING_MANAGER",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagers,
     configType: "columns",
     defaultFields: [],
   });
@@ -452,47 +437,35 @@ export default function HiringManagerList() {
     const catalogKeys = hmColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("hiringManagerColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [hmColumnsCatalog]);
 
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("hiringManagerColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, hmColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    localStorage.setItem("hiringManagerColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
+
+    if (columnFields.length === 0) {
+      setColumnFields(catalogKeys);
+    }
+  }, [hmColumnsCatalog, columnFields, setColumnFields]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const fetchHiringManagers = useCallback(
     async (page: number) => {
@@ -1413,9 +1386,9 @@ export default function HiringManagerList() {
           fieldCatalog={hmColumnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+              setColumnFields(columnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...columnFields, key]);
             }
           }}
           onDragEnd={(event) => {
@@ -1442,8 +1415,9 @@ export default function HiringManagerList() {
               .filter(f => f.is_required || f.required || f.isRequired)
               .map(f => {
                 const name = f.field_name || f.fieldName || "";
-                const isBackendCandidate = HM_BACKEND_COLUMN_KEYS.includes(name);
-                return isBackendCandidate ? name : `custom:${f.field_label || f.fieldLabel || f.field_name || f.id}`;
+                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
+                const isBackendCandidate = name && HM_BACKEND_COLUMN_KEYS.includes(name);
+                return catalogKeyFromColumn(name, String(label || name), !!isBackendCandidate);
               });
             const defaults = Array.from(new Set(["record_number", ...HM_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
             setColumnFields(defaults);

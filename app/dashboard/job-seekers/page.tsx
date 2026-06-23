@@ -3,7 +3,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
@@ -65,8 +67,12 @@ export default function JobSeekerList() {
   const router = useRouter();
 
   // Favorites State
-  const FAVORITES_STORAGE_KEY = "jobSeekersFavorites";
-  const [favorites, setFavorites] = useState<JobSeekersFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobSeekers,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as JobSeekersFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
@@ -94,31 +100,11 @@ export default function JobSeekerList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "JOB_SEEKER",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobSeekers,
     defaultFields: [],
     configType: "columns",
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    // Don't overwrite a multi-column preference with only record_number (e.g. after API or initial load)
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("jobSeekerColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("jobSeekerColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   // Handle drag end for column reordering
   const handleDragEnd = (event: DragEndEvent) => {
@@ -247,8 +233,9 @@ export default function JobSeekerList() {
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -272,30 +259,30 @@ export default function JobSeekerList() {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("jobSeekerColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          // Don't apply when we would collapse a multi-column preference to only record_number
-          // (catalog may still be loading — e.g. availableFields not yet loaded)
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
+
+    if (columnFields.length === 0) {
+      setColumnFields(catalogKeys);
+    }
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -307,14 +294,9 @@ export default function JobSeekerList() {
     if (key === "record_number") {
       return js.record_number ?? js.id;
     }
-    // ✅ custom columns
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = js?.customFields || js?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(js, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     switch (key) {
@@ -352,18 +334,6 @@ export default function JobSeekerList() {
   // FAVORITES LOGIC
   // =====================
 
-  // Load favorites from local storage
-  useEffect(() => {
-    const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (stored) {
-      try {
-        setFavorites(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
   // Close favorites menu on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -378,8 +348,7 @@ export default function JobSeekerList() {
   }, [favoritesMenuOpen]);
 
   const persistFavorites = (updatedFavorites: JobSeekersFavorite[]) => {
-    setFavorites(updatedFavorites);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updatedFavorites));
+    setFavoritesConfig(updatedFavorites);
   };
 
   const applyFavorite = (fav: JobSeekersFavorite) => {
@@ -1226,9 +1195,9 @@ export default function JobSeekerList() {
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+              setColumnFields(columnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...columnFields, key]);
             }
           }}
           onDragEnd={(event) => {
@@ -1254,9 +1223,10 @@ export default function JobSeekerList() {
             const required = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
               .map(f => {
-                const name = f.field_name || f.fieldName || "";
-                const isBackendCandidate = JS_BACKEND_COLUMN_KEYS.includes(name);
-                return isBackendCandidate ? name : `custom:${f.field_label || f.fieldLabel || f.field_name || f.id}`;
+                const name = String(f.field_name ?? f.fieldName ?? "").trim();
+                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
+                const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
+                return catalogKeyFromColumn(name, String(label || name), !!isBackendCol);
               });
             const defaults = Array.from(new Set(["record_number", ...JS_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
             setColumnFields(defaults);

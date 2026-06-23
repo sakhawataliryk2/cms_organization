@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
@@ -59,8 +61,6 @@ type HiringManagerFavorite = {
   advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
-
-const FAVORITES_STORAGE_KEY = "hiringManagersArchivedFavorites";
 
 export default function ArchivedHiringManagersList() {
   const router = useRouter();
@@ -118,7 +118,6 @@ export default function ArchivedHiringManagersList() {
   const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
 
   // Favorites State
-  const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
@@ -126,21 +125,6 @@ export default function ArchivedHiringManagersList() {
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  // Load favorites from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setFavorites(parsed);
-        }
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
@@ -154,12 +138,6 @@ export default function ArchivedHiringManagersList() {
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [favoritesMenuOpen]);
-
-  // Favorites Logic
-  const persistFavorites = (updated: HiringManagerFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-  };
 
   const HM_BACKEND_COLUMN_KEYS = [
     "full_name",
@@ -180,11 +158,22 @@ export default function ArchivedHiringManagersList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "HIRING_MANAGER",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagersArchived,
     configType: "columns",
     defaultFields: [],
   });
+
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagersArchived,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as HiringManagerFavorite[]) || [];
+
+  const persistFavorites = (updated: HiringManagerFavorite[]) => {
+    setFavoritesConfig(updated);
+  };
 
   // =====================
   // AVAILABLE FIELDS (from Modify Page)
@@ -255,8 +244,9 @@ export default function ArchivedHiringManagersList() {
           fieldType,
           lookupType,
           multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
         };
@@ -273,6 +263,7 @@ export default function ArchivedHiringManagersList() {
         multiSelectLookupType: "",
         key: "archive_reason",
         label: "Archive Reason",
+        name: "archive_reason",
         sortable: true,
         filterType: "select",
       });
@@ -306,10 +297,9 @@ export default function ArchivedHiringManagersList() {
       return hm.record_number ?? hm.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = hm?.customFields || hm?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === "" ? "—" : String(val);
+      const resolved = resolveCustomColumnValue(hm, key, getColumnInfo(key));
+      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      return String(resolved);
     }
 
     if (key === "archive_reason") {
@@ -325,46 +315,28 @@ export default function ArchivedHiringManagersList() {
     const catalogKeys = hmColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("hiringManagerArchivedColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [hmColumnsCatalog, setColumnFields]);
 
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("hiringManagerArchivedColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, hmColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    localStorage.setItem("hiringManagerArchivedColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
+
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [hmColumnsCatalog, columnFields, setColumnFields]);
 
   const applyFavorite = (fav: HiringManagerFavorite) => {
     const catalogKeys = new Set(hmColumnsCatalog.map((c) => c.key));

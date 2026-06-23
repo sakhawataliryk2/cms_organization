@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } f
 import { useRouter } from "nextjs-toploader/app";
 import Image from "next/image";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
 import {
@@ -66,13 +68,10 @@ type LeadsFavorite = {
   createdAt: number;
 };
 
-const FAVORITES_STORAGE_KEY = "leadsFavorites";
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
 export default function LeadList() {
   const router = useRouter();
-
-  const FAVORITES_STORAGE_KEY = "leadsFavorites";
 
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management only
@@ -96,30 +95,11 @@ export default function LeadList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "LEAD",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.leads,
     defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("leadsColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("leadsColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -159,7 +139,12 @@ export default function LeadList() {
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
-  const [favorites, setFavorites] = useState<LeadsFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.leads,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as LeadsFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
@@ -218,21 +203,6 @@ export default function LeadList() {
     fetchAvailableFields();
   }, []);
 
-  // Load favorites from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setFavorites(parsed);
-        }
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
   // Columns Catalog
   const humanize = (s: string) =>
     s
@@ -248,6 +218,7 @@ export default function LeadList() {
       return {
         key,
         label: humanize(key),
+        name: key,
         sortable: true,
         filterType,
         fieldType: "",
@@ -264,8 +235,9 @@ export default function LeadList() {
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -308,42 +280,30 @@ export default function LeadList() {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("leadsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          const isOnlyRecordNumberPreference =
-            validOrder.length === 1 && validOrder[0] === "record_number";
-          const shouldIgnoreStaleRecordOnlyPreference =
-            isOnlyRecordNumberPreference && catalogKeys.length > 1;
-          if (
-            !wouldCollapseToRecordNumberOnly &&
-            !shouldIgnoreStaleRecordOnlyPreference &&
-            validOrder.length > 0
-          ) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    setColumnFields((prev) => {
-      if (prev.length === 0) return catalogKeys;
-      const isOnlyRecordNumber =
-        prev.length === 1 && prev[0] === "record_number";
-      if (isOnlyRecordNumber && catalogKeys.length > 1) return catalogKeys;
-      return prev;
-    });
-  }, [columnsCatalog]);
+
+    if (columnFields.length === 0) {
+      setColumnFields(catalogKeys);
+    }
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -356,12 +316,8 @@ export default function LeadList() {
       return lead.record_number ?? lead.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = lead?.customFields || lead?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(lead, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     const fullName =
@@ -435,8 +391,7 @@ export default function LeadList() {
   };
 
   const persistFavorites = (next: LeadsFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    setFavoritesConfig(next);
   };
 
   const handleOpenSaveFavoriteModal = () => {
@@ -1507,9 +1462,9 @@ export default function LeadList() {
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+              setColumnFields(columnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...columnFields, key]);
             }
           }}
           onDragEnd={(event) => {
@@ -1538,7 +1493,7 @@ export default function LeadList() {
                 const name = String(f.field_name ?? f.fieldName ?? "").trim();
                 const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
                 const isBackendCol = name && LEAD_BACKEND_COLUMN_KEYS.includes(name);
-                return isBackendCol ? name : `custom:${label || name}`;
+                return catalogKeyFromColumn(name, String(label || name), !!isBackendCol);
               });
             const defaults = Array.from(new Set(["record_number", "name", "status", ...requiredCustom]));
             setColumnFields(defaults);

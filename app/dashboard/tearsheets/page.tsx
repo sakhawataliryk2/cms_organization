@@ -5,7 +5,9 @@ import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { remapLegacyCustomKeys } from "@/lib/fieldCatalogKeys";
 import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -270,8 +272,6 @@ function SortableColumnHeader({
 export default function TearsheetList() {
   const router = useRouter();
 
-  const FAVORITES_STORAGE_KEY = "tearsheetsFavorites";
-
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management only
   // =====================
@@ -295,29 +295,11 @@ export default function TearsheetList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "TEARSHEET",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tearsheets,
     defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyId = columnFields.length === 1 && columnFields[0] === "id";
-    if (savingOnlyId) {
-      try {
-        const saved = localStorage.getItem("tearsheetsColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("tearsheetsColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -325,7 +307,12 @@ export default function TearsheetList() {
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
-  const [favorites, setFavorites] = useState<TearsheetFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tearsheets,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as TearsheetFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -423,28 +410,30 @@ export default function TearsheetList() {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("tearsheetsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("id") && !validOrder.includes("id")) {
-            validOrder = ["id", ...validOrder];
-          }
-          const wouldCollapseToIdOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "id";
-          if (!wouldCollapseToIdOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("id") && !validOrder.includes("id")) {
+        validOrder = ["id", ...validOrder];
+      }
+      const wouldCollapseToIdOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "id";
+      if (!wouldCollapseToIdOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
+
+    if (columnFields.length === 0) {
+      setColumnFields(catalogKeys);
+    }
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   // Map current column selection into visibility map for the sortable fields modal
   const columnVisibilityMap = useMemo(() => {
@@ -457,8 +446,10 @@ export default function TearsheetList() {
   }, [columnsCatalog, columnFields]);
 
   const handleToggleColumnVisible = (key: string) => {
-    setColumnFields((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    setColumnFields(
+      columnFields.includes(key)
+        ? columnFields.filter((k) => k !== key)
+        : [...columnFields, key]
     );
   };
 
@@ -547,19 +538,6 @@ export default function TearsheetList() {
   };
 
   useEffect(() => {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setFavorites(parsed);
-      }
-    } catch {
-      return;
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
       const target = e.target as Node;
@@ -615,8 +593,7 @@ export default function TearsheetList() {
   };
 
   const persistFavorites = (next: TearsheetFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    setFavoritesConfig(next);
   };
 
   const handleOpenSaveFavoriteModal = () => {

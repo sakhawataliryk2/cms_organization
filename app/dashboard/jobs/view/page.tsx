@@ -10,7 +10,18 @@ import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  getJobsSubtypePath,
+  getPanelFieldPath,
+  setPanelFieldPath,
+} from "@/lib/viewConfigPanelHelpers";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
 import RequestActionModal from '@/components/RequestActionModal';
 import { useAuth } from '@/lib/auth';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
@@ -317,10 +328,12 @@ const JOB_HEADER_FIELD_LABELS: Record<string, string> = {
   createdBy: "Created By",
 };
 
-// Storage keys for Job Details, Details, Hiring Manager – field lists come from admin (custom field definitions)
-const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
+const DEFAULT_SUMMARY_LAYOUT = {
+  left: ["jobDetails"],
+  right: ["details", "hiringManager", "recentNotes", "openTasks"],
+};
 
-// Resolve field-management entity and storage keys by job type (contract / direct-hire / executive-search)
+// Resolve field-management entity by job type (contract / direct-hire / executive-search)
 function getJobFieldManagementEntityType(job: any): "jobs" | "jobs-direct-hire" | "jobs-executive-search" {
   const t = String(job?.jobType ?? "").toLowerCase().replace(/\s+/g, "-");
   if (t === "direct-hire") return "jobs-direct-hire";
@@ -328,25 +341,8 @@ function getJobFieldManagementEntityType(job: any): "jobs" | "jobs-direct-hire" 
   return "jobs";
 }
 
-function getJobHeaderConfigEntityType(job: any): string {
-  const t = String(job?.jobType ?? "").toLowerCase().replace(/\s+/g, "-");
-  if (t === "direct-hire") return "JOB_DIRECT_HIRE";
-  if (t === "executive-search") return "JOB_EXECUTIVE_SEARCH";
-  return "JOB";
-}
-
-function getJobDetailsStorageKey(job: any): string {
-  const entity = getJobFieldManagementEntityType(job);
-  if (entity === "jobs-direct-hire") return "jobsDirectHireJobDetailsFields";
-  if (entity === "jobs-executive-search") return "jobsExecutiveSearchJobDetailsFields";
-  return "jobsJobDetailsFields";
-}
-
-function getDetailsStorageKey(job: any): string {
-  const entity = getJobFieldManagementEntityType(job);
-  if (entity === "jobs-direct-hire") return "jobsDirectHireDetailsFields";
-  if (entity === "jobs-executive-search") return "jobsExecutiveSearchDetailsFields";
-  return "jobsDetailsFields";
+function stripCatalogKeyPrefix(key: string): string {
+  return key.startsWith("custom:") ? key.slice(7) : key;
 }
 
 const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs"];
@@ -1141,39 +1137,71 @@ out.sort((a, b) => {
   const [showEmailDropdown, setShowEmailDropdown] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
 
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobsDetail,
+    configType: "header",
+    defaultFields: DEFAULT_HEADER_FIELDS,
+  });
+
+  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobsDetail,
+    key: "summary_layout",
+    defaultValue: DEFAULT_SUMMARY_LAYOUT,
+  });
+
+  const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobsDetail,
+    key: "panel_fields",
+    defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+  });
+
+  const columns = summaryLayout;
+  const setColumns = setSummaryLayout;
+
+  const jobDetailsPanelPath = job
+    ? getJobsSubtypePath("jobDetails", job.jobType)
+    : "jobDetails.default";
+  const detailsPanelPath = job
+    ? getJobsSubtypePath("details", job.jobType)
+    : "details.default";
+
+  const getPanelConfigPath = useCallback(
+    (panelId: string): string | null => {
+      if (panelId === "jobDetails") return jobDetailsPanelPath;
+      if (panelId === "details") return detailsPanelPath;
+      if (panelId === "hiringManager") return "hiringManager";
+      return null;
+    },
+    [jobDetailsPanelPath, detailsPanelPath]
+  );
+
+  const updatePanelFields = useCallback(
+    (path: string, value: string[]) => {
+      setPanelFieldsConfig(setPanelFieldPath(panelFieldsConfig, path, value));
+    },
+    [panelFieldsConfig, setPanelFieldsConfig]
+  );
+
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
   const [isLoadingHiringManagerFields, setIsLoadingHiringManagerFields] = useState(false);
   const [jobHiringManager, setJobHiringManager] = useState<any>(null);
   const [isLoadingJobHiringManager, setIsLoadingJobHiringManager] = useState(false);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return { jobDetails: [], details: [], hiringManager: [], recentNotes: ["notes"] };
-    }
-    let hiringManager: string[] = [];
-    try {
-      const hm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
-      if (hm) {
-        const parsed = JSON.parse(hm);
-        if (Array.isArray(parsed) && parsed.length > 0) hiringManager = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    return { jobDetails: [], details: [], hiringManager, recentNotes: ["notes"] };
+  const [visibleFieldsState, setVisibleFieldsState] = useState<{ recentNotes: string[] }>({
+    recentNotes: ["notes"],
   });
 
   // ===== Summary layout state =====
   const [tasks, setTasks] = useState<Array<any>>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
-
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>({
-    left: ["jobDetails"],
-    right: ["details", "hiringManager", "recentNotes", "openTasks"],
-  });
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
@@ -1200,73 +1228,6 @@ out.sort((a, b) => {
       },
     }),
   }), []);
-
-  // Initialize columns from localStorage or default
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("jobsSummaryColumns");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
-            setColumns(parsed);
-          }
-        } catch (e) {
-          console.error("Error loading panel order:", e);
-        }
-      }
-    }
-  }, []);
-
-  // Initialize Job Details and Details field order/visibility from localStorage by job type (when job is loaded)
-  useEffect(() => {
-    if (typeof window === "undefined" || !job) return;
-    const jdKey = getJobDetailsStorageKey(job);
-    const dKey = getDetailsStorageKey(job);
-    setVisibleFields((prev) => {
-      let next = { ...prev };
-      try {
-        const jd = localStorage.getItem(jdKey);
-        if (jd) {
-          const parsed = JSON.parse(jd);
-          if (Array.isArray(parsed) && parsed.length > 0) next = { ...next, jobDetails: Array.from(new Set(parsed)) };
-        }
-      } catch (_) { }
-      try {
-        const d = localStorage.getItem(dKey);
-        if (d) {
-          const parsed = JSON.parse(d);
-          if (Array.isArray(parsed) && parsed.length > 0) next = { ...next, details: Array.from(new Set(parsed)) };
-        }
-      } catch (_) { }
-      return next;
-    });
-  }, [job]);
-
-  // Initialize Hiring Manager field order from localStorage (shared across job types)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedHm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
-    if (savedHm) {
-      try {
-        const parsed = JSON.parse(savedHm);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setVisibleFields((prev) => ({ ...prev, hiringManager: parsed }));
-        }
-      } catch (_) { }
-    }
-  }, []);
-
-  const prevColumnsRef = useRef<string>("");
-
-  // Save columns to localStorage
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    if (prevColumnsRef.current !== colsString) {
-      localStorage.setItem("jobsSummaryColumns", colsString);
-      prevColumnsRef.current = colsString;
-    }
-  }, [columns]);
 
   const findContainer = useCallback((id: string) => {
     if (id === "left" || id === "right") {
@@ -1301,46 +1262,53 @@ out.sort((a, b) => {
 
     const activeId = String(active.id);
     const overId = String(over.id);
+    const prev = columns;
 
-    setColumns((prev) => {
-      const findContainerInState = (id: string) => {
-        if (id === "left" || id === "right") return id as "left" | "right";
-        if (prev.left.includes(id)) return "left";
-        if (prev.right.includes(id)) return "right";
-        return undefined;
-      };
+    const findContainerInState = (id: string) => {
+      if (id === "left" || id === "right") return id as "left" | "right";
+      if (prev.left.includes(id)) return "left";
+      if (prev.right.includes(id)) return "right";
+      return undefined;
+    };
 
-      const source = findContainerInState(activeId);
-      const target = findContainerInState(overId);
+    const source = findContainerInState(activeId);
+    const target = findContainerInState(overId);
 
-      if (!source || !target) return prev;
+    if (!source || !target) {
+      setActiveId(null);
+      return;
+    }
 
-      // Reorder within the same column
-      if (source === target) {
-        // Dropped on the container itself (not a panel)
-        if (overId === source) return prev;
+    let next = prev;
+
+    // Reorder within the same column
+    if (source === target) {
+      if (overId !== source) {
         const oldIndex = prev[source].indexOf(activeId);
         const newIndex = prev[source].indexOf(overId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
-        return {
-          ...prev,
-          [source]: arrayMove(prev[source], oldIndex, newIndex),
-        };
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          next = {
+            ...prev,
+            [source]: arrayMove(prev[source], oldIndex, newIndex),
+          };
+        }
       }
-
-      // Move across columns
+    } else {
       const sourceItems = prev[source].filter((id) => id !== activeId);
       const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
-
-      return {
+      next = {
         ...prev,
         [source]: sourceItems,
         [target]: targetItems,
       };
-    });
+    }
+
+    if (next !== prev) {
+      setSummaryLayout(next);
+    }
 
     setActiveId(null);
-  }, []);
+  }, [columns, setSummaryLayout]);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -1448,17 +1416,19 @@ out.sort((a, b) => {
       //   );
       // }
       // Custom field
+      const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
-          String(f.field_key || f.api_name || f.field_name || f.id) === String(key) ||
-          String(f.field_label || "") === String(key) ||
-          String(f.field_name || "") === String(key)
+          String(f.field_key || f.api_name || f.field_name || f.id) === String(rawKey) ||
+          String(f.field_label || "") === String(rawKey) ||
+          String(f.field_name || "") === String(rawKey)
       );
       const value =
+        (customObj as any)?.[rawKey] ??
         (customObj as any)?.[key] ??
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
-      const label = field?.field_label || field?.field_name || key;
+      const label = field?.field_label || field?.field_name || rawKey;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, name: field?.field_name || field?.fieldName || key, fieldType: field?.field_type ?? field?.fieldType, lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
@@ -1559,10 +1529,11 @@ out.sort((a, b) => {
         //     </div>
         //   );
         default: {
-          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-          const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? "-";
-          const fieldInfo = { key, label: fieldLabel, name: field?.field_name || field?.fieldName || key, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
+          const rawKey = stripCatalogKeyPrefix(key);
+          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === rawKey);
+          const fieldLabel = field?.field_label || field?.field_name || rawKey;
+          const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? job.customFields?.[rawKey] ?? "-";
+          const fieldInfo = { key, label: fieldLabel, name: field?.field_name || field?.fieldName || rawKey, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
@@ -1651,9 +1622,10 @@ out.sort((a, b) => {
         case "address":
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.address || "-"}</div></div>);
         default: {
-          const cv = getCustomValue(label);
-          const val = cv ?? (hm as any)[key];
-          const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key)?.lookupType || "") as any;
+          const rawKey = stripCatalogKeyPrefix(key);
+          const cv = getCustomValue(rawKey);
+          const val = cv ?? (hm as any)[rawKey];
+          const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === rawKey)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === rawKey)?.lookupType || "") as any;
           const fieldValue = val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "-";
           console.log("lookupType", lookupType);
           return (
@@ -1802,26 +1774,92 @@ out.sort((a, b) => {
     const fromApi = (hiringManagerAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    // const seen = new Set(fromApi.map((f) => f.key));
-    // const fromHM = Object.keys(jobHiringManager?.customFields || {})
-    //   .filter((k) => !seen.has(k))
-    //   .map((k) => ({ key: k, label: k }));
     return [...fromApi];
   }, [hiringManagerAvailableFields]);
 
+  const hiringManagerVisible = useMemo(
+    () =>
+      remapLegacyCustomKeys(
+        getPanelFieldPath(panelFieldsConfig, "hiringManager") ?? [],
+        hiringManagerFieldCatalog
+      ),
+    [panelFieldsConfig, hiringManagerFieldCatalog]
+  );
+
   useEffect(() => {
     const keys = hiringManagerFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.hiringManager || [];
-        if (current.length > 0) return prev;
-        return { ...prev, hiringManager: keys };
-      });
-    }
-  }, [hiringManagerFieldCatalog]);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, "hiringManager");
+    if (current && current.length > 0) return;
+    updatePanelFields("hiringManager", keys);
+  }, [hiringManagerFieldCatalog, panelFieldsConfig, updatePanelFields]);
+
+  const jobDetailsFieldCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: panelCatalogKeyFromField(f),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    return [...fromApi];
+  }, [availableFields]);
+
+  const jobDetailsVisible = useMemo(
+    () =>
+      remapLegacyCustomKeys(
+        getPanelFieldPath(panelFieldsConfig, jobDetailsPanelPath) ?? [],
+        jobDetailsFieldCatalog
+      ),
+    [panelFieldsConfig, jobDetailsPanelPath, jobDetailsFieldCatalog]
+  );
+
+  const detailsFieldCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: panelCatalogKeyFromField(f),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    return [...fromApi];
+  }, [availableFields]);
+
+  const detailsVisible = useMemo(
+    () =>
+      remapLegacyCustomKeys(
+        getPanelFieldPath(panelFieldsConfig, detailsPanelPath) ?? [],
+        detailsFieldCatalog
+      ),
+    [panelFieldsConfig, detailsPanelPath, detailsFieldCatalog]
+  );
+
+  const visibleFields = useMemo(
+    (): Record<string, string[]> => ({
+      jobDetails: jobDetailsVisible,
+      details: detailsVisible,
+      hiringManager: hiringManagerVisible,
+      recentNotes: visibleFieldsState.recentNotes,
+    }),
+    [jobDetailsVisible, detailsVisible, hiringManagerVisible, visibleFieldsState.recentNotes]
+  );
+
+  useEffect(() => {
+    const keys = jobDetailsFieldCatalog.map((f) => f.key);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, jobDetailsPanelPath);
+    if (current && current.length > 0) return;
+    updatePanelFields(jobDetailsPanelPath, keys);
+  }, [jobDetailsFieldCatalog, jobDetailsPanelPath, panelFieldsConfig, updatePanelFields]);
+
+  useEffect(() => {
+    const keys = detailsFieldCatalog.map((f) => f.key);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, detailsPanelPath);
+    if (current && current.length > 0) return;
+    updatePanelFields(detailsPanelPath, keys);
+  }, [detailsFieldCatalog, detailsPanelPath, panelFieldsConfig, updatePanelFields]);
 
   const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "jobDetails") {
@@ -1913,21 +1951,6 @@ out.sort((a, b) => {
     }
     return null;
   }, [job, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields]); // Dependencies for inner renderers
-
-  // ... (useHeaderConfig hook already exists below)
-
-  const {
-    headerFields,
-    setHeaderFields,
-    showHeaderFieldModal,
-    setShowHeaderFieldModal,
-    saveHeaderConfig,
-  } = useHeaderConfig({
-    entityType: job ? getJobHeaderConfigEntityType(job) : "JOB",
-    configType: "header",
-    defaultFields: DEFAULT_HEADER_FIELDS,
-  });
-
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -2561,35 +2584,14 @@ out.sort((a, b) => {
 
   // Toggle field visibility
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-    setVisibleFields((prev) => {
-      const panelFields = prev[panelId] || [];
-      if (panelFields.includes(fieldKey)) {
-        return {
-          ...prev,
-          [panelId]: panelFields.filter((f) => f !== fieldKey),
-        };
-      } else {
-        return {
-          ...prev,
-          [panelId]: [...panelFields, fieldKey],
-        };
-      }
-    });
+    const path = getPanelConfigPath(panelId);
+    if (!path) return;
+    const current = getPanelFieldPath(panelFieldsConfig, path) ?? [];
+    const next = current.includes(fieldKey)
+      ? current.filter((f) => f !== fieldKey)
+      : [...current, fieldKey];
+    updatePanelFields(path, next);
   };
-
-  // Job Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
-  const jobDetailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
-      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
-        label: String(f.field_label || f.field_name || f.field_key || f.id),
-      }));
-    // const seen = new Set(fromApi.map((f) => f.key));
-    // const fromJob = Object.keys(job?.customFields || {})
-    //   .map((k) => ({ key: k, label: k }));
-    return [...fromApi];
-  }, [availableFields]);
 
   // Sync Job Details modal state when opening edit for jobDetails
   useEffect(() => {
@@ -2605,44 +2607,6 @@ out.sort((a, b) => {
       catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
-
-  // Details panel field catalog: from admin field definitions + record customFields only
-  const detailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
-      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
-        label: String(f.field_label || f.field_name || f.field_key || f.id),
-      }));
-    // const seen = new Set(fromApi.map((f) => f.key));
-    // const fromJob = Object.keys(job?.customFields || {})
-    //   .filter((k) => !seen.has(k))
-    //   .map((k) => ({ key: k, label: k }));
-    return [...fromApi];
-  }, [availableFields]);
-
-  // When catalog loads, if jobDetails/details/hiringManager visible list is empty, default to all catalog keys
-  useEffect(() => {
-    const keys = jobDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.jobDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, jobDetails: keys };
-      });
-    }
-  }, [jobDetailsFieldCatalog]);
-
-  useEffect(() => {
-    const keys = detailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.details || [];
-        if (current.length > 0) return prev;
-        return { ...prev, details: keys };
-      });
-    }
-  }, [detailsFieldCatalog]);
 
   useEffect(() => {
     if (editingPanel !== "details") return;
@@ -2686,17 +2650,14 @@ out.sort((a, b) => {
     const seen = new Set<string>();
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
-        return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
-          name: f.field_name || f.field_key || String(k),
-          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
-          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
-          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
-        };
-      })
+      .map((f: any) => ({
+        key: headerCatalogKeyFromField(f),
+        label: f.field_label || f.field_name || String(f.field_key || f.id),
+        name: f.field_name || f.field_key || String(f.id),
+        fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+        lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+        multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
+      }))
       .filter((x) => {
         if (seen.has(x.key)) return false;
         seen.add(x.key);
@@ -2743,24 +2704,22 @@ out.sort((a, b) => {
   };
 
   const moveHeaderField = (fromIndex: number, toIndex: number) => {
-    setHeaderFields((prev) => {
-      const copy = [...prev];
-      const [moved] = copy.splice(fromIndex, 1);
-      copy.splice(toIndex, 0, moved);
-      return copy;
-    });
+    const copy = [...headerFields];
+    const [moved] = copy.splice(fromIndex, 1);
+    copy.splice(toIndex, 0, moved);
+    setHeaderFields(copy);
   };
 
   const removeHeaderField = (key: string) => {
-    setHeaderFields((prev) => prev.filter((k) => k !== key));
+    setHeaderFields(headerFields.filter((k) => k !== key));
   };
 
   const toggleHeaderField = (key: string, enabled: boolean) => {
-    setHeaderFields((prev) => {
-      if (enabled && !prev.includes(key)) return [...prev, key];
-      if (!enabled) return prev.filter((k) => k !== key);
-      return prev;
-    });
+    if (enabled && !headerFields.includes(key)) {
+      setHeaderFields([...headerFields, key]);
+    } else if (!enabled) {
+      setHeaderFields(headerFields.filter((k) => k !== key));
+    }
   };
 
   // Handle edit panel click
@@ -2783,14 +2742,12 @@ out.sort((a, b) => {
       if (oldIndex === -1 || newIndex === -1) return prev;
       return arrayMove(prev, oldIndex, newIndex);
     });
-    // Also update headerFields order if both are in headerFields
-    setHeaderFields((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }, []);
+    const oldIndex = headerFields.indexOf(active.id as string);
+    const newIndex = headerFields.indexOf(over.id as string);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setHeaderFields(arrayMove(headerFields, oldIndex, newIndex));
+    }
+  }, [headerFields, setHeaderFields]);
 
   const handleJobDetailsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -2806,12 +2763,9 @@ out.sort((a, b) => {
   // Job Details modal: save order/visibility and persist per job type
   const handleSaveJobDetailsFields = useCallback(() => {
     const newOrder = modalJobDetailsOrder.filter((k) => modalJobDetailsVisible[k]);
-    if (typeof window !== "undefined" && job) {
-      localStorage.setItem(getJobDetailsStorageKey(job), JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
+    updatePanelFields(jobDetailsPanelPath, newOrder);
     setEditingPanel(null);
-  }, [modalJobDetailsOrder, modalJobDetailsVisible, job]);
+  }, [modalJobDetailsOrder, modalJobDetailsVisible, jobDetailsPanelPath, updatePanelFields]);
 
   const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -2826,12 +2780,9 @@ out.sort((a, b) => {
 
   const handleSaveDetailsFields = useCallback(() => {
     const newOrder = modalDetailsOrder.filter((k) => modalDetailsVisible[k]);
-    if (typeof window !== "undefined" && job) {
-      localStorage.setItem(getDetailsStorageKey(job), JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    updatePanelFields(detailsPanelPath, newOrder);
     setEditingPanel(null);
-  }, [modalDetailsOrder, modalDetailsVisible, job]);
+  }, [modalDetailsOrder, modalDetailsVisible, detailsPanelPath, updatePanelFields]);
 
   const handleHiringManagerDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -2846,12 +2797,9 @@ out.sort((a, b) => {
 
   const handleSaveHiringManagerFields = useCallback(() => {
     const newOrder = modalHiringManagerOrder.filter((k) => modalHiringManagerVisible[k] === true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(HIRING_MANAGER_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, hiringManager: newOrder }));
+    updatePanelFields("hiringManager", newOrder);
     setEditingPanel(null);
-  }, [modalHiringManagerOrder, modalHiringManagerVisible]);
+  }, [modalHiringManagerOrder, modalHiringManagerVisible, updatePanelFields]);
 
   const fetchTasks = async (jobId: string) => {
     setIsLoadingTasks(true);
@@ -6834,9 +6782,9 @@ out.sort((a, b) => {
           fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
-              setHeaderFields((prev) => prev.filter((x) => x !== key));
+              setHeaderFields(headerFields.filter((x) => x !== key));
             } else {
-              setHeaderFields((prev) => [...prev, key]);
+              setHeaderFields([...headerFields, key]);
               if (!headerFieldsOrder.includes(key)) {
                 setHeaderFieldsOrder((prev) => [...prev, key]);
               }
@@ -6852,7 +6800,7 @@ out.sort((a, b) => {
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+              .map(f => headerCatalogKeyFromField(f));
 
             const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
             setHeaderFields(defaults);

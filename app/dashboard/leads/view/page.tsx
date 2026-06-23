@@ -12,7 +12,14 @@ import { FiTarget, FiSearch } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 // Drag and drop 
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
@@ -220,11 +227,10 @@ const LEAD_HEADER_FIELD_LABELS: Record<string, string> = {
   createdBy: "Created By",
 };
 
-// Storage keys for Lead Contact Info, Details, Website Jobs, Our Jobs – field lists come from admin (custom field definitions)
-const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
-const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
-const WEBSITE_JOBS_STORAGE_KEY = "leadsWebsiteJobsFields";
-const OUR_JOBS_STORAGE_KEY = "leadsOurJobsFields";
+const LEAD_DEFAULT_SUMMARY_LAYOUT = {
+  left: ["contactInfo", "details"],
+  right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+};
 
 const LEAD_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities"];
 
@@ -480,11 +486,47 @@ out.sort((a, b) => {
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
-  }>({
-    left: ["contactInfo", "details"],
-    right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
-  });
+  }>(LEAD_DEFAULT_SUMMARY_LAYOUT);
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.leadsDetail,
+      key: "summary_layout",
+      defaultValue: LEAD_DEFAULT_SUMMARY_LAYOUT,
+    });
+  const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.leadsDetail,
+      key: "panel_fields",
+      defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+    });
+  const panelFieldsConfigRef = useRef(panelFieldsConfig);
+  panelFieldsConfigRef.current = panelFieldsConfig;
+  const summaryLayoutConfigRef = useRef(summaryLayoutConfig);
+  summaryLayoutConfigRef.current = summaryLayoutConfig;
+
+  useEffect(() => {
+    if (
+      summaryLayoutConfig?.left &&
+      Array.isArray(summaryLayoutConfig.left) &&
+      summaryLayoutConfig?.right &&
+      Array.isArray(summaryLayoutConfig.right)
+    ) {
+      setColumns(summaryLayoutConfig);
+    }
+  }, [summaryLayoutConfig]);
+
+  const prevColumnsRef = useRef<string>("");
+
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    const prevConfigString = JSON.stringify(summaryLayoutConfigRef.current);
+    if (prevColumnsRef.current !== colsString && colsString !== prevConfigString) {
+      setSummaryLayoutConfig(columns);
+      prevColumnsRef.current = colsString;
+    }
+  }, [columns, setSummaryLayoutConfig]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -502,90 +544,6 @@ out.sort((a, b) => {
       strategy: MeasuringStrategy.Always,
     },
   }), []);
-
-  // Initialize columns from localStorage or default
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("leadsSummaryColumns");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
-            setColumns(parsed);
-          }
-        } catch (e) {
-          console.error("Error loading panel order:", e);
-        }
-      }
-    }
-  }, []);
-
-  // Initialize Lead Contact Info field order/visibility from localStorage (persists across all lead records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(LEAD_CONTACT_INFO_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Remove duplicates before setting
-        const unique = Array.from(new Set(parsed));
-        setVisibleFields((prev) => ({ ...prev, contactInfo: unique }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  // Initialize Lead Details field order/visibility from localStorage (persists across all lead records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(LEAD_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Remove duplicates before setting
-        const unique = Array.from(new Set(parsed));
-        setVisibleFields((prev) => ({ ...prev, details: unique }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedW = localStorage.getItem(WEBSITE_JOBS_STORAGE_KEY);
-    if (savedW) {
-      try {
-        const parsed = JSON.parse(savedW);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setVisibleFields((prev) => ({ ...prev, websiteJobs: parsed }));
-        }
-      } catch (_) { }
-    }
-    const savedO = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
-    if (savedO) {
-      try {
-        const parsed = JSON.parse(savedO);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setVisibleFields((prev) => ({ ...prev, ourJobs: parsed }));
-        }
-      } catch (_) { }
-    }
-  }, []);
-
-  const prevColumnsRef = useRef<string>("");
-
-  // Save columns to localStorage
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    if (prevColumnsRef.current !== colsString) {
-      localStorage.setItem("leadsSummaryColumns", colsString);
-      prevColumnsRef.current = colsString;
-    }
-  }, [columns]);
 
   const findContainer = (id: string) => {
     if (id === "left" || id === "right") {
@@ -660,44 +618,13 @@ out.sort((a, b) => {
 
     setActiveId(null);
   };
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return { contactInfo: [], details: [], recentNotes: ["notes"], websiteJobs: ["jobs"], ourJobs: ["jobs"] };
-    }
-    let contactInfo: string[] = [];
-    let details: string[] = [];
-    let websiteJobs: string[] = ["jobs"];
-    let ourJobs: string[] = ["jobs"];
-    try {
-      const c = localStorage.getItem(LEAD_CONTACT_INFO_STORAGE_KEY);
-      if (c) {
-        const parsed = JSON.parse(c);
-        if (Array.isArray(parsed) && parsed.length > 0) contactInfo = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const d = localStorage.getItem(LEAD_DETAILS_STORAGE_KEY);
-      if (d) {
-        const parsed = JSON.parse(d);
-        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const w = localStorage.getItem(WEBSITE_JOBS_STORAGE_KEY);
-      if (w) {
-        const parsed = JSON.parse(w);
-        if (Array.isArray(parsed) && parsed.length > 0) websiteJobs = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const o = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
-      if (o) {
-        const parsed = JSON.parse(o);
-        if (Array.isArray(parsed) && parsed.length > 0) ourJobs = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    return { contactInfo, details, recentNotes: ["notes"], websiteJobs, ourJobs };
-  });
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => ({
+    contactInfo: [],
+    details: [],
+    recentNotes: ["notes"],
+    websiteJobs: ["jobs"],
+    ourJobs: ["jobs"],
+  }));
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
   // Lead Contact Info edit modal: order and visibility (synced when modal opens)
@@ -724,8 +651,8 @@ out.sort((a, b) => {
     setShowHeaderFieldModal,
     saveHeaderConfig,
     isSaving: isSavingHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "LEAD",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.leadsDetail,
     configType: "header",
     defaultFields: LEAD_DEFAULT_HEADER_FIELDS,
   });
@@ -749,10 +676,10 @@ out.sort((a, b) => {
     return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
+        const k = headerCatalogKeyFromField(f);
         return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
+          key: k,
+          label: f.field_label || f.field_name || String(f.field_key || f.id),
           fieldType: (f.field_type ?? f.fieldType ?? "") as string,
           lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
           multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
@@ -856,6 +783,19 @@ out.sort((a, b) => {
     }
   }, [headerFieldCatalog.length, headerFields]);
 
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0 || headerFields.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    ).filter((k) => catalogSet.has(k));
+    if (remapped.length > 0 && JSON.stringify(remapped) !== JSON.stringify(headerFields)) {
+      setHeaderFields(remapped);
+    }
+  }, [headerFieldCatalog, headerFields, setHeaderFields]);
+
   // Fetch lead data when component mounts
   useEffect(() => {
     if (leadId) {
@@ -911,7 +851,7 @@ out.sort((a, b) => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
@@ -922,34 +862,67 @@ out.sort((a, b) => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
   }, [availableFields]);
 
-  // When catalog loads, if contactInfo/details visible list is empty, default to all catalog keys
-  useEffect(() => {
-    const keys = contactInfoFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
+  const websiteJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
+  const ourJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
+
+  const syncPanelFieldsFromConfig = useCallback(
+    (
+      panelId: string,
+      path: string,
+      catalog: Array<{ key: string; label: string }>,
+      fallback?: string[]
+    ) => {
+      const catalogKeys = catalog.map((f) => f.key);
+      if (catalogKeys.length === 0 && !fallback?.length) return;
+      const saved = getPanelFieldPath(panelFieldsConfig, path);
       setVisibleFields((prev) => {
-        const current = prev.contactInfo || [];
+        const current = prev[panelId] || [];
+        if (saved && saved.length > 0) {
+          const remapped = remapLegacyCustomKeys(saved, catalog);
+          const next = remapped.length > 0 ? remapped : catalogKeys;
+          if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+            return { ...prev, [panelId]: next };
+          }
+          return prev;
+        }
         if (current.length > 0) return prev;
-        return { ...prev, contactInfo: keys };
+        const defaultKeys = catalogKeys.length > 0 ? catalogKeys : fallback || [];
+        return defaultKeys.length > 0 ? { ...prev, [panelId]: defaultKeys } : prev;
       });
-    }
-  }, [contactInfoFieldCatalog]);
+    },
+    [panelFieldsConfig]
+  );
 
   useEffect(() => {
-    const keys = detailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.details || [];
-        if (current.length > 0) return prev;
-        return { ...prev, details: keys };
-      });
-    }
-  }, [detailsFieldCatalog]);
+    syncPanelFieldsFromConfig("contactInfo", "contactInfo", contactInfoFieldCatalog);
+  }, [contactInfoFieldCatalog, syncPanelFieldsFromConfig]);
+
+  useEffect(() => {
+    syncPanelFieldsFromConfig("details", "details", detailsFieldCatalog);
+  }, [detailsFieldCatalog, syncPanelFieldsFromConfig]);
+
+  useEffect(() => {
+    syncPanelFieldsFromConfig("websiteJobs", "websiteJobs", websiteJobsFieldCatalog, ["jobs"]);
+  }, [websiteJobsFieldCatalog, syncPanelFieldsFromConfig]);
+
+  useEffect(() => {
+    syncPanelFieldsFromConfig("ourJobs", "ourJobs", ourJobsFieldCatalog, ["jobs"]);
+  }, [ourJobsFieldCatalog, syncPanelFieldsFromConfig]);
+
+  const savePanelFieldConfig = useCallback(
+    (path: string, fields: string[]) => {
+      setPanelFieldsConfig(
+        setPanelFieldPath(panelFieldsConfigRef.current, path, fields)
+      );
+    },
+    [setPanelFieldsConfig]
+  );
 
   // Sync Lead Contact Info modal state when opening edit for contactInfo
   useEffect(() => {
@@ -991,9 +964,6 @@ out.sort((a, b) => {
       uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
-
-  const websiteJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
-  const ourJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
 
   useEffect(() => {
     if (editingPanel !== "websiteJobs") return;
@@ -1365,12 +1335,10 @@ out.sort((a, b) => {
   // Lead Contact Info modal: save order/visibility and persist for all lead records
   const handleSaveContactInfoFields = useCallback(() => {
     const newOrder = Array.from(new Set(modalContactInfoOrder.filter((k) => modalContactInfoVisible[k] === true)));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LEAD_CONTACT_INFO_STORAGE_KEY, JSON.stringify(newOrder));
-    }
     setVisibleFields((prev) => ({ ...prev, contactInfo: newOrder }));
+    savePanelFieldConfig("contactInfo", newOrder);
     setEditingPanel(null);
-  }, [modalContactInfoOrder, modalContactInfoVisible]);
+  }, [modalContactInfoOrder, modalContactInfoVisible, savePanelFieldConfig]);
 
   // Lead Details modal: drag end (reorder)
   const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
@@ -1388,12 +1356,10 @@ out.sort((a, b) => {
   // Lead Details modal: save order/visibility and persist for all lead records
   const handleSaveDetailsFields = useCallback(() => {
     const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k])));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(LEAD_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
     setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    savePanelFieldConfig("details", newOrder);
     setEditingPanel(null);
-  }, [modalDetailsOrder, modalDetailsVisible]);
+  }, [modalDetailsOrder, modalDetailsVisible, savePanelFieldConfig]);
 
   const handleWebsiteJobsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -1409,12 +1375,10 @@ out.sort((a, b) => {
 
   const handleSaveWebsiteJobsFields = useCallback(() => {
     const newOrder = modalWebsiteJobsOrder.filter((k) => modalWebsiteJobsVisible[k]);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(WEBSITE_JOBS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
     setVisibleFields((prev) => ({ ...prev, websiteJobs: newOrder }));
+    savePanelFieldConfig("websiteJobs", newOrder);
     setEditingPanel(null);
-  }, [modalWebsiteJobsOrder, modalWebsiteJobsVisible]);
+  }, [modalWebsiteJobsOrder, modalWebsiteJobsVisible, savePanelFieldConfig]);
 
   const handleOurJobsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -1430,12 +1394,10 @@ out.sort((a, b) => {
 
   const handleSaveOurJobsFields = useCallback(() => {
     const newOrder = modalOurJobsOrder.filter((k) => modalOurJobsVisible[k]);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(OUR_JOBS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
     setVisibleFields((prev) => ({ ...prev, ourJobs: newOrder }));
+    savePanelFieldConfig("ourJobs", newOrder);
     setEditingPanel(null);
-  }, [modalOurJobsOrder, modalOurJobsVisible]);
+  }, [modalOurJobsOrder, modalOurJobsVisible, savePanelFieldConfig]);
 
   const fetchTasks = async (leadId: string) => {
     setIsLoadingTasks(true);

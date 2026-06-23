@@ -19,7 +19,14 @@ import { FiUsers, FiX, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } fro
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
 import OnboardingTab from "./onboarding/OnboardingTab";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
@@ -305,10 +312,14 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
   );
 }
 
-// Storage keys for Job Seeker Details and Overview – field lists come from admin (custom field definitions)
-const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
-const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
-const PAYROLL_INFO_STORAGE_KEY = "jobSeekersPayrollInfoFields";
+const DEFAULT_SUMMARY_LAYOUT = {
+  left: ["resume", "jobSeekerDetails"],
+  right: ["overview", "payrollInfo", "recentNotes", "openTasks"],
+};
+
+function stripCatalogKeyPrefix(key: string): string {
+  return key.startsWith("custom:") ? key.slice(7) : key;
+}
 
 // Static payroll info field catalog and values (TBI: data will come from TBI later)
 const PAYROLL_INFO_FIELD_CATALOG: { key: string; label: string }[] = [
@@ -722,44 +733,8 @@ export default function JobSeekerView() {
 
   // Field management – overview and jobSeekerDetails driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return { resume: ["profile", "skills", "experience"], overview: [], jobSeekerDetails: [], payrollInfo: [] };
-    }
-    let overview: string[] = [];
-    let jobSeekerDetails: string[] = [];
-    let payrollInfo: string[] = [];
-    try {
-      const o = localStorage.getItem(OVERVIEW_STORAGE_KEY);
-      if (o) {
-        const parsed = JSON.parse(o);
-        if (Array.isArray(parsed) && parsed.length > 0) overview = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const d = localStorage.getItem(JOB_SEEKER_DETAILS_STORAGE_KEY);
-      if (d) {
-        const parsed = JSON.parse(d);
-        if (Array.isArray(parsed) && parsed.length > 0) jobSeekerDetails = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const p = localStorage.getItem(PAYROLL_INFO_STORAGE_KEY);
-      if (p) {
-        const parsed = JSON.parse(p);
-        if (Array.isArray(parsed) && parsed.length > 0) payrollInfo = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    return { resume: ["profile", "skills", "experience"], overview, jobSeekerDetails, payrollInfo };
-  });
-
-  // ===== Summary layout state =====
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>({
-    left: ["resume", "jobSeekerDetails"],
-    right: ["overview", "payrollInfo", "recentNotes", "openTasks"],
+  const [visibleFieldsState] = useState<Record<string, string[]>>({
+    resume: ["profile", "skills", "experience"],
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -812,11 +787,51 @@ export default function JobSeekerView() {
     setShowHeaderFieldModal,
     saveHeaderConfig,
     isSaving: isSavingHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "JOB_SEEKER",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobSeekersDetail,
     configType: "header",
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
+
+  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobSeekersDetail,
+    key: "summary_layout",
+    defaultValue: DEFAULT_SUMMARY_LAYOUT,
+  });
+
+  const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobSeekersDetail,
+    key: "panel_fields",
+    defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+  });
+
+  const columns = summaryLayout;
+  const setColumns = setSummaryLayout;
+
+  const updatePanelFields = useCallback(
+    (path: string, value: string[]) => {
+      setPanelFieldsConfig(setPanelFieldPath(panelFieldsConfig, path, value));
+    },
+    [panelFieldsConfig, setPanelFieldsConfig]
+  );
+
+  const payrollLayoutPatchedRef = useRef(false);
+  useEffect(() => {
+    if (payrollLayoutPatchedRef.current) return;
+    const hasPayroll =
+      summaryLayout.left.includes("payrollInfo") ||
+      summaryLayout.right.includes("payrollInfo");
+    if (hasPayroll) {
+      payrollLayoutPatchedRef.current = true;
+      return;
+    }
+    const right = [...summaryLayout.right];
+    const overviewIdx = right.indexOf("overview");
+    if (overviewIdx !== -1) right.splice(overviewIdx + 1, 0, "payrollInfo");
+    else right.unshift("payrollInfo");
+    setSummaryLayout({ ...summaryLayout, right });
+    payrollLayoutPatchedRef.current = true;
+  }, [summaryLayout, setSummaryLayout]);
 
   // Drop animation config for drag overlay
   const dropAnimationConfig = useMemo(() => ({
@@ -836,16 +851,13 @@ export default function JobSeekerView() {
     const seen = new Set<string>();
     return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
-        return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
-          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
-          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
-          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
-        };
-      })
+      .map((f: any) => ({
+        key: headerCatalogKeyFromField(f),
+        label: f.field_label || f.field_name || String(f.field_key || f.id),
+        fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+        lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+        multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
+      }))
       .filter((x) => {
         if (seen.has(x.key)) return false;
         seen.add(x.key);
@@ -924,13 +936,11 @@ export default function JobSeekerView() {
       if (oldIndex === -1 || newIndex === -1) return prev;
       return arrayMove(prev, oldIndex, newIndex);
     });
-    // Also update headerFields order if both are in headerFields
-    setHeaderFields((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
+    const oldIndex = headerFields.indexOf(active.id as string);
+    const newIndex = headerFields.indexOf(over.id as string);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setHeaderFields(arrayMove(headerFields, oldIndex, newIndex));
+    }
   };
 
   // Initialize headerFieldsOrder when headerFields or catalog changes
@@ -1528,86 +1538,6 @@ Best regards`;
 
 
 
-  // Initialize columns from localStorage or default (merge in payrollInfo if missing for existing users)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("jobSeekerSummaryColumns");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
-            const hasPayroll = parsed.left.includes("payrollInfo") || parsed.right.includes("payrollInfo");
-            if (!hasPayroll) {
-              parsed.right = [...parsed.right];
-              const overviewIdx = parsed.right.indexOf("overview");
-              if (overviewIdx !== -1) parsed.right.splice(overviewIdx + 1, 0, "payrollInfo");
-              else parsed.right.unshift("payrollInfo");
-            }
-            setColumns(parsed);
-          }
-        } catch (e) {
-          console.error("Error loading panel order:", e);
-        }
-      }
-    }
-  }, []);
-
-  // Initialize Job Seeker Details field order/visibility from localStorage (persists across all job seeker records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(JOB_SEEKER_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setVisibleFields((prev) => ({ ...prev, jobSeekerDetails: parsed }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  // Initialize Overview field order/visibility from localStorage (persists across all job seeker records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(OVERVIEW_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setVisibleFields((prev) => ({ ...prev, overview: parsed }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  // Initialize Payroll Info field order/visibility from localStorage (persists across all job seeker records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(PAYROLL_INFO_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setVisibleFields((prev) => ({ ...prev, payrollInfo: parsed }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  const prevColumnsRef = useRef<string>("");
-
-  // Save columns to localStorage
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    if (prevColumnsRef.current !== colsString) {
-      localStorage.setItem("jobSeekerSummaryColumns", colsString);
-      prevColumnsRef.current = colsString;
-    }
-  }, [columns]);
-
   const findContainer = useCallback((id: string) => {
     if (id === "left" || id === "right") {
       return id;
@@ -1641,46 +1571,52 @@ Best regards`;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+    const prev = columns;
 
-    setColumns((prev) => {
-      const findContainerInState = (id: string) => {
-        if (id === "left" || id === "right") return id as "left" | "right";
-        if (prev.left.includes(id)) return "left";
-        if (prev.right.includes(id)) return "right";
-        return undefined;
-      };
+    const findContainerInState = (id: string) => {
+      if (id === "left" || id === "right") return id as "left" | "right";
+      if (prev.left.includes(id)) return "left";
+      if (prev.right.includes(id)) return "right";
+      return undefined;
+    };
 
-      const source = findContainerInState(activeId);
-      const target = findContainerInState(overId);
+    const source = findContainerInState(activeId);
+    const target = findContainerInState(overId);
 
-      if (!source || !target) return prev;
+    if (!source || !target) {
+      setActiveId(null);
+      return;
+    }
 
-      // Reorder within the same column
-      if (source === target) {
-        // Dropped on the container itself (not a panel)
-        if (overId === source) return prev;
+    let next = prev;
+
+    if (source === target) {
+      if (overId !== source) {
         const oldIndex = prev[source].indexOf(activeId);
         const newIndex = prev[source].indexOf(overId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
-        return {
-          ...prev,
-          [source]: arrayMove(prev[source], oldIndex, newIndex),
-        };
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          next = {
+            ...prev,
+            [source]: arrayMove(prev[source], oldIndex, newIndex),
+          };
+        }
       }
-
-      // Move across columns
+    } else {
       const sourceItems = prev[source].filter((id) => id !== activeId);
       const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
-
-      return {
+      next = {
         ...prev,
         [source]: sourceItems,
         [target]: targetItems,
       };
-    });
+    }
+
+    if (next !== prev) {
+      setSummaryLayout(next);
+    }
 
     setActiveId(null);
-  }, []);
+  }, [columns, setSummaryLayout]);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -2259,20 +2195,18 @@ Best regards`;
 
   // Toggle field visibility
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-    setVisibleFields((prev) => {
-      const panelFields = prev[panelId] || [];
-      if (panelFields.includes(fieldKey)) {
-        return {
-          ...prev,
-          [panelId]: panelFields.filter((f) => f !== fieldKey),
-        };
-      } else {
-        return {
-          ...prev,
-          [panelId]: [...panelFields, fieldKey],
-        };
-      }
-    });
+    const panelPathMap: Record<string, string> = {
+      jobSeekerDetails: "jobSeekerDetails",
+      overview: "overview",
+      payrollInfo: "payrollInfo",
+    };
+    const path = panelPathMap[panelId];
+    if (!path) return;
+    const current = getPanelFieldPath(panelFieldsConfig, path) ?? [];
+    const next = current.includes(fieldKey)
+      ? current.filter((f) => f !== fieldKey)
+      : [...current, fieldKey];
+    updatePanelFields(path, next);
   };
 
   // Job Seeker Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
@@ -2280,30 +2214,40 @@ Best regards`;
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    // const seen = new Set(fromApi.map((f) => f.key));
-    // const fromJS = Object.keys(jobSeeker?.customFields || {})
-    //   .filter((k) => !seen.has(k))
-    //   .map((k) => ({ key: k, label: k }));
     return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
+
+  const jobSeekerDetailsVisible = useMemo(
+    () =>
+      remapLegacyCustomKeys(
+        getPanelFieldPath(panelFieldsConfig, "jobSeekerDetails") ?? [],
+        jobSeekerDetailsFieldCatalog
+      ),
+    [panelFieldsConfig, jobSeekerDetailsFieldCatalog]
+  );
 
   // Overview panel field catalog: from admin field definitions + record customFields only
   const overviewFieldCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    // const fromJS = Object.keys(jobSeeker?.customFields || {})
-    //   .filter((k) => !seen.has(k))
-    //   .map((k) => ({ key: k, label: k }));
     return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
+
+  const overviewVisible = useMemo(
+    () =>
+      remapLegacyCustomKeys(
+        getPanelFieldPath(panelFieldsConfig, "overview") ?? [],
+        overviewFieldCatalog
+      ),
+    [panelFieldsConfig, overviewFieldCatalog]
+  );
 
   // Payroll Info panel: static field catalog (TBI: data from API later)
   const payrollInfoFieldCatalog = useMemo(
@@ -2311,40 +2255,50 @@ Best regards`;
     []
   );
 
+  const payrollInfoVisible = useMemo(
+    () => {
+      const stored = getPanelFieldPath(panelFieldsConfig, "payrollInfo") ?? [];
+      if (stored.length === 0) return payrollInfoFieldCatalog.map((f) => f.key);
+      return remapLegacyCustomKeys(stored, payrollInfoFieldCatalog);
+    },
+    [panelFieldsConfig, payrollInfoFieldCatalog]
+  );
+
+  const visibleFields = useMemo(
+    (): Record<string, string[]> => ({
+      resume: visibleFieldsState.resume,
+      jobSeekerDetails: jobSeekerDetailsVisible,
+      overview: overviewVisible,
+      payrollInfo: payrollInfoVisible,
+    }),
+    [visibleFieldsState.resume, jobSeekerDetailsVisible, overviewVisible, payrollInfoVisible]
+  );
+
   // When catalog loads, if overview/jobSeekerDetails visible list is empty, default to all catalog keys
   useEffect(() => {
     const keys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.jobSeekerDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, jobSeekerDetails: keys };
-      });
-    }
-  }, [jobSeekerDetailsFieldCatalog]);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, "jobSeekerDetails");
+    if (current && current.length > 0) return;
+    updatePanelFields("jobSeekerDetails", keys);
+  }, [jobSeekerDetailsFieldCatalog, panelFieldsConfig, updatePanelFields]);
 
   useEffect(() => {
     const keys = overviewFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.overview || [];
-        if (current.length > 0) return prev;
-        return { ...prev, overview: keys };
-      });
-    }
-  }, [overviewFieldCatalog]);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, "overview");
+    if (current && current.length > 0) return;
+    updatePanelFields("overview", keys);
+  }, [overviewFieldCatalog, panelFieldsConfig, updatePanelFields]);
 
   // When Payroll Info catalog is ready, if visible list is empty, default to all keys
   useEffect(() => {
     const keys = payrollInfoFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.payrollInfo || [];
-        if (current.length > 0) return prev;
-        return { ...prev, payrollInfo: keys };
-      });
-    }
-  }, [payrollInfoFieldCatalog]);
+    if (keys.length === 0) return;
+    const current = getPanelFieldPath(panelFieldsConfig, "payrollInfo");
+    if (current && current.length > 0) return;
+    updatePanelFields("payrollInfo", keys);
+  }, [payrollInfoFieldCatalog, panelFieldsConfig, updatePanelFields]);
 
   // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
   useEffect(() => {
@@ -2428,12 +2382,9 @@ Best regards`;
   // Job Seeker Details modal: save order/visibility and persist for all job seeker records
   const handleSaveJobSeekerDetailsFields = useCallback(() => {
     const newOrder = modalJobSeekerDetailsOrder.filter((k) => modalJobSeekerDetailsVisible[k] === true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(JOB_SEEKER_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, jobSeekerDetails: newOrder }));
+    updatePanelFields("jobSeekerDetails", newOrder);
     setEditingPanel(null);
-  }, [modalJobSeekerDetailsOrder, modalJobSeekerDetailsVisible]);
+  }, [modalJobSeekerDetailsOrder, modalJobSeekerDetailsVisible, updatePanelFields]);
 
   // Overview modal: drag end (reorder)
   const handleOverviewDragEnd = useCallback((event: DragEndEvent) => {
@@ -2450,12 +2401,9 @@ Best regards`;
   // Overview modal: save order/visibility and persist for all job seeker records
   const handleSaveOverviewFields = useCallback(() => {
     const newOrder = modalOverviewOrder.filter((k) => modalOverviewVisible[k] === true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(OVERVIEW_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, overview: newOrder }));
+    updatePanelFields("overview", newOrder);
     setEditingPanel(null);
-  }, [modalOverviewOrder, modalOverviewVisible]);
+  }, [modalOverviewOrder, modalOverviewVisible, updatePanelFields]);
 
   // Payroll Info modal: drag end (reorder)
   const handlePayrollInfoDragEnd = useCallback((event: DragEndEvent) => {
@@ -2472,12 +2420,9 @@ Best regards`;
   // Payroll Info modal: save order/visibility and persist for all job seeker records
   const handleSavePayrollInfoFields = useCallback(() => {
     const newOrder = modalPayrollInfoOrder.filter((k) => modalPayrollInfoVisible[k] === true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PAYROLL_INFO_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, payrollInfo: newOrder }));
+    updatePanelFields("payrollInfo", newOrder);
     setEditingPanel(null);
-  }, [modalPayrollInfoOrder, modalPayrollInfoVisible]);
+  }, [modalPayrollInfoOrder, modalPayrollInfoVisible, updatePanelFields]);
 
   const openResumeEditor = () => {
     if (!jobSeeker) return;
@@ -4673,10 +4618,14 @@ Best regards`;
       return !isHidden;
     });
 
-    const getOverviewLabel = (key: string) =>
-      overviewFieldCatalog.find((f) => f.key === key)?.label ||
-      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
-      key;
+    const getOverviewLabel = (key: string) => {
+      const rawKey = stripCatalogKeyPrefix(key);
+      return (
+        overviewFieldCatalog.find((f) => f.key === key)?.label ||
+        customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === rawKey)?.field_label ||
+        rawKey
+      );
+    };
     const overviewKeys = visibleFields.overview || [];
     const effectiveRows: { key: string; label: string }[] = [];
     for (const key of overviewKeys) {
@@ -4684,18 +4633,20 @@ Best regards`;
     }
 
     const renderOverviewRow = (key: string) => {
+      const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
-          String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
-          String(f.field_label || "") === String(key) ||
-          String(f.field_name || "") === String(key)
+          String(f.field_name || f.field_key || f.api_name || f.id) === String(rawKey) ||
+          String(f.field_label || "") === String(rawKey) ||
+          String(f.field_name || "") === String(rawKey)
       );
       const value =
-        (jobSeeker as any)?.[key] ??
+        (jobSeeker as any)?.[rawKey] ??
+        (customObj as any)?.[rawKey] ??
         (customObj as any)?.[key] ??
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
-      const label = field?.field_label || field?.field_name || key;
+      const label = field?.field_label || field?.field_name || rawKey;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
@@ -4832,10 +4783,14 @@ Best regards`;
       return !isHidden;
     });
 
-    const getDetailsLabel = (key: string) =>
-      jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ||
-      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
-      key;
+    const getDetailsLabel = (key: string) => {
+      const rawKey = stripCatalogKeyPrefix(key);
+      return (
+        jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ||
+        customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === rawKey)?.field_label ||
+        rawKey
+      );
+    };
     const detailsKeys = visibleFields.jobSeekerDetails || [];
     const effectiveRows: { key: string; label: string }[] = [];
     for (const key of detailsKeys) {
@@ -4843,17 +4798,19 @@ Best regards`;
     }
 
     const renderJobSeekerDetailsRow = (key: string) => {
+      const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
-          String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
-          String(f.field_label || "") === String(key) ||
-          String(f.field_name || "") === String(key)
+          String(f.field_name || f.field_key || f.api_name || f.id) === String(rawKey) ||
+          String(f.field_label || "") === String(rawKey) ||
+          String(f.field_name || "") === String(rawKey)
       );
       const value =
+        (customObj as any)?.[rawKey] ??
         (customObj as any)?.[key] ??
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
-      const label = field?.field_label || field?.field_name || key;
+      const label = field?.field_label || field?.field_name || rawKey;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
@@ -7481,9 +7438,9 @@ Best regards`;
           fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
-              setHeaderFields((prev) => prev.filter((x) => x !== key));
+              setHeaderFields(headerFields.filter((x) => x !== key));
             } else {
-              setHeaderFields((prev) => [...prev, key]);
+              setHeaderFields([...headerFields, key]);
               if (!headerFieldsOrder.includes(key)) {
                 setHeaderFieldsOrder((prev) => [...prev, key]);
               }
@@ -7499,7 +7456,7 @@ Best regards`;
           onReset={() => {
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+              .map(f => headerCatalogKeyFromField(f));
             const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));

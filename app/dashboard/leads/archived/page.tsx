@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -62,8 +64,6 @@ type LeadFavorite = {
 
 export default function ArchivedLeadsList() {
   const router = useRouter();
-
-  const FAVORITES_STORAGE_KEY = "leadArchivedFavorites";
 
   const {
     items: leads,
@@ -128,32 +128,23 @@ export default function ArchivedLeadsList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "LEAD",
-    defaultFields: [], // populated from columnsCatalog when ready
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.leadsArchived,
+    defaultFields: [],
     configType: "columns",
   });
 
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("leadArchivedColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("leadArchivedColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.leadsArchived,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as LeadFavorite[]) || [];
 
-  const [favorites, setFavorites] = useState<LeadFavorite[]>([]);
+  const persistFavorites = (next: LeadFavorite[]) => {
+    setFavoritesConfig(next);
+  };
+
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -229,19 +220,6 @@ export default function ArchivedLeadsList() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setFavorites(parsed);
-      }
-    } catch {
-      return;
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
       const target = e.target as Node;
@@ -278,8 +256,9 @@ export default function ArchivedLeadsList() {
         if (name === "status" || name === "archive_reason") filterType = "select";
         // Note: Leads don't have number columns like organizations, but keeping type for consistency
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType: filterType as "text" | "select" | "number",
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -295,6 +274,7 @@ export default function ArchivedLeadsList() {
       merged.push({
         key: "archive_reason",
         label: "Archive Reason",
+        name: "archive_reason",
         sortable: true,
         filterType: "select" as const,
         fieldType: "",
@@ -309,33 +289,32 @@ export default function ArchivedLeadsList() {
     });
   }, [leads, availableFields]);
 
-  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("leadArchivedColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
+
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -348,12 +327,8 @@ export default function ArchivedLeadsList() {
       return lead.record_number ?? lead.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = lead?.customFields || lead?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(lead, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     const fullName =
@@ -428,11 +403,6 @@ export default function ArchivedLeadsList() {
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
-  };
-
-  const persistFavorites = (next: LeadFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
   };
 
   const handleOpenSaveFavoriteModal = () => {

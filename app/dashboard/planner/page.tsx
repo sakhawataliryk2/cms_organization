@@ -44,6 +44,8 @@ import { CSS } from "@dnd-kit/utilities";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import DocumentViewer from "@/components/DocumentViewer";
 import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
+import { useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 
 
 interface Appointment {
@@ -421,14 +423,34 @@ function OwnerSearchSelect({
 
 const PLANNER_PINNED_KEY = "planner";
 
+const PLANNER_VIEW_TYPES = ["Month", "Week", "Day", "List"] as const;
+type PlannerViewType = (typeof PLANNER_VIEW_TYPES)[number];
+
 const Planners = () => {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [viewType, setViewType] = useState<"Month" | "Week" | "Day" | "List">(
-    "Month",
-  );
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const { value: viewTypeConfig, setValue: setViewTypeConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.planner,
+      key: "planner_view_type",
+      defaultValue: "Month",
+    });
+  const viewType: PlannerViewType = PLANNER_VIEW_TYPES.includes(
+    viewTypeConfig as PlannerViewType,
+  )
+    ? (viewTypeConfig as PlannerViewType)
+    : "Month";
+  const setViewType = (view: PlannerViewType) => setViewTypeConfig(view);
+  const { value: itemsPerPageRaw } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.planner,
+    key: "planner_items_per_page",
+    defaultValue: 10,
+  });
+  const itemsPerPage =
+    typeof itemsPerPageRaw === "number" && itemsPerPageRaw > 0
+      ? itemsPerPageRaw
+      : 10;
   const [currentPage, setCurrentPage] = useState(1);
   const [isRecordPinned, setIsRecordPinned] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);

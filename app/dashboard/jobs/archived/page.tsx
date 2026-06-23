@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
@@ -49,8 +51,6 @@ type JobFavorite = {
   columnFields: string[];
   createdAt: number;
 };
-
-const FAVORITES_STORAGE_KEY = "jobsArchivedFavorites";
 
 export default function ArchivedJobsList() {
   const router = useRouter();
@@ -100,29 +100,11 @@ export default function ArchivedJobsList() {
   const [selectAll, setSelectAll] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [favorites, setFavorites] = useState<JobFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setFavorites(parsed);
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
-  const persistFavorites = (updated: JobFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-  };
 
   const JOB_BACKEND_COLUMN_KEYS = [
     "job_title",
@@ -188,7 +170,7 @@ export default function ArchivedJobsList() {
   const jobColumnsCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any, idx: number) => {
+      .map((f: any) => {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
         const fieldType = (f as any)?.field_type;
         const lookupType = (f as any)?.lookup_type || "";
@@ -196,17 +178,15 @@ export default function ArchivedJobsList() {
         const isBackendCol = name && JOB_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status" || name === "archive_reason") filterType = "select";
-        const customKey = isBackendCol ? name : `custom:${label || name}:${name || `f${idx}`}`;
         return {
           fieldType,
           lookupType,
           multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
-          key: customKey,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
-          name: String(name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
-          customFieldLabel: isBackendCol ? undefined : (label || name),
         };
       });
 
@@ -220,7 +200,6 @@ export default function ArchivedJobsList() {
         fieldType: undefined,
         lookupType: "",
         multiSelectLookupType: "",
-        customFieldLabel: undefined as string | undefined,
       },
       ...fromApi,
     ];
@@ -234,7 +213,6 @@ export default function ArchivedJobsList() {
         name: "archive_reason",
         sortable: true,
         filterType: "select",
-        customFieldLabel: undefined as string | undefined,
       });
     }
     const seen = new Set<string>();
@@ -263,13 +241,9 @@ export default function ArchivedJobsList() {
       return job.record_number ?? job.id;
     }
     if (key.startsWith("custom:")) {
-      const colInfo = getColumnInfo(key);
-      const lookupKey =
-        (colInfo as any)?.customFieldLabel ??
-        key.replace("custom:", "").replace(/:[^:]+$/, "");
-      const cf = job?.customFields || job?.custom_fields || {};
-      const val = cf?.[lookupKey];
-      return val === undefined || val === null || val === "" ? "—" : String(val);
+      const resolved = resolveCustomColumnValue(job, key, getColumnInfo(key));
+      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      return String(resolved);
     }
 
     if (key === "archive_reason") return job.archive_reason || "N/A";
@@ -288,8 +262,8 @@ export default function ArchivedJobsList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "JOB",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobsArchived,
     configType: "columns",
     defaultFields: [],
   });
@@ -298,46 +272,39 @@ export default function ArchivedJobsList() {
     const catalogKeys = jobColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("jobsArchivedColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [jobColumnsCatalog]);
 
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("jobsArchivedColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, jobColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    localStorage.setItem("jobsArchivedColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
+
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [jobColumnsCatalog, columnFields, setColumnFields]);
+
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobsArchived,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as JobFavorite[]) || [];
+
+  const persistFavorites = (updated: JobFavorite[]) => {
+    setFavoritesConfig(updated);
+  };
 
   const jobCatalogKeys = useMemo(() => jobColumnsCatalog.map((c) => c.key), [jobColumnsCatalog]);
   const columnOrderForModal = useMemo(

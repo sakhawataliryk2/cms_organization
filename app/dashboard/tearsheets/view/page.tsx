@@ -13,7 +13,9 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -46,6 +48,16 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
+const TEARSHEET_DEFAULT_SUMMARY_LAYOUT = {
+  left: ["overview"],
+  right: ["statistics"],
+};
+
+const TEARSHEET_DEFAULT_PANEL_FIELDS: Record<string, string[]> = {
+  overview: ["name", "id", "created", "owner"],
+  statistics: ["job_seekers", "hiring_managers", "job_orders", "leads", "organizations", "placements", "tasks"],
+};
 
 const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "job-seekers", "leads", "tasks", "placements"];
 
@@ -358,13 +370,38 @@ export default function TearsheetView() {
   const [error, setError] = useState<string | null>(null);
 
   // Overview panels state
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>({
-    left: ["overview"],
-    right: ["statistics"],
+  const { value: panelFields, setValue: setPanelFields } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tearsheetsDetail,
+    key: "panel_fields",
+    defaultValue: TEARSHEET_DEFAULT_PANEL_FIELDS,
   });
+
+  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tearsheetsDetail,
+    key: "summary_layout",
+    defaultValue: TEARSHEET_DEFAULT_SUMMARY_LAYOUT,
+  });
+
+  const columns = summaryLayout;
+  const setColumns = useCallback(
+    (
+      value:
+        | { left: string[]; right: string[] }
+        | ((prev: { left: string[]; right: string[] }) => { left: string[]; right: string[] })
+    ) => {
+      const next = typeof value === "function" ? value(summaryLayout) : value;
+      setSummaryLayout(next);
+    },
+    [summaryLayout, setSummaryLayout]
+  );
+
+  const panelFieldOrder: Record<string, string[]> = useMemo(
+    () => ({
+      overview: getPanelFieldPath(panelFields, "overview") ?? TEARSHEET_DEFAULT_PANEL_FIELDS.overview,
+      statistics: getPanelFieldPath(panelFields, "statistics") ?? TEARSHEET_DEFAULT_PANEL_FIELDS.statistics,
+    }),
+    [panelFields]
+  );
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isRecordPinned, setIsRecordPinned] = useState(false);
@@ -417,14 +454,6 @@ export default function TearsheetView() {
 
   // Panel editing state
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
-  const [panelFieldOrder, setPanelFieldOrder] = useState<Record<string, string[]>>({
-    overview: ["name", "id", "created", "owner"],
-    statistics: ["job_seekers", "hiring_managers", "job_orders", "leads", "organizations", "placements", "tasks"],
-  });
-  const [panelFieldVisible, setPanelFieldVisible] = useState<Record<string, Record<string, boolean>>>({
-    overview: { name: true, id: true, created: true, owner: true },
-    statistics: { job_seekers: true, hiring_managers: true, job_orders: true, leads: true, organizations: true, placements: true, tasks: true },
-  });
   const [modalFieldOrder, setModalFieldOrder] = useState<string[]>([]);
   const [modalFieldVisible, setModalFieldVisible] = useState<Record<string, boolean>>({});
   const [panelDragActiveId, setPanelDragActiveId] = useState<string | null>(null);
@@ -437,8 +466,8 @@ export default function TearsheetView() {
     showHeaderFieldModal,
     setShowHeaderFieldModal,
     saveHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "TEARSHEET",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tearsheetsDetail,
     defaultFields: TEARSHEET_DEFAULT_HEADER_FIELDS,
     configType: "header",
   });
@@ -837,9 +866,7 @@ export default function TearsheetView() {
 
   const renderPanel = (panelId: string) => {
     if (panelId === "overview") {
-      const visibleFields = (panelFieldOrder.overview || []).filter(
-        (key) => panelFieldVisible.overview?.[key] !== false
-      );
+      const visibleFields = panelFieldOrder.overview || [];
 
       return (
         <SortablePanel key={panelId} id={panelId}>
@@ -876,9 +903,7 @@ export default function TearsheetView() {
     }
 
     if (panelId === "statistics") {
-      const visibleFields = (panelFieldOrder.statistics || []).filter(
-        (key) => panelFieldVisible.statistics?.[key] !== false
-      );
+      const visibleFields = panelFieldOrder.statistics || [];
 
       return (
         <SortablePanel key={panelId} id={panelId}>
@@ -920,10 +945,16 @@ export default function TearsheetView() {
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
     setEditingPanel(panelId);
+    const allFields = TEARSHEET_DEFAULT_PANEL_FIELDS[panelId] || [];
     const currentOrder = panelFieldOrder[panelId] || [];
-    const currentVisible = panelFieldVisible[panelId] || {};
-    setModalFieldOrder([...currentOrder]);
-    setModalFieldVisible({ ...currentVisible });
+    const order = [...currentOrder];
+    allFields.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalFieldOrder(order);
+    setModalFieldVisible(
+      allFields.reduce((acc, k) => ({ ...acc, [k]: currentOrder.includes(k) }), {} as Record<string, boolean>)
+    );
   };
 
   // Close edit modal
@@ -939,8 +970,7 @@ export default function TearsheetView() {
       toast.error("At least one field must be visible");
       return;
     }
-    setPanelFieldOrder((prev) => ({ ...prev, [editingPanel]: orderedVisible }));
-    setPanelFieldVisible((prev) => ({ ...prev, [editingPanel]: modalFieldVisible }));
+    setPanelFields(setPanelFieldPath(panelFields, editingPanel, orderedVisible));
     setEditingPanel(null);
     toast.success("Panel fields updated");
   };
