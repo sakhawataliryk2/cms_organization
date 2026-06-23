@@ -10,7 +10,14 @@ import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiUserCheck, FiSearch, FiPhone } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import {
   sendCalendarInvite,
   type CalendarEvent,
@@ -81,8 +88,10 @@ const HIRING_MANAGER_HEADER_FIELD_LABELS: Record<string, string> = {
 };
 
 // Storage keys for Hiring Manager Details and Organization Details – field lists come from admin (custom field definitions)
-const HM_DETAILS_STORAGE_KEY = "hiringManagerDetailsFields";
-const HM_ORGANIZATION_DETAILS_STORAGE_KEY = "hiringManagerOrganizationDetailsFields";
+const HIRING_MANAGER_DEFAULT_SUMMARY_LAYOUT = {
+  left: ["details"],
+  right: ["organizationDetails", "recentNotes", "openTasks"],
+};
 
 // Droppable Column Container
 function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
@@ -473,39 +482,41 @@ out.sort((a, b) => {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   // Organization details: field definitions from admin (organizations entity) for edit modal + catalog keys
   const [organizationAvailableFields, setOrganizationAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return { details: [], organizationDetails: [], recentNotes: ["notes"] };
-    }
-    const detailsSaved = localStorage.getItem(HM_DETAILS_STORAGE_KEY);
-    const orgDetailsSaved = localStorage.getItem(HM_ORGANIZATION_DETAILS_STORAGE_KEY);
-    let details: string[] = [];
-    let organizationDetails: string[] = [];
-    if (detailsSaved) {
-      try {
-        const parsed = JSON.parse(detailsSaved);
-        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-      } catch (_) { }
-    }
-    if (orgDetailsSaved) {
-      try {
-        const parsed = JSON.parse(orgDetailsSaved);
-        if (Array.isArray(parsed) && parsed.length > 0) organizationDetails = Array.from(new Set(parsed));
-      } catch (_) { }
-    }
-    return { details, organizationDetails, recentNotes: ["notes"] };
+  const [recentNotesFields, setRecentNotesFields] = useState<string[]>(["notes"]);
+
+  const { value: panelFields, setValue: setPanelFields } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagersDetail,
+    key: "panel_fields",
+    defaultValue: {},
   });
 
-  // ===== Summary layout state =====
-  // ===== Summary layout state =====
-  // ===== Summary layout state =====
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>({
-    left: ["details"],
-    right: ["organizationDetails", "recentNotes", "openTasks"],
+  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagersDetail,
+    key: "summary_layout",
+    defaultValue: HIRING_MANAGER_DEFAULT_SUMMARY_LAYOUT,
   });
+
+  const columns = summaryLayout;
+  const setColumns = useCallback(
+    (
+      value:
+        | { left: string[]; right: string[] }
+        | ((prev: { left: string[]; right: string[] }) => { left: string[]; right: string[] })
+    ) => {
+      const next = typeof value === "function" ? value(summaryLayout) : value;
+      setSummaryLayout(next);
+    },
+    [summaryLayout, setSummaryLayout]
+  );
+
+  const visibleFields: Record<string, string[]> = useMemo(
+    () => ({
+      details: getPanelFieldPath(panelFields, "details") ?? [],
+      organizationDetails: getPanelFieldPath(panelFields, "organizationDetails") ?? [],
+      recentNotes: recentNotesFields,
+    }),
+    [panelFields, recentNotesFields]
+  );
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
@@ -531,66 +542,6 @@ out.sort((a, b) => {
       strategy: MeasuringStrategy.Always,
     },
   }), []);
-
-  // Initialize columns from localStorage or default
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("hiringManagerSummaryColumns");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
-            setColumns(parsed);
-          }
-        } catch (e) {
-          console.error("Error loading panel order:", e);
-        }
-      }
-    }
-  }, []);
-
-  // Initialize Hiring Manager Details field order/visibility from localStorage (persists across all records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(HM_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const unique = Array.from(new Set(parsed));
-        setVisibleFields((prev) => ({ ...prev, details: unique }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  // Initialize Hiring Manager Organization Details field order/visibility from localStorage (persists across all records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(HM_ORGANIZATION_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const unique = Array.from(new Set(parsed));
-        setVisibleFields((prev) => ({ ...prev, organizationDetails: unique }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  const prevColumnsRef = useRef<string>("");
-
-  // Save columns to localStorage
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    if (prevColumnsRef.current !== colsString) {
-      localStorage.setItem("hiringManagerSummaryColumns", colsString);
-      prevColumnsRef.current = colsString;
-    }
-  }, [columns]);
 
   const findContainer = useCallback((id: string) => {
     if (id === "left" || id === "right") {
@@ -751,7 +702,7 @@ out.sort((a, b) => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
@@ -780,7 +731,7 @@ out.sort((a, b) => {
     const fromApi = (organizationAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
@@ -796,15 +747,22 @@ out.sort((a, b) => {
       return !isHidden;
     });
 
-    const getDetailsLabel = (key: string) =>
-      detailsFieldCatalog.find((f) => f.key === key)?.label ||
-      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
-      key;
+    const getDetailsLabel = (key: string) => {
+      const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+      return (
+        detailsFieldCatalog.find((f) => f.key === key)?.label ||
+        customFieldDefs.find((f: any) => panelCatalogKeyFromField(f) === key || String(f.field_name || f.field_key || f.api_name || f.id) === rawKey)?.field_label ||
+        rawKey
+      );
+    };
 
     const getDetailsValue = (key: string): string => {
-      const fieldDef = customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key);
-      const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
-      const v = customObj[fieldLabel] ?? customObj[key];
+      const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+      const fieldDef = customFieldDefs.find(
+        (f: any) => panelCatalogKeyFromField(f) === key || String(f.field_name || f.field_key || f.api_name || f.id) === rawKey
+      );
+      const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || rawKey;
+      const v = customObj[fieldLabel] ?? customObj[rawKey] ?? customObj[key];
       return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
     };
 
@@ -1044,8 +1002,8 @@ out.sort((a, b) => {
     setShowHeaderFieldModal,
     saveHeaderConfig,
     isSaving: isSavingHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "HIRING_MANAGER",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagersDetail,
     configType: "header",
     defaultFields: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
   });
@@ -1064,16 +1022,13 @@ out.sort((a, b) => {
     const seen = new Set<string>();
     return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
-        return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
-          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
-          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
-          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
-        };
-      })
+      .map((f: any) => ({
+        key: headerCatalogKeyFromField(f),
+        label: f.field_label || f.field_name || String(f.field_key || f.id),
+        fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+        lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+        multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
+      }))
       .filter((x) => {
         if (seen.has(x.key)) return false;
         seen.add(x.key);
@@ -1150,13 +1105,14 @@ out.sort((a, b) => {
   // Initialize headerFieldsOrder when headerFields or catalog changes
   useEffect(() => {
     if (headerFieldCatalog.length > 0 && headerFieldsOrder.length === 0) {
-      // Initialize order with headerFields, then add remaining catalog fields
       const catalogKeys = headerFieldCatalog.map((f) => f.key);
-      const selectedOrder = headerFields.filter((k) => catalogKeys.includes(k));
+      const selectedOrder = remapLegacyCustomKeys(headerFields, headerFieldCatalog).filter((k) =>
+        catalogKeys.includes(k)
+      );
       const newFields = catalogKeys.filter((k) => !selectedOrder.includes(k));
       setHeaderFieldsOrder([...selectedOrder, ...newFields]);
     }
-  }, [headerFieldCatalog.length, headerFields]);
+  }, [headerFieldCatalog.length, headerFields, headerFieldsOrder.length]);
 
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -1343,7 +1299,7 @@ out.sort((a, b) => {
         [];
 
 
-      // Save fields for modal/catalog (visibility/order driven by catalog + localStorage)
+      // Save fields for modal/catalog (visibility/order driven by catalog + user view config)
       setAvailableFields(fields);
     } catch (err) {
       console.error("Error fetching HM available fields:", err);
@@ -1378,26 +1334,36 @@ out.sort((a, b) => {
 
   // When catalog loads, if details/organizationDetails visible list is empty, default to all catalog keys
   useEffect(() => {
-    const detailsKeys = detailsFieldCatalog.map((f) => f.key);
-    if (detailsKeys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.details || [];
-        if (current.length > 0) return prev;
-        return { ...prev, details: detailsKeys };
-      });
+    const catalog = detailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
+    const keys = catalog.map((f) => f.key);
+    if (keys.length === 0) return;
+
+    const current = getPanelFieldPath(panelFields, "details") ?? [];
+    if (current.length > 0) {
+      const remapped = remapLegacyCustomKeys(current, catalog);
+      if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+        setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
+      }
+      return;
     }
-  }, [detailsFieldCatalog]);
+    setPanelFields(setPanelFieldPath(panelFields, "details", keys));
+  }, [detailsFieldCatalog, panelFields, setPanelFields]);
 
   useEffect(() => {
-    const orgKeys = organizationDetailsFieldCatalog.map((f) => f.key);
-    if (orgKeys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.organizationDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, organizationDetails: orgKeys };
-      });
+    const catalog = organizationDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
+    const keys = catalog.map((f) => f.key);
+    if (keys.length === 0) return;
+
+    const current = getPanelFieldPath(panelFields, "organizationDetails") ?? [];
+    if (current.length > 0) {
+      const remapped = remapLegacyCustomKeys(current, catalog);
+      if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+        setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", remapped));
+      }
+      return;
     }
-  }, [organizationDetailsFieldCatalog]);
+    setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", keys));
+  }, [organizationDetailsFieldCatalog, panelFields, setPanelFields]);
 
   // Sync Hiring Manager Details modal state when opening edit for details
   useEffect(() => {
@@ -1442,44 +1408,31 @@ out.sort((a, b) => {
   }, [editingPanel, visibleFields.organizationDetails, organizationDetailsFieldCatalog]);
 
 
-  // Toggle field visibility
+  // Toggle field visibility (non-persisted panels only)
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-    setVisibleFields((prev) => {
-      const panelFields = prev[panelId] || [];
-      const uniqueFields = Array.from(new Set(panelFields));
+    if (panelId !== "recentNotes") return;
+    setRecentNotesFields((prev) => {
+      const uniqueFields = Array.from(new Set(prev));
       if (uniqueFields.includes(fieldKey)) {
-        return {
-          ...prev,
-          [panelId]: uniqueFields.filter((f) => f !== fieldKey),
-        };
-      } else {
-        return {
-          ...prev,
-          [panelId]: Array.from(new Set([...uniqueFields, fieldKey])),
-        };
+        return uniqueFields.filter((f) => f !== fieldKey);
       }
+      return Array.from(new Set([...uniqueFields, fieldKey]));
     });
   };
 
   // Hiring Manager Details modal: save order/visibility and persist for all records
   const handleSaveDetailsFields = useCallback(() => {
     const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k] === true)));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(HM_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    setPanelFields(setPanelFieldPath(panelFields, "details", newOrder));
     setEditingPanel(null);
-  }, [modalDetailsOrder, modalDetailsVisible]);
+  }, [modalDetailsOrder, modalDetailsVisible, panelFields, setPanelFields]);
 
   // Hiring Manager Organization Details modal: save order/visibility and persist for all records
   const handleSaveOrganizationDetailsFields = useCallback(() => {
     const newOrder = Array.from(new Set(modalOrganizationDetailsOrder.filter((k) => modalOrganizationDetailsVisible[k] === true)));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(HM_ORGANIZATION_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, organizationDetails: newOrder }));
+    setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", newOrder));
     setEditingPanel(null);
-  }, [modalOrganizationDetailsOrder, modalOrganizationDetailsVisible]);
+  }, [modalOrganizationDetailsOrder, modalOrganizationDetailsVisible, panelFields, setPanelFields]);
 
 
   // Handle edit panel click
@@ -5443,9 +5396,9 @@ out.sort((a, b) => {
           fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
           onToggle={(key) => {
             if (headerFields.includes(key)) {
-              setHeaderFields((prev) => prev.filter((x) => x !== key));
+              setHeaderFields(headerFields.filter((x) => x !== key));
             } else {
-              setHeaderFields((prev) => [...prev, key]);
+              setHeaderFields([...headerFields, key]);
               if (!headerFieldsOrder.includes(key)) {
                 setHeaderFieldsOrder((prev) => [...prev, key]);
               }
@@ -5460,12 +5413,11 @@ out.sort((a, b) => {
               if (oldIndex === -1 || newIndex === -1) return prev;
               return arrayMove(prev, oldIndex, newIndex);
             });
-            setHeaderFields((prev) => {
-              const oldIndex = prev.indexOf(active.id as string);
-              const newIndex = prev.indexOf(over.id as string);
-              if (oldIndex === -1 || newIndex === -1) return prev;
-              return arrayMove(prev, oldIndex, newIndex);
-            });
+            const oldIndex = headerFields.indexOf(active.id as string);
+            const newIndex = headerFields.indexOf(over.id as string);
+            if (oldIndex !== -1 && newIndex !== -1) {
+              setHeaderFields(arrayMove(headerFields, oldIndex, newIndex));
+            }
           }}
           onSave={async () => {
             const success = await saveHeaderConfig();

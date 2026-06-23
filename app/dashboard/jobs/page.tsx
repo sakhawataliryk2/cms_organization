@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { useRouter } from "nextjs-toploader/app";
 import Image from "next/image";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -70,8 +72,6 @@ export default function JobList() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const FAVORITES_STORAGE_KEY = "jobsFavorites";
-
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management only
   // =====================
@@ -93,31 +93,11 @@ export default function JobList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "JOB",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobs,
     defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    // Don't overwrite a multi-column preference with only record_number (e.g. after API or initial load)
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("jobsColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("jobsColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -193,7 +173,12 @@ export default function JobList() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showXmlMappingModal]);
 
-  const [favorites, setFavorites] = useState<JobsFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.jobs,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as JobsFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
@@ -289,19 +274,6 @@ export default function JobList() {
   const statusField = findFieldByLabel("Status");
 
   useEffect(() => {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setFavorites(parsed);
-      }
-    } catch {
-      return;
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
       const target = e.target as Node;
@@ -344,8 +316,7 @@ export default function JobList() {
   };
 
   const persistFavorites = (next: JobsFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    setFavoritesConfig(next);
   };
 
   const handleOpenSaveFavoriteModal = () => {
@@ -646,21 +617,17 @@ export default function JobList() {
         const isBackendCol = name && JOB_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
-        const customKey = isBackendCol ? name : `custom:${label || name}:${name || `f${idx}`}`;
         return {
-          key: customKey,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label),
-          name: String(name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
           lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
           multiSelectLookupType: (f as any)?.multiselect_lookup ?? (f as any)?.multiSelectLookupType ?? "",
-          customFieldLabel: isBackendCol ? undefined : (label || name),
         };
       });
-
-    console.log("availableFields", availableFields);
 
     const merged = [
       { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "", multiSelectLookupType: "", customFieldLabel: undefined as string | undefined },
@@ -694,69 +661,50 @@ export default function JobList() {
     return Array.from(new Set(required.map((c) => c.key)));
   }, [availableFields, columnsCatalog]);
 
-  const sanitizeColumnKeys = useCallback(
-    (keys: unknown[]) => {
-      const cleaned: string[] = [];
-      const catalogSet = new Set(columnCatalogKeys);
-      for (const key of keys) {
-        if (typeof key !== "string") continue;
-        if (!catalogSet.has(key)) continue;
-        if (cleaned.includes(key)) continue;
-        cleaned.push(key);
-      }
-      return cleaned;
-    },
-    [columnCatalogKeys]
-  );
-
   // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
     const catalogKeys = columnCatalogKeys;
     if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
 
-    const savedOrder = localStorage.getItem("jobsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = sanitizeColumnKeys(parsed);
-          if (catalogKeys.includes("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          const isOnlyRecordNumberPreference =
-            validOrder.length === 1 && validOrder[0] === "record_number";
-          const shouldIgnoreStaleRecordOnlyPreference =
-            isOnlyRecordNumberPreference && catalogKeys.length > 1;
-          if (
-            !wouldCollapseToRecordNumberOnly &&
-            !shouldIgnoreStaleRecordOnlyPreference &&
-            validOrder.length > 0
-          ) {
-            if (JSON.stringify(validOrder) !== JSON.stringify(parsed)) {
-              localStorage.setItem("jobsColumnOrder", JSON.stringify(validOrder));
-            }
-            setColumnFields(validOrder);
-            return;
-          }
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogKeys.includes("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      const isOnlyRecordNumberPreference =
+        validOrder.length === 1 && validOrder[0] === "record_number";
+      const shouldIgnoreStaleRecordOnlyPreference =
+        isOnlyRecordNumberPreference && catalogKeys.length > 1;
+      if (
+        !wouldCollapseToRecordNumberOnly &&
+        !shouldIgnoreStaleRecordOnlyPreference &&
+        validOrder.length > 0
+      ) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore invalid storage contents
+        return;
       }
     }
 
     const defaultColumns = getRequiredAdminColumnKeys();
-    setColumnFields((prev) => {
-      if (prev.length === 0) return defaultColumns;
-      const isOnlyRecordNumber =
-        prev.length === 1 && prev[0] === "record_number";
-      if (isOnlyRecordNumber && catalogKeys.length > 1) {
-        return defaultColumns.length > 0 ? defaultColumns : catalogKeys;
-      }
-      return prev;
-    });
-  }, [columnCatalogKeys, getRequiredAdminColumnKeys, sanitizeColumnKeys]);
+    if (columnFields.length === 0) {
+      setColumnFields(defaultColumns.length > 0 ? defaultColumns : catalogKeys);
+      return;
+    }
+    const isOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (isOnlyRecordNumber && catalogKeys.length > 1) {
+      setColumnFields(defaultColumns.length > 0 ? defaultColumns : catalogKeys);
+    }
+  }, [columnCatalogKeys, columnFields, setColumnFields, columnsCatalog, getRequiredAdminColumnKeys]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -769,13 +717,8 @@ export default function JobList() {
       return job.record_number ?? job.id;
     }
     if (key.startsWith("custom:")) {
-      const colInfo = getColumnInfo(key);
-      const lookupKey = (colInfo as any)?.customFieldLabel ?? key.replace("custom:", "").replace(/:[^:]+$/, "");
-      const cf = job?.customFields || job?.custom_fields || {};
-      const val = cf?.[lookupKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(job, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     switch (key) {
@@ -2085,9 +2028,9 @@ export default function JobList() {
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+              setColumnFields(columnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...columnFields, key]);
             }
           }}
           onDragEnd={(event) => {

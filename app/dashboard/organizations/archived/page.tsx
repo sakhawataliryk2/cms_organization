@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -58,8 +60,6 @@ type OrganizationFavorite = {
 
 export default function ArchivedOrganizationsList() {
   const router = useRouter();
-
-  const FAVORITES_STORAGE_KEY = "organizationArchivedFavorites";
 
   const {
     items: organizations,
@@ -122,34 +122,25 @@ export default function ArchivedOrganizationsList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "ORGANIZATION",
-    defaultFields: [], // populated from columnsCatalog when ready
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizationsArchived,
+    defaultFields: [],
     configType: "columns",
   });
 
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("organizationArchivedColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("organizationArchivedColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizationsArchived,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as OrganizationFavorite[]) || [];
+
+  const persistFavorites = (next: OrganizationFavorite[]) => {
+    setFavoritesConfig(next);
+  };
 
   // Per-column sorting/filtering managed by useServerEntityList
 
-  const [favorites, setFavorites] = useState<OrganizationFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -225,19 +216,6 @@ export default function ArchivedOrganizationsList() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setFavorites(parsed);
-      }
-    } catch {
-      return;
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
       const target = e.target as Node;
@@ -274,8 +252,9 @@ export default function ArchivedOrganizationsList() {
         if (name === "status" || name === "archive_reason") filterType = "select";
         else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -308,6 +287,7 @@ export default function ArchivedOrganizationsList() {
       merged.push({
         key: "archive_reason",
         label: "Archive Reason",
+        name: "archive_reason",
         sortable: true,
         filterType: "select",
         fieldType: "",
@@ -322,36 +302,32 @@ export default function ArchivedOrganizationsList() {
     });
   }, [organizations, availableFields]);
 
-  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("organizationArchivedColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (validOrder.length > 0) {
-            let order = validOrder;
-            if (catalogSet.has("record_number") && !order.includes("record_number")) {
-              order = ["record_number", ...order];
-            }
-            const wouldCollapseToRecordNumberOnly =
-              parsed.length > 1 && order.length === 1 && order[0] === "record_number";
-            if (!wouldCollapseToRecordNumberOnly && order.length > 0) {
-              setColumnFields(order);
-              return;
-            }
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
+
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   const orgCatalogKeys = useMemo(() => columnsCatalog.map((c) => c.key), [columnsCatalog]);
   const columnOrderForModal = useMemo(
@@ -374,12 +350,8 @@ export default function ArchivedOrganizationsList() {
       return org.record_number ?? org.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = org?.customFields || org?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(org, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     switch (key) {
@@ -444,11 +416,6 @@ export default function ArchivedOrganizationsList() {
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
-  };
-
-  const persistFavorites = (next: OrganizationFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
   };
 
   const handleOpenSaveFavoriteModal = () => {

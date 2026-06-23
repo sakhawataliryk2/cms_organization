@@ -15,7 +15,14 @@ import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { BsFillPinAngleFill } from "react-icons/bs";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
   buildPinnedKey,
@@ -78,13 +85,19 @@ const PLACEMENT_HEADER_FIELD_LABELS: Record<string, string> = {
   createdBy: "Created By",
 };
 
-// Storage keys for all summary panels – field lists come from admin (custom field definitions)
-const CANDIDATE_DETAILS_STORAGE_KEY = "placementSummaryCandidateFields";
-const COMPANY_DETAILS_STORAGE_KEY = "placementSummaryCompanyFields";
-const BILLING_CONTACT_STORAGE_KEY = "placementSummaryBillingContactFields";
-const TIMESHEET_APPROVER_STORAGE_KEY = "placementSummaryTimesheetApproverFields";
-const JOB_DETAILS_STORAGE_KEY = "placementSummaryJobFields";
-const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
+const PLACEMENT_DEFAULT_SUMMARY_LAYOUT = {
+  left: ["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails"],
+  right: ["jobDetails", "placementDetails", "recentNotes", "openTasks"],
+};
+
+const PLACEMENT_PANEL_CONFIG_PATHS: Record<string, string> = {
+  candidateDetails: "candidate",
+  companyDetails: "company",
+  billingContactDetails: "billingContact",
+  timesheetApproverDetails: "timesheetApprover",
+  jobDetails: "job",
+  placementDetails: "placementDetails",
+};
 
 const PLACEMENT_LINK_FIELD_NAMES = {
   jobId: "Field_21",
@@ -490,10 +503,35 @@ export default function PlacementView() {
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
-  }>({
-    left: ["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails"],
-    right: ["jobDetails", "placementDetails", "recentNotes", "openTasks"],
-  });
+  }>(PLACEMENT_DEFAULT_SUMMARY_LAYOUT);
+
+  const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.placementsDetail,
+      key: "summary_layout",
+      defaultValue: PLACEMENT_DEFAULT_SUMMARY_LAYOUT,
+    });
+  const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.placementsDetail,
+      key: "panel_fields",
+      defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+    });
+  const panelFieldsConfigRef = useRef(panelFieldsConfig);
+  panelFieldsConfigRef.current = panelFieldsConfig;
+  const summaryLayoutConfigRef = useRef(summaryLayoutConfig);
+  summaryLayoutConfigRef.current = summaryLayoutConfig;
+
+  useEffect(() => {
+    if (
+      summaryLayoutConfig?.left &&
+      Array.isArray(summaryLayoutConfig.left) &&
+      summaryLayoutConfig?.right &&
+      Array.isArray(summaryLayoutConfig.right)
+    ) {
+      setColumns(summaryLayoutConfig);
+    }
+  }, [summaryLayoutConfig]);
 
   // Related entities for summary panels (Candidate, Company, Contacts, Job)
   const [candidate, setCandidate] = useState<any>(null);
@@ -538,36 +576,16 @@ export default function PlacementView() {
     }),
   }), []);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("placementSummaryColumns");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (
-            parsed.left &&
-            Array.isArray(parsed.left) &&
-            parsed.right &&
-            Array.isArray(parsed.right)
-          ) {
-            setColumns(parsed);
-          }
-        } catch (e) {
-          console.error("Error loading panel order:", e);
-        }
-      }
-    }
-  }, []);
-
   const prevColumnsRef = useRef<string>("");
 
   useEffect(() => {
     const colsString = JSON.stringify(columns);
-    if (prevColumnsRef.current !== colsString) {
-      localStorage.setItem("placementSummaryColumns", colsString);
+    const prevConfigString = JSON.stringify(summaryLayoutConfigRef.current);
+    if (prevColumnsRef.current !== colsString && colsString !== prevConfigString) {
+      setSummaryLayoutConfig(columns);
       prevColumnsRef.current = colsString;
     }
-  }, [columns]);
+  }, [columns, setSummaryLayoutConfig]);
 
   const findContainer = useCallback(
     (id: string) => {
@@ -731,31 +749,15 @@ export default function PlacementView() {
   const [companyAvailableFields, setCompanyAvailableFields] = useState<any[]>([]);
   const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
   const [jobAvailableFields, setJobAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return {
-        candidateDetails: [], companyDetails: [], billingContactDetails: [], timesheetApproverDetails: [],
-        jobDetails: [], placementDetails: [], recentNotes: ["notes"],
-      };
-    }
-    const read = (key: string): string[] => {
-      try {
-        const s = localStorage.getItem(key);
-        if (!s) return [];
-        const p = JSON.parse(s);
-        return Array.isArray(p) && p.length > 0 ? Array.from(new Set(p)) : [];
-      } catch { return []; }
-    };
-    return {
-      candidateDetails: read(CANDIDATE_DETAILS_STORAGE_KEY),
-      companyDetails: read(COMPANY_DETAILS_STORAGE_KEY),
-      billingContactDetails: read(BILLING_CONTACT_STORAGE_KEY),
-      timesheetApproverDetails: read(TIMESHEET_APPROVER_STORAGE_KEY),
-      jobDetails: read(JOB_DETAILS_STORAGE_KEY),
-      placementDetails: read(PLACEMENT_DETAILS_STORAGE_KEY),
-      recentNotes: ["notes"],
-    };
-  });
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => ({
+    candidateDetails: [],
+    companyDetails: [],
+    billingContactDetails: [],
+    timesheetApproverDetails: [],
+    jobDetails: [],
+    placementDetails: [],
+    recentNotes: ["notes"],
+  }));
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -784,8 +786,8 @@ export default function PlacementView() {
     setShowHeaderFieldModal,
     saveHeaderConfig,
     isSaving: isSavingHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "PLACEMENT",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.placementsDetail,
     configType: "header",
     defaultFields: PLACEMENT_DEFAULT_HEADER_FIELDS,
   });
@@ -805,10 +807,10 @@ export default function PlacementView() {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
+        const k = headerCatalogKeyFromField(f);
         return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
+          key: k,
+          label: f.field_label || f.field_name || String(f.field_key || f.id),
           fieldType: (f.field_type ?? f.fieldType ?? "") as string,
           lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
           multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
@@ -872,6 +874,19 @@ export default function PlacementView() {
       setHeaderFieldsOrder([...selectedOrder, ...newFields]);
     }
   }, [headerFieldCatalog.length, headerFields]);
+
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0 || headerFields.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    ).filter((k) => catalogSet.has(k));
+    if (remapped.length > 0 && JSON.stringify(remapped) !== JSON.stringify(headerFields)) {
+      setHeaderFields(remapped);
+    }
+  }, [headerFieldCatalog, headerFields, setHeaderFields]);
 
   // Fetch placement data when component mounts
   useEffect(() => {
@@ -1157,7 +1172,7 @@ export default function PlacementView() {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
@@ -1168,7 +1183,7 @@ export default function PlacementView() {
     return (candidateAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
   }, [candidateAvailableFields]);
@@ -1177,7 +1192,7 @@ export default function PlacementView() {
     return (companyAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
   }, [companyAvailableFields]);
@@ -1186,7 +1201,7 @@ export default function PlacementView() {
     return (hiringManagerAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
   }, [hiringManagerAvailableFields]);
@@ -1195,65 +1210,62 @@ export default function PlacementView() {
     return (jobAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
   }, [jobAvailableFields]);
 
-  // When catalog loads, if panel visible list is empty, default to all catalog keys
-  useEffect(() => {
-    const keys = candidateFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
+  const syncPlacementPanelFromConfig = useCallback(
+    (panelId: string, catalog: Array<{ key: string; label: string }>) => {
+      const path = PLACEMENT_PANEL_CONFIG_PATHS[panelId];
+      if (!path) return;
+      const catalogKeys = catalog.map((f) => f.key);
+      if (catalogKeys.length === 0) return;
+      const saved = getPanelFieldPath(panelFieldsConfig, path);
       setVisibleFields((prev) => {
-        const current = prev.candidateDetails || [];
+        const current = prev[panelId] || [];
+        if (saved && saved.length > 0) {
+          const remapped = remapLegacyCustomKeys(saved, catalog);
+          const next = remapped.length > 0 ? remapped : catalogKeys;
+          if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+            return { ...prev, [panelId]: next };
+          }
+          return prev;
+        }
         if (current.length > 0) return prev;
-        return { ...prev, candidateDetails: keys };
+        return { ...prev, [panelId]: catalogKeys };
       });
-    }
-  }, [candidateFieldCatalog]);
+    },
+    [panelFieldsConfig]
+  );
+
   useEffect(() => {
-    const keys = companyFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.companyDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, companyDetails: keys };
-      });
-    }
-  }, [companyFieldCatalog]);
+    syncPlacementPanelFromConfig("candidateDetails", candidateFieldCatalog);
+  }, [candidateFieldCatalog, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    const keys = hiringManagerFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const bc = prev.billingContactDetails || [];
-        const ta = prev.timesheetApproverDetails || [];
-        let next = prev;
-        if (bc.length === 0) next = { ...next, billingContactDetails: keys };
-        if (ta.length === 0) next = { ...next, timesheetApproverDetails: keys };
-        return next;
-      });
-    }
-  }, [hiringManagerFieldCatalog]);
+    syncPlacementPanelFromConfig("companyDetails", companyFieldCatalog);
+  }, [companyFieldCatalog, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    const keys = jobDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.jobDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, jobDetails: keys };
-      });
-    }
-  }, [jobDetailsFieldCatalog]);
+    syncPlacementPanelFromConfig("billingContactDetails", hiringManagerFieldCatalog);
+    syncPlacementPanelFromConfig("timesheetApproverDetails", hiringManagerFieldCatalog);
+  }, [hiringManagerFieldCatalog, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    const keys = placementDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.placementDetails || [];
-        if (current.length > 0) return prev;
-        return { ...prev, placementDetails: keys };
-      });
-    }
-  }, [placementDetailsFieldCatalog]);
+    syncPlacementPanelFromConfig("jobDetails", jobDetailsFieldCatalog);
+  }, [jobDetailsFieldCatalog, syncPlacementPanelFromConfig]);
+  useEffect(() => {
+    syncPlacementPanelFromConfig("placementDetails", placementDetailsFieldCatalog);
+  }, [placementDetailsFieldCatalog, syncPlacementPanelFromConfig]);
+
+  const savePlacementPanelConfig = useCallback(
+    (panelId: string, fields: string[]) => {
+      const path = PLACEMENT_PANEL_CONFIG_PATHS[panelId];
+      if (!path) return;
+      setPanelFieldsConfig(
+        setPanelFieldPath(panelFieldsConfigRef.current, path, fields)
+      );
+    },
+    [setPanelFieldsConfig]
+  );
 
   // Sync modal state when opening edit for each panel
   const syncModalFor = (panelId: string, catalog: { key: string }[], current: string[]) => {
@@ -1306,43 +1318,43 @@ export default function PlacementView() {
     );
   }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
 
-  // Save handlers for each panel (persist to localStorage, update visibleFields)
+  // Save handlers for each panel (persist via user view config)
   const handleSaveCandidateDetailsFields = useCallback(() => {
     const newOrder = modalCandidateOrder.filter((k) => modalCandidateVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(CANDIDATE_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, candidateDetails: newOrder }));
+    savePlacementPanelConfig("candidateDetails", newOrder);
     setEditingPanel(null);
-  }, [modalCandidateOrder, modalCandidateVisible]);
+  }, [modalCandidateOrder, modalCandidateVisible, savePlacementPanelConfig]);
   const handleSaveCompanyDetailsFields = useCallback(() => {
     const newOrder = modalCompanyOrder.filter((k) => modalCompanyVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(COMPANY_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, companyDetails: newOrder }));
+    savePlacementPanelConfig("companyDetails", newOrder);
     setEditingPanel(null);
-  }, [modalCompanyOrder, modalCompanyVisible]);
+  }, [modalCompanyOrder, modalCompanyVisible, savePlacementPanelConfig]);
   const handleSaveBillingContactFields = useCallback(() => {
     const newOrder = modalBillingContactOrder.filter((k) => modalBillingContactVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(BILLING_CONTACT_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, billingContactDetails: newOrder }));
+    savePlacementPanelConfig("billingContactDetails", newOrder);
     setEditingPanel(null);
-  }, [modalBillingContactOrder, modalBillingContactVisible]);
+  }, [modalBillingContactOrder, modalBillingContactVisible, savePlacementPanelConfig]);
   const handleSaveTimesheetApproverFields = useCallback(() => {
     const newOrder = modalTimesheetApproverOrder.filter((k) => modalTimesheetApproverVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(TIMESHEET_APPROVER_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, timesheetApproverDetails: newOrder }));
+    savePlacementPanelConfig("timesheetApproverDetails", newOrder);
     setEditingPanel(null);
-  }, [modalTimesheetApproverOrder, modalTimesheetApproverVisible]);
+  }, [modalTimesheetApproverOrder, modalTimesheetApproverVisible, savePlacementPanelConfig]);
   const handleSaveJobDetailsFields = useCallback(() => {
     const newOrder = modalJobDetailsOrder.filter((k) => modalJobDetailsVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(JOB_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
+    savePlacementPanelConfig("jobDetails", newOrder);
     setEditingPanel(null);
-  }, [modalJobDetailsOrder, modalJobDetailsVisible]);
+  }, [modalJobDetailsOrder, modalJobDetailsVisible, savePlacementPanelConfig]);
   const handleSavePlacementDetailsFields = useCallback(() => {
     const newOrder = modalPlacementDetailsOrder.filter((k) => modalPlacementDetailsVisible[k]);
-    if (typeof window !== "undefined") localStorage.setItem(PLACEMENT_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, placementDetails: newOrder }));
+    savePlacementPanelConfig("placementDetails", newOrder);
     setEditingPanel(null);
-  }, [modalPlacementDetailsOrder, modalPlacementDetailsVisible]);
+  }, [modalPlacementDetailsOrder, modalPlacementDetailsVisible, savePlacementPanelConfig]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {

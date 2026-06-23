@@ -66,6 +66,8 @@ import {
 import { createPortal } from "react-dom";
 import OrganizationDetailPanel from "./OrganizationDetailPanel";
 import HiringManagerDetailPanel from "./HiringManagerDetailPanel";
+import { useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 
 type TimePeriodType = "week" | "customRange" | "all";
 
@@ -421,85 +423,41 @@ const availableHeight =
     : 400;
 const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
 
-const TBI_COLUMN_LAYOUT_KEY = "tbi-column-layout";
-
-function loadColumnLayout(viewKey: string, schemaColumns: string[]): string[] {
-  if (typeof window === "undefined") return [...schemaColumns];
-  try {
-    const raw = localStorage.getItem(TBI_COLUMN_LAYOUT_KEY);
-    if (!raw) return [...schemaColumns];
-    const data = JSON.parse(raw) as Record<string, string[]>;
-    const saved = data[viewKey];
-    if (!Array.isArray(saved) || saved.length === 0) return [...schemaColumns];
-    const schemaSet = new Set(schemaColumns);
-    const validOrder = saved.filter((h) => schemaSet.has(h));
-    const missing = schemaColumns.filter((h) => !validOrder.includes(h));
-    return [...validOrder, ...missing];
-  } catch {
-    return [...schemaColumns];
-  }
-}
-
-function saveColumnLayout(viewKey: string, visibleOrder: string[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem(TBI_COLUMN_LAYOUT_KEY);
-    const data = (raw ? JSON.parse(raw) : {}) as Record<string, string[]>;
-    data[viewKey] = visibleOrder;
-    localStorage.setItem(TBI_COLUMN_LAYOUT_KEY, JSON.stringify(data));
-  } catch {
-    // ignore
-  }
-}
-
-const TBI_COLUMN_WIDTHS_KEY = "tbi-column-widths";
 const MIN_COLUMN_WIDTH = 60;
 const MAX_COLUMN_WIDTH = 500;
 
-function loadColumnWidths(
+function resolveColumnLayout(
+  layoutConfig: Record<string, string[]> | undefined,
+  viewKey: string,
+  schemaColumns: string[],
+): string[] {
+  const saved = layoutConfig?.[viewKey];
+  if (!Array.isArray(saved) || saved.length === 0) return [...schemaColumns];
+  const schemaSet = new Set(schemaColumns);
+  const validOrder = saved.filter((h) => schemaSet.has(h));
+  const missing = schemaColumns.filter((h) => !validOrder.includes(h));
+  return [...validOrder, ...missing];
+}
+
+function resolveColumnWidths(
+  widthsConfig: Record<string, Record<string, number>> | undefined,
   viewKey: string,
   columns: string[],
 ): Record<string, number> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
-    if (!raw) return {};
-    const data = JSON.parse(raw) as Record<string, Record<string, number>>;
-    const saved = data[viewKey];
-    if (!saved || typeof saved !== "object") return {};
-    const result: Record<string, number> = {};
-    for (const col of columns) {
-      const w = saved[col];
-      if (
-        typeof w === "number" &&
-        w >= MIN_COLUMN_WIDTH &&
-        w <= MAX_COLUMN_WIDTH
-      ) {
-        result[col] = w;
-      }
+  const saved = widthsConfig?.[viewKey];
+  if (!saved || typeof saved !== "object") return {};
+  const result: Record<string, number> = {};
+  for (const col of columns) {
+    const w = saved[col];
+    if (
+      typeof w === "number" &&
+      w >= MIN_COLUMN_WIDTH &&
+      w <= MAX_COLUMN_WIDTH
+    ) {
+      result[col] = w;
     }
-    return result;
-  } catch {
-    return {};
   }
-}
-
-function saveColumnWidths(
-  viewKey: string,
-  widths: Record<string, number>,
-): void {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
-    const data = (raw ? JSON.parse(raw) : {}) as Record<
-      string,
-      Record<string, number>
-    >;
-    data[viewKey] = { ...(data[viewKey] || {}), ...widths };
-    localStorage.setItem(TBI_COLUMN_WIDTHS_KEY, JSON.stringify(data));
-  } catch {
-    // ignore
-  }
+  return result;
 }
 
 function escapeCsvValue(val: string): string {
@@ -940,6 +898,23 @@ export default function TbiPage() {
     "Sick Time",
   ];
 
+  const { value: columnLayoutConfig, setValue: setColumnLayoutConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.tbi,
+      key: "tbi_column_layout",
+      defaultValue: {} as Record<string, string[]>,
+    });
+  const { value: columnWidthsConfig, setValue: setColumnWidthsConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.tbi,
+      key: "tbi_column_widths",
+      defaultValue: {} as Record<string, Record<string, number>>,
+    });
+  const columnLayoutConfigRef = useRef(columnLayoutConfig);
+  columnLayoutConfigRef.current = columnLayoutConfig;
+  const columnWidthsConfigRef = useRef(columnWidthsConfig);
+  columnWidthsConfigRef.current = columnWidthsConfig;
+
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -964,22 +939,29 @@ export default function TbiPage() {
     ...defaultColumns,
   ]);
 
-  // Sync column order when view (sidebar) changes: load from localStorage or use schema default
+  // Sync column order when view (sidebar) changes: load from saved config or use schema default
   useEffect(() => {
-    setColumnOrder(loadColumnLayout(viewKey, schemaColumns));
+    setColumnOrder(
+      resolveColumnLayout(columnLayoutConfig, viewKey, schemaColumns),
+    );
     // Reset filters and sorts when switching views
     setColumnSorts({});
     setColumnFilters({});
     setSelectedRows(new Set());
-  }, [viewKey]);
+  }, [viewKey, schemaColumns, columnLayoutConfig]);
 
-  // Persist column layout to localStorage when user changes visibility/order (not on view switch)
+  // Persist column layout when user changes visibility/order
   useEffect(() => {
     const visible = columnOrder.filter((h) => schemaColumns.includes(h));
-    if (visible.length > 0) saveColumnLayout(viewKey, visible);
-  }, [columnOrder]);
+    if (visible.length > 0) {
+      setColumnLayoutConfig({
+        ...columnLayoutConfigRef.current,
+        [viewKey]: visible,
+      });
+    }
+  }, [columnOrder, viewKey, schemaColumns, setColumnLayoutConfig]);
 
-  // Column widths per view (resizable; persisted to localStorage)
+  // Column widths per view (resizable; persisted via useUserViewConfig)
   const [columnWidths, setColumnWidths] = useState<
     Record<string, Record<string, number>>
   >({});
@@ -993,15 +975,16 @@ export default function TbiPage() {
   const handleColumnResize = useCallback(
     (vKey: string, header: string, newWidth: number) => {
       setColumnWidths((prev) => {
-        const next = {
-          ...prev,
-          [vKey]: { ...(prev[vKey] || {}), [header]: newWidth },
-        };
-        saveColumnWidths(vKey, next[vKey]!);
+        const viewWidths = { ...(prev[vKey] || {}), [header]: newWidth };
+        const next = { ...prev, [vKey]: viewWidths };
+        setColumnWidthsConfig({
+          ...columnWidthsConfigRef.current,
+          [vKey]: viewWidths,
+        });
         return next;
       });
     },
-    [],
+    [setColumnWidthsConfig],
   );
 
   // Load column widths when view changes
@@ -1011,9 +994,9 @@ export default function TbiPage() {
       vKey === "TimeSheets"
         ? [...TIMESHEETS_TABLE_COLUMNS_LIST]
         : (columnHeadersMap[vKey] ?? defaultColumns);
-    const loaded = loadColumnWidths(vKey, cols);
+    const loaded = resolveColumnWidths(columnWidthsConfig, vKey, cols);
     setColumnWidths((prev) => ({ ...prev, [vKey]: loaded }));
-  }, [viewKey, selectedRow]);
+  }, [viewKey, selectedRow, columnWidthsConfig]);
 
   // Visible columns: only those in columnOrder that exist in current schema (keeps order)
   const columnHeaders = columnOrder.filter((h) => schemaColumns.includes(h));
@@ -1346,19 +1329,26 @@ export default function TbiPage() {
   useEffect(() => {
     if (selectedRow === "TimeSheets") {
       setTimesheetsColumnOrder(
-        loadColumnLayout("TimeSheets", [...TIMESHEETS_TABLE_COLUMNS_LIST]),
+        resolveColumnLayout(
+          columnLayoutConfig,
+          "TimeSheets",
+          [...TIMESHEETS_TABLE_COLUMNS_LIST]
+        )
       );
       // Reset filters and sorts when switching to TimeSheets
       setTimesheetsColumnSorts({});
       setTimesheetsColumnFilters({});
     }
-  }, [selectedRow]);
+  }, [selectedRow, columnLayoutConfig]);
 
   useEffect(() => {
     if (timesheetsColumnOrder.length > 0) {
-      saveColumnLayout("TimeSheets", timesheetsColumnOrder);
+      setColumnLayoutConfig({
+        ...columnLayoutConfigRef.current,
+        TimeSheets: timesheetsColumnOrder,
+      });
     }
-  }, [timesheetsColumnOrder]);
+  }, [timesheetsColumnOrder, setColumnLayoutConfig]);
 
   const timesheetsColumnIds = useMemo(
     () => timesheetsColumnOrder.map((_, i) => `ts-col-${i}`),
@@ -2710,7 +2700,7 @@ export default function TbiPage() {
         </div>
       )}
 
-      {/* Columns modal – select which columns to show; layout saved to localStorage */}
+      {/* Columns modal – select which columns to show; layout saved to user view config */}
       {showColumnsMenu && (
         <div
           className="fixed inset-0 z-200 flex items-center justify-center bg-black/50"

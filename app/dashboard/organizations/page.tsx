@@ -13,7 +13,9 @@ import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
 import {
@@ -86,8 +88,6 @@ const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 export default function OrganizationList() {
   const router = useRouter();
 
-  const FAVORITES_STORAGE_KEY = "organizationFavorites";
-
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management only
   // =====================
@@ -108,34 +108,11 @@ export default function OrganizationList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "ORGANIZATION",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizations,
     defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    // Don't overwrite a multi-column preference with only record_number (e.g. after API or initial load)
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("organizationColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem(
-      "organizationColumnOrder",
-      JSON.stringify(columnFields),
-    );
-  }, [columnFields]);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<
@@ -147,7 +124,12 @@ export default function OrganizationList() {
     Record<string, ColumnFilterState>
   >({});
 
-  const [favorites, setFavorites] = useState<OrganizationFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizations,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as OrganizationFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -264,19 +246,6 @@ export default function OrganizationList() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setFavorites(parsed);
-      }
-    } catch {
-      return;
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
       const target = e.target as Node;
@@ -368,6 +337,7 @@ export default function OrganizationList() {
       return {
         key,
         label: humanize(key),
+        name: key,
         sortable: true,
         filterType,
         fieldType: "",
@@ -424,8 +394,9 @@ export default function OrganizationList() {
         }
 
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
@@ -478,56 +449,48 @@ export default function OrganizationList() {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("organizationColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (
-            catalogSet.has("record_number") &&
-            !validOrder.includes("record_number")
-          ) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          // Don't apply when we would collapse a multi-column preference to only record_number
-          // (catalog may still be loading — e.g. availableFields not yet loaded)
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 &&
-            validOrder.length === 1 &&
-            validOrder[0] === "record_number";
-          const isOnlyRecordNumberPreference =
-            validOrder.length === 1 && validOrder[0] === "record_number";
-          // Ignore stale fallback-only localStorage values when we now have a
-          // richer catalog; otherwise the table appears to show one column for
-          // several seconds until async header config catches up.
-          const shouldIgnoreStaleRecordOnlyPreference =
-            isOnlyRecordNumberPreference && catalogKeys.length > 1;
-          if (
-            !wouldCollapseToRecordNumberOnly &&
-            !shouldIgnoreStaleRecordOnlyPreference &&
-            validOrder.length > 0
-          ) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, columnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (
+        catalogSet.has("record_number") &&
+        !validOrder.includes("record_number")
+      ) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      const isOnlyRecordNumberPreference =
+        validOrder.length === 1 && validOrder[0] === "record_number";
+      const shouldIgnoreStaleRecordOnlyPreference =
+        isOnlyRecordNumberPreference && catalogKeys.length > 1;
+      if (
+        !wouldCollapseToRecordNumberOnly &&
+        !shouldIgnoreStaleRecordOnlyPreference &&
+        validOrder.length > 0
+      ) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    setColumnFields((prev) => {
-      if (prev.length === 0) return catalogKeys;
 
-      // If we only have the fallback Record Number column while catalog now has
-      // more fields, restore the full default set so columns are not stuck hidden.
-      const isOnlyRecordNumber =
-        prev.length === 1 && prev[0] === "record_number";
-      if (isOnlyRecordNumber && catalogKeys.length > 1) return catalogKeys;
+    if (columnFields.length === 0) {
+      setColumnFields(catalogKeys);
+      return;
+    }
 
-      return prev;
-    });
-  }, [columnsCatalog]);
+    const isOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (isOnlyRecordNumber && catalogKeys.length > 1) {
+      setColumnFields(catalogKeys);
+    }
+  }, [columnsCatalog, columnFields, setColumnFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -540,12 +503,8 @@ export default function OrganizationList() {
       return org.record_number ?? org.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = org?.customFields || org?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
+      const resolved = resolveCustomColumnValue(org, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     switch (key) {
@@ -905,8 +864,7 @@ export default function OrganizationList() {
   };
 
   const persistFavorites = (next: OrganizationFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    setFavoritesConfig(next);
   };
 
   const handleOpenSaveFavoriteModal = () => {
@@ -2118,9 +2076,9 @@ export default function OrganizationList() {
           }))}
           onToggle={(key) => {
             if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+              setColumnFields(columnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...columnFields, key]);
             }
           }}
           onDragEnd={(event) => {
@@ -2153,7 +2111,7 @@ export default function OrganizationList() {
                   f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
                 const isBackendCol =
                   name && ORG_BACKEND_COLUMN_KEYS.includes(name);
-                return isBackendCol ? name : `custom:${label || name}`;
+                return catalogKeyFromColumn(name, String(label || name), !!isBackendCol);
               });
             const defaults = Array.from(
               new Set(["record_number", "name", "status", ...requiredCustom]),

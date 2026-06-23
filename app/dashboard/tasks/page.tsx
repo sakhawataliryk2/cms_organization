@@ -3,7 +3,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
@@ -67,8 +69,6 @@ type TaskFavorite = {
   advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
-
-const FAVORITES_STORAGE_KEY = "tasksFavorites";
 
 const formatDateTime = (date?: string, time?: string) => {
   if (!date) return '';
@@ -208,7 +208,7 @@ export default function TaskList() {
         const multiSelectLookupType =
           (f as any)?.multiselect_lookup ?? (f as any)?.multiSelectLookupType ?? "";
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
           name: String(name || label || ""),
           sortable: isBackendCol,
@@ -300,10 +300,8 @@ export default function TaskList() {
       return task.record_number ?? task.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = task?.customFields || task?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === "" ? "N/A" : String(val);
+      const resolved = resolveCustomColumnValue(task, key, getColumnInfo(key));
+      return formatColumnValueOrNA(resolved);
     }
 
     switch (key) {
@@ -347,60 +345,46 @@ export default function TaskList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "TASK",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tasks,
     configType: "columns",
     defaultFields: [],
   });
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("tasksColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   useEffect(() => {
     const catalogKeys = taskColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("tasksColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder = ["record_number", ...validOrder];
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, taskColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
+
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [taskColumnsCatalog]);
+  }, [taskColumnsCatalog, columnFields, setColumnFields]);
 
   // Favorites State
-  const [favorites, setFavorites] = useState<TaskFavorite[]>([]);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tasks,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as TaskFavorite[]) || [];
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
@@ -408,22 +392,6 @@ export default function TaskList() {
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  // Load favorites from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setFavorites(parsed);
-        }
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
@@ -467,8 +435,7 @@ export default function TaskList() {
   };
 
   const persistFavorites = (next: TaskFavorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    setFavoritesConfig(next);
   };
 
   const handleOpenSaveFavoriteModal = () => {

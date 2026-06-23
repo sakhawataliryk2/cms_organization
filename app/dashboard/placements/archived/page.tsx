@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -41,8 +43,6 @@ type PlacementFavorite = {
   advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
-
-const FAVORITES_STORAGE_KEY = "placementsArchivedFavorites";
 
 interface Placement {
   id: string;
@@ -140,28 +140,21 @@ export default function PlacementList() {
   }, [clearCache, fetchPage, currentPage]);
 
   // Favorites State
-  const [favorites, setFavorites] = useState<PlacementFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
 
-  // Load favorites from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (saved) {
-      try {
-        setFavorites(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
+  const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.placementsArchived,
+    key: "favorites",
+    defaultValue: [],
+  });
+  const favorites = (favoritesRaw as PlacementFavorite[]) || [];
 
   const persistFavorites = (updated: PlacementFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+    setFavoritesConfig(updated);
   };
 
   const applyFavorite = (fav: PlacementFavorite) => {
@@ -313,8 +306,9 @@ export default function PlacementList() {
           filterType = "select";
         }
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: catalogKeyFromColumn(name, String(label || name), !!isBackendCol),
           label: String(label || name),
+          name: String(name || label || ""),
           sortable: isBackendCol,
           filterType,
           filterOptions,
@@ -331,6 +325,7 @@ export default function PlacementList() {
       merged.push({
         key: "archive_reason",
         label: "Archive Reason",
+        name: "archive_reason",
         sortable: true,
         filterType: "select" as const,
         filterOptions: undefined,
@@ -358,11 +353,9 @@ export default function PlacementList() {
       return p.record_number ?? p.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const val = p?.customFields?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "—"
-        : String(val);
+      const resolved = resolveCustomColumnValue(p, key, getColumnInfo(key));
+      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      return String(resolved);
     }
 
     switch (key) {
@@ -400,8 +393,8 @@ export default function PlacementList() {
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "PLACEMENT",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.placementsArchived,
     configType: "columns",
     defaultFields: [],
   });
@@ -410,30 +403,29 @@ export default function PlacementList() {
     const catalogKeys = placementColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("placementsArchivedColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-            validOrder.unshift("record_number");
-          }
-          const wouldCollapseToRecordNumberOnly =
-            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
-          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, placementColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
         }
-      } catch {
-        // ignore
+        return;
       }
     }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [placementColumnsCatalog]);
 
-  // Handle drag end for column reordering
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [placementColumnsCatalog, columnFields, setColumnFields]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -446,25 +438,6 @@ export default function PlacementList() {
       setColumnFields(newOrder);
     }
   };
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length === 0) return;
-    const savingOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (savingOnlyRecordNumber) {
-      try {
-        const saved = localStorage.getItem("placementsArchivedColumnOrder");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 1) return;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    localStorage.setItem("placementsArchivedColumnOrder", JSON.stringify(columnFields));
-  }, [columnFields]);
 
   useEffect(() => {
     const fetchAvailableFields = async () => {

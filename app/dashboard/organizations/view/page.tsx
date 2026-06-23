@@ -11,7 +11,14 @@ import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
-import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  headerCatalogKeyFromField,
+  panelCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
   DndContext,
@@ -99,8 +106,11 @@ const CLIENT_VISIT_FILTER_KEY = "Client Visits";
 const HIRING_MANAGER_CUSTOM_FIELD_ENTITY = "hiring-managers";
 const JOBS_CUSTOM_FIELD_ENTITY = "jobs";
 
-// Storage for Organization Contact Info panel – field list comes from admin (custom field definitions)
-const CONTACT_INFO_STORAGE_KEY = "organizationContactInfoFields";
+const ORG_DEFAULT_SUMMARY_LAYOUT = {
+  left: ["contactInfo", "about"],
+  right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+};
+
 const REQUIRED_HM_CONTACT_FIELD_NAMES = [
   "Field_1",
   "Field_4",
@@ -743,17 +753,14 @@ export default function OrganizationView() {
   );
   const organizationJobsCount = useMemo(() => jobs.length, [jobs]);
 
-  // Client Visits "acknowledged" count: once user clicks to view, we store count so green goes to normal badge
-  const CLIENT_VISITS_ACK_KEY_PREFIX = "cms_org_client_visits_ack_";
-  const [acknowledgedClientVisitCount, setAcknowledgedClientVisitCount] = useState(0);
-
-  useEffect(() => {
-    if (!organizationId) return;
-    const key = CLIENT_VISITS_ACK_KEY_PREFIX + organizationId;
-    const raw = localStorage.getItem(key);
-    const val = raw !== null ? parseInt(raw, 10) : 0;
-    setAcknowledgedClientVisitCount(Number.isNaN(val) ? 0 : val);
-  }, [organizationId]);
+  // Client Visits acknowledged state (per organization, persisted in user view config)
+  const { value: clientVisitsAck, setValue: setClientVisitsAck } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizationsDetail,
+    key: "client_visits_ack",
+    defaultValue: {} as Record<string, boolean>,
+  });
+  const isClientVisitsAcknowledged =
+    organizationId ? clientVisitsAck[organizationId] === true : false;
 
   // Current active tab (sync with ?tab= URL param for shareable links)
   const [activeTab, setActiveTabState] = useState(() =>
@@ -790,11 +797,47 @@ export default function OrganizationView() {
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
-  }>({
-    left: ["contactInfo", "about"],
-    right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
-  });
+  }>(ORG_DEFAULT_SUMMARY_LAYOUT);
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.organizationsDetail,
+      key: "summary_layout",
+      defaultValue: ORG_DEFAULT_SUMMARY_LAYOUT,
+    });
+  const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
+    useUserViewConfig({
+      entityType: VIEW_ENTITY_TYPES.organizationsDetail,
+      key: "panel_fields",
+      defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+    });
+  const panelFieldsConfigRef = useRef(panelFieldsConfig);
+  panelFieldsConfigRef.current = panelFieldsConfig;
+  const summaryLayoutConfigRef = useRef(summaryLayoutConfig);
+  summaryLayoutConfigRef.current = summaryLayoutConfig;
+
+  useEffect(() => {
+    if (
+      summaryLayoutConfig?.left &&
+      Array.isArray(summaryLayoutConfig.left) &&
+      summaryLayoutConfig?.right &&
+      Array.isArray(summaryLayoutConfig.right)
+    ) {
+      setColumns(summaryLayoutConfig);
+    }
+  }, [summaryLayoutConfig]);
+
+  const prevSummaryLayoutRef = useRef<string>("");
+
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    const prevConfigString = JSON.stringify(summaryLayoutConfigRef.current);
+    if (prevSummaryLayoutRef.current !== colsString && colsString !== prevConfigString) {
+      setSummaryLayoutConfig(columns);
+      prevSummaryLayoutRef.current = colsString;
+    }
+  }, [columns, setSummaryLayoutConfig]);
 
   // Editable "About" text state
   const [aboutText, setAboutText] = useState("");
@@ -824,8 +867,8 @@ export default function OrganizationView() {
     setShowHeaderFieldModal,
     saveHeaderConfig,
     isSaving: isSavingHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "ORGANIZATION",
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.organizationsDetail,
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
     configType: "header",
   });
@@ -835,10 +878,10 @@ export default function OrganizationView() {
     return (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
-        const k = f.field_name || f.field_key || f.field_label || f.id;
+        const k = headerCatalogKeyFromField(f);
         return {
-          key: `custom:${String(k)}`,
-          label: f.field_label || f.field_name || String(k),
+          key: k,
+          label: f.field_label || f.field_name || String(f.field_key || f.id),
           fieldType: (f.field_type ?? f.fieldType ?? "") as string,
           lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
           multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
@@ -996,39 +1039,13 @@ export default function OrganizationView() {
   };
 
 
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
-    if (typeof window === "undefined") {
-      return {
-        contactInfo: [],
-        about: ["about"],
-        recentNotes: ["notes"],
-        websiteJobs: ["jobs"],
-        ourJobs: ["jobs"],
-      };
-    }
-    const saved = localStorage.getItem(CONTACT_INFO_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return {
-            contactInfo: parsed,
-            about: ["about"],
-            recentNotes: ["notes"],
-            websiteJobs: ["jobs"],
-            ourJobs: ["jobs"],
-          };
-        }
-      } catch (_) { }
-    }
-    return {
-      contactInfo: [],
-      about: ["about"],
-      recentNotes: ["notes"],
-      websiteJobs: ["jobs"],
-      ourJobs: ["jobs"],
-    };
-  });
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => ({
+    contactInfo: [],
+    about: ["about"],
+    recentNotes: ["notes"],
+    websiteJobs: ["jobs"],
+    ourJobs: ["jobs"],
+  }));
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -1109,40 +1126,6 @@ export default function OrganizationView() {
       fetchUsers();
     }
   }, [showAddNote]);
-
-  // Initialize columns from localStorage or default
-  useEffect(() => {
-    const savedColumns = localStorage.getItem("organizationSummaryColumns");
-    if (savedColumns) {
-      try {
-        const parsed = JSON.parse(savedColumns);
-        if (parsed.left && parsed.right) {
-          setColumns(parsed);
-        } else {
-          setColumns({
-            left: ["contactInfo", "about"],
-            right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
-          });
-        }
-      } catch (e) {
-        console.error("Error loading panel order:", e);
-        setColumns({
-          left: ["contactInfo", "about"],
-          right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
-        });
-      }
-    } else {
-      setColumns({
-        left: ["contactInfo", "about"],
-        right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
-      });
-    }
-  }, []);
-
-  // Save columns to localStorage
-  useEffect(() => {
-    localStorage.setItem("organizationSummaryColumns", JSON.stringify(columns));
-  }, [columns]);
 
   // Initialize about text from organization
   useEffect(() => {
@@ -1636,7 +1619,7 @@ export default function OrganizationView() {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        key: panelCatalogKeyFromField(f),
         name: String(f.field_name ?? f.field_key ?? f.api_name ?? f.id),
         label: f.field_label || f.field_name || String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         fieldType: (f.field_type || f.type) as string | undefined,
@@ -1651,16 +1634,24 @@ export default function OrganizationView() {
     return [...fromApi];
   }, [availableFields]);
 
-  // When catalog loads, if contactInfo visible list is empty, default to all catalog keys so first load shows admin-defined fields
   useEffect(() => {
     const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
     if (catalogKeys.length === 0) return;
+    const saved = getPanelFieldPath(panelFieldsConfig, "contactInfo");
     setVisibleFields((prev) => {
       const current = prev.contactInfo || [];
+      if (saved && saved.length > 0) {
+        const remapped = remapLegacyCustomKeys(saved, contactInfoFieldCatalog);
+        const next = remapped.length > 0 ? remapped : catalogKeys;
+        if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+          return { ...prev, contactInfo: next };
+        }
+        return prev;
+      }
       if (current.length > 0) return prev;
       return { ...prev, contactInfo: catalogKeys };
     });
-  }, [contactInfoFieldCatalog]);
+  }, [contactInfoFieldCatalog, panelFieldsConfig]);
 
   // Initialize modal state when opening Contact Info edit (order has no duplicate keys)
   useEffect(() => {
@@ -1689,9 +1680,9 @@ export default function OrganizationView() {
     if (orderedVisible.length === 0) return;
 
     setVisibleFields((prev) => ({ ...prev, contactInfo: orderedVisible }));
-    try {
-      localStorage.setItem(CONTACT_INFO_STORAGE_KEY, JSON.stringify(orderedVisible));
-    } catch (_) { }
+    setPanelFieldsConfig(
+      setPanelFieldPath(panelFieldsConfigRef.current, "contactInfo", orderedVisible)
+    );
     setEditingPanel(null);
   };
 
@@ -1758,6 +1749,19 @@ export default function OrganizationView() {
       setHeaderFieldsOrder([...selectedOrder, ...newFields]);
     }
   }, [headerFieldCatalog.length, headerFields]);
+
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0 || headerFields.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    ).filter((k) => catalogSet.has(k));
+    if (remapped.length > 0 && JSON.stringify(remapped) !== JSON.stringify(headerFields)) {
+      setHeaderFields(remapped);
+    }
+  }, [headerFieldCatalog, headerFields, setHeaderFields]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -5782,8 +5786,7 @@ export default function OrganizationView() {
                   ? clientVisitNoteCount
                   : summaryCounts.clientVisits;
               const hasAny = count > 0;
-              const hasUnacknowledged =
-                hasAny && count > acknowledgedClientVisitCount;
+              const hasUnacknowledged = hasAny && !isClientVisitsAcknowledged;
               return (
                 <button
                   key={action.id}
@@ -5793,11 +5796,10 @@ export default function OrganizationView() {
                     }`}
                   onClick={() => {
                     if (organizationId && hasAny) {
-                      setAcknowledgedClientVisitCount(count);
-                      localStorage.setItem(
-                        CLIENT_VISITS_ACK_KEY_PREFIX + organizationId,
-                        String(count)
-                      );
+                      setClientVisitsAck({
+                        ...clientVisitsAck,
+                        [organizationId]: true,
+                      });
                     }
                     setNoteActionFilter(CLIENT_VISIT_FILTER_KEY);
                     setActiveTab("notes");
