@@ -1029,15 +1029,15 @@ export default function DataUploader() {
             // Prepare import data
             const importData: Record<string, any>[] = [];
             const importRecordNumbers: string[] = [];
-            for (const row of csvRows) {
+            csvRows.forEach((row, idx) => {
                 const record: Record<string, any> = {};
                 Object.keys(fieldMappings).forEach((fieldName) => {
                     const csvColumn = fieldMappings[fieldName];
                     record[fieldName] = row[csvColumn]?.trim() || '';
                 });
                 importData.push(record);
-                importRecordNumbers.push(idColumnMapping ? (row[idColumnMapping]?.trim() ?? '') : '');
-            }
+                importRecordNumbers.push(getEffectiveRecordNumber(idx));
+            });
 
             setImportLiveProgress({
                 scanned: 0,
