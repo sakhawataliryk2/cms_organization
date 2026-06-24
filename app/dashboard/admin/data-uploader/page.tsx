@@ -218,12 +218,10 @@ export default function DataUploader() {
     const currentHistoryIdRef = useRef<number | null>(null);
 
     // Record number duplicate checking state
-    const [recordNumberEdits, setRecordNumberEdits] = useState<Record<number, string>>({});
     const [isVerifyingRecordNumbers, setIsVerifyingRecordNumbers] = useState(false);
     const [recordNumberDuplicateErrors, setRecordNumberDuplicateErrors] = useState<ValidationError[]>([]);
     const [hasVerifiedRecordNumbers, setHasVerifiedRecordNumbers] = useState(false);
     const [autoVerifyOnEntry, setAutoVerifyOnEntry] = useState(false);
-    const prevStepRef = useRef<number>(1);
 
     const recordTypes = [
         'Organization',
@@ -539,13 +537,8 @@ export default function DataUploader() {
         return Number.isFinite(num) && num >= 0 ? num : null;
     };
 
-    const getEffectiveRecordNumber = (rowIndex: number): string => {
-        const actualRowNumber = rowIndex + 2;
-        if (recordNumberEdits[actualRowNumber] !== undefined) {
-            return recordNumberEdits[actualRowNumber];
-        }
-        return idColumnMapping ? (csvRows[rowIndex][idColumnMapping]?.trim() || '') : '';
-    };
+    const getEffectiveRecordNumber = (rowIndex: number): string =>
+        idColumnMapping ? (csvRows[rowIndex][idColumnMapping]?.trim() || '') : '';
 
     const checkFileRecordNumberDuplicates = (): ValidationError[] => {
         const errors: ValidationError[] = [];
@@ -761,7 +754,6 @@ export default function DataUploader() {
             setCsvHeaders(parsedHeaders);
             setCsvRows(parsedRows);
             setValidationErrors([]);
-            setRecordNumberEdits({});
             setRecordNumberDuplicateErrors([]);
             setHasVerifiedRecordNumbers(false);
             setIsVerifyingRecordNumbers(false);
@@ -860,9 +852,8 @@ export default function DataUploader() {
             if (validationErrors.length > 0) {
                 toast.info(`Proceeding with ${validationErrors.length} validation errors remaining.`);
             }
-            if (idColumnMapping && recordNumberDuplicateErrors.length > 0 && !hasVerifiedRecordNumbers) {
-                toast.error('Please fix duplicate record numbers and click "Verify & Proceed" first.');
-                return;
+            if (idColumnMapping && recordNumberDuplicateErrors.length > 0) {
+                toast.info(`${recordNumberDuplicateErrors.length} record number duplicate(s) will be handled by your import options (skip/update).`);
             }
         }
         if (currentStep < totalSteps) {
@@ -963,10 +954,6 @@ export default function DataUploader() {
             if (allRnErrors.length === 0) {
                 setHasVerifiedRecordNumbers(true);
                 toast.success('All record numbers are unique!');
-                setTimeout(() => {
-                    setCurrentStep(5);
-                    setMaxVisitedStep((prev) => Math.max(prev, 5));
-                }, 500);
             } else {
                 setHasVerifiedRecordNumbers(false);
                 const fileDupCount = fileDupErrors.length;
@@ -974,7 +961,7 @@ export default function DataUploader() {
                 const parts: string[] = [];
                 if (fileDupCount > 0) parts.push(`${fileDupCount} file duplicate(s)`);
                 if (dbDupCount > 0) parts.push(`${dbDupCount} DB duplicate(s)`);
-                toast.error(`Found ${allRnErrors.length} record number issue(s) (${parts.join(', ')}). Edit and verify again.`);
+                toast.warning(`Found ${allRnErrors.length} record number issue(s) (${parts.join(', ')}). Duplicates will be handled per your import options.`);
             }
         } catch (err) {
             console.error('Error verifying record numbers:', err);
@@ -1154,7 +1141,6 @@ export default function DataUploader() {
         setCsvRows([]);
         setFieldMappings({});
         setValidationErrors([]);
-        setRecordNumberEdits({});
         setRecordNumberDuplicateErrors([]);
         setHasVerifiedRecordNumbers(false);
         setIsVerifyingRecordNumbers(false);
@@ -1563,7 +1549,7 @@ export default function DataUploader() {
                                 {idColumnMapping && (
                                     <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
                                         <strong>ID column detected:</strong> <code className="bg-blue-100 px-1.5 py-0.5 rounded">{idColumnMapping}</code>
-                                        {' '}&mdash; values from this column will be preserved as record numbers during import.
+                                        {' '}&mdash; values from this column identify each record. For update imports, the record number is used as a lookup key and is never modified.
                                     </div>
                                 )}
                                 {isLoadingFields ? (
@@ -1674,11 +1660,12 @@ export default function DataUploader() {
                                 )}
 
                                 {idColumnMapping && (
-                                    <div className={`mt-4 p-4 rounded border ${recordNumberDuplicateErrors.length > 0
-                                        ? 'bg-red-50 border-red-200'
-                                        : hasVerifiedRecordNumbers
-                                            ? 'bg-green-50 border-green-200'
-                                            : 'bg-amber-50 border-amber-200'
+                                    <div className={`mt-4 p-4 rounded border ${
+                                        recordNumberDuplicateErrors.length > 0
+                                            ? 'bg-red-50 border-red-200'
+                                            : hasVerifiedRecordNumbers
+                                                ? 'bg-green-50 border-green-200'
+                                                : 'bg-amber-50 border-amber-200'
                                         }`}>
                                         <div className="flex items-center justify-between">
                                             <div>
@@ -1687,42 +1674,30 @@ export default function DataUploader() {
                                                         ? `Record Number Issues: ${recordNumberDuplicateErrors.length} duplicate(s) found`
                                                         : hasVerifiedRecordNumbers
                                                             ? 'Record Numbers Verified ✓'
-                                                            : 'Record Number Verification Required'}
+                                                            : isVerifyingRecordNumbers
+                                                                ? 'Verifying record numbers...'
+                                                                : 'Record Number Verification'}
                                                 </p>
                                                 <p className="text-xs mt-0.5 opacity-75">
                                                     {recordNumberDuplicateErrors.length > 0
-                                                        ? 'Edit the duplicate record numbers below and click Verify again.'
+                                                        ? 'Duplicate record numbers will be handled per your import options (skip/update). Review the list below.'
                                                         : hasVerifiedRecordNumbers
                                                             ? 'All record numbers are unique in the file and the database.'
-                                                            : 'Click "Verify & Proceed" to check for duplicate record numbers in the file and database.'}
+                                                            : isVerifyingRecordNumbers
+                                                                ? 'Checking for duplicates across the file and database...'
+                                                                : 'Record numbers are used as lookup keys during import.'}
                                                 </p>
                                             </div>
-                                            <button
-                                                onClick={handleVerifyRecordNumbers}
-                                                disabled={isVerifyingRecordNumbers}
-                                                className={`px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2 ${recordNumberDuplicateErrors.length > 0
-                                                    ? 'bg-red-600 text-white hover:bg-red-700'
-                                                    : hasVerifiedRecordNumbers
-                                                        ? 'bg-green-600 text-white'
-                                                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                                                    } ${isVerifyingRecordNumbers ? 'opacity-60 cursor-not-allowed' : ''}`}
-                                            >
-                                                {isVerifyingRecordNumbers ? (
-                                                    <>
-                                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                                        </svg>
-                                                        Verifying...
-                                                    </>
-                                                ) : recordNumberDuplicateErrors.length > 0 ? (
-                                                    'Verify Again'
-                                                ) : hasVerifiedRecordNumbers ? (
-                                                    '✓ Verified'
-                                                ) : (
-                                                    'Verify & Proceed'
-                                                )}
-                                            </button>
+                                            {isVerifyingRecordNumbers ? (
+                                                <svg className="animate-spin h-5 w-5 text-blue-600" viewBox="0 0 24 24" fill="none">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                </svg>
+                                            ) : hasVerifiedRecordNumbers ? (
+                                                <span className="px-3 py-1 bg-green-600 text-white text-sm font-medium rounded">✓ Verified</span>
+                                            ) : recordNumberDuplicateErrors.length > 0 ? (
+                                                <span className="px-3 py-1 bg-red-100 text-red-700 text-sm font-medium rounded border border-red-200">Import will handle</span>
+                                            ) : null}
                                         </div>
                                         {recordNumberDuplicateErrors.length > 0 && (
                                             <div className="mt-3 max-h-32 overflow-y-auto">
@@ -1776,10 +1751,7 @@ export default function DataUploader() {
                                                     const actualRowNumber = rowIndex + 2;
                                                     const rnErrors = recordNumberDuplicateErrors.filter(e => e.row === actualRowNumber);
                                                     const hasRnError = rnErrors.length > 0;
-                                                    const isRnEditable = idColumnMapping && recordNumberDuplicateErrors.length > 0;
-                                                    const displayRnValue = recordNumberEdits[actualRowNumber] !== undefined
-                                                        ? recordNumberEdits[actualRowNumber]
-                                                        : (idColumnMapping ? (row[idColumnMapping]?.trim() || '') : '');
+                                                    const displayRnValue = idColumnMapping ? (row[idColumnMapping]?.trim() || '') : '';
                                                     return (
                                                         <tr
                                                             key={rowIndex}
@@ -1789,24 +1761,8 @@ export default function DataUploader() {
                                                                 {rowIndex + 2}
                                                             </td>
                                                             {idColumnMapping && (
-                                                                <td className={`px-4 py-3 text-sm font-mono ${isRnEditable ? 'bg-white' : 'bg-blue-50/50 text-blue-700'}`}>
-                                                                    {isRnEditable ? (
-                                                                        <input
-                                                                            type="text"
-                                                                            value={displayRnValue}
-                                                                            onChange={(e) => {
-                                                                                setRecordNumberEdits((prev) => ({
-                                                                                    ...prev,
-                                                                                    [actualRowNumber]: e.target.value,
-                                                                                }));
-                                                                                setHasVerifiedRecordNumbers(false);
-                                                                            }}
-                                                                            className={`w-full border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 ${hasRnError ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
-                                                                            placeholder="Enter record number"
-                                                                        />
-                                                                    ) : (
-                                                                        displayRnValue || '—'
-                                                                    )}
+                                                                <td className={`px-4 py-3 text-sm font-mono ${hasRnError ? 'bg-red-50 text-red-700 font-semibold' : 'bg-blue-50/50 text-blue-700'}`}>
+                                                                    {displayRnValue || '—'}
                                                                 </td>
                                                             )}
                                                             {availableFields
@@ -2103,24 +2059,12 @@ export default function DataUploader() {
                                                 : ''}`
                                             : 'Start Import'}
                                     </button>
-                                ) : currentStep === 4 && idColumnMapping && !hasVerifiedRecordNumbers ? (
+                                ) : currentStep === 4 ? (
                                     <button
-                                        onClick={handleVerifyRecordNumbers}
-                                        disabled={isVerifyingRecordNumbers}
-                                        className={`px-6 py-2 rounded text-white font-medium transition-colors ${isVerifyingRecordNumbers
-                                            ? 'bg-gray-400 cursor-not-allowed opacity-70'
-                                            : recordNumberDuplicateErrors.length > 0
-                                                ? 'bg-red-600 hover:bg-red-700'
-                                                : 'bg-blue-600 hover:bg-blue-700'
-                                            }`}
+                                        onClick={handleNext}
+                                        className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                                     >
-                                        {isVerifyingRecordNumbers ? (
-                                            <>Verifying...</>
-                                        ) : recordNumberDuplicateErrors.length > 0 ? (
-                                            'Verify Again'
-                                        ) : (
-                                            'Verify & Proceed'
-                                        )}
+                                        Next
                                     </button>
                                 ) : (
                                     <button
