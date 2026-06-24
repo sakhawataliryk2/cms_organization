@@ -406,12 +406,8 @@ export async function POST(request: NextRequest) {
                     writeProgress(0, 0, 0, records.length, true);
 
         const opts = options ?? {};
-        // Duplicate uniqueness checks are currently disabled below (uniqueChecks stays empty),
-        // so forcing per-row duplicate mode only slows imports without changing behavior.
-        const duplicateChecksEnabled = false;
-        const needsDupCheck =
-            duplicateChecksEnabled && !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
-        const useEntityBulkCreate = !needsDupCheck;
+        const hasImportOption = !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
+        const useEntityBulkCreate = !hasImportOption;
 
         const createBulkChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
             try {
@@ -590,13 +586,14 @@ export async function POST(request: NextRequest) {
                     delete payload.custom_fields;
                 }
 
-                // ── Preserve imported record numbers ──────────────────────────────────
-                const importedRN = importRecordNumbers[i];
-                if (importedRN !== undefined && importedRN !== null && importedRN !== '') {
-                    const normalized = normalizeRecordNumber(String(importedRN));
-                    if (normalized !== null && normalized > 0) {
-                        payload.recordNumber = normalized;
-                    }
+                // ── Preserve imported record numbers (create-only) ─────────────────
+                // Record number is used as a lookup key for updates, never overwritten.
+                const rawImportedRN = importRecordNumbers[i];
+                const importedRN = (rawImportedRN !== undefined && rawImportedRN !== null && rawImportedRN !== '')
+                    ? normalizeRecordNumber(String(rawImportedRN))
+                    : null;
+                if (importedRN !== null && importedRN > 0) {
+                    payload.recordNumber = importedRN;
                 }
 
                 // ── Entity-specific defaults / fallbacks ──────────────────────────────
@@ -629,68 +626,49 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                // ── Duplicate detection ───────────────────────────────────────────────
-
-                const uniqueChecks: Array<{ field: string; value: string }> = [];
-                // ── Uniqueness checks temporarily disabled ────────────────────────────
-                // Website, email, phone and job-title uniqueness checks are commented out
-                // so all records proceed to import regardless of duplicates on those fields.
-                // if (entityType === 'organizations') {
-                //     if (payload.contact_phone) uniqueChecks.push({ field: 'contact_phone', value: payload.contact_phone });
-                //     if (payload.website) uniqueChecks.push({ field: 'website', value: payload.website });
-                //     if (!uniqueChecks.length && payload.name) uniqueChecks.push({ field: 'name', value: payload.name });
-                // } else if (entityType === 'job-seekers') {
-                //     if (payload.phone) uniqueChecks.push({ field: 'phone', value: payload.phone });
-                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                // } else if (entityType === 'hiring-managers') {
-                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                // } else if (entityType === 'leads') {
-                //     if (payload.email) uniqueChecks.push({ field: 'email', value: payload.email });
-                // } else if (entityType === 'jobs') {
-                //     if (payload.jobTitle) uniqueChecks.push({ field: 'jobTitle', value: payload.jobTitle });
-                // }
-                // ─────────────────────────────────────────────────────────────────────
-
+                // ── Record Number duplicate detection & update ─────────────────────
+                // Record Number is used as a lookup key only — NEVER overwritten during updates.
                 let foundDuplicate = false;
 
-                if (needsDupCheck) {
+                if (hasImportOption && importedRN !== null) {
                     const allExisting = await getExistingRecords();
+                    const existingByRN = new Map<number, { id: string }>();
+                    for (const rec of allExisting) {
+                        const rn = rec.record_number;
+                        if (rn != null) {
+                            const num = normalizeRecordNumber(String(rn));
+                            if (num !== null) {
+                                existingByRN.set(num, { id: rec.id });
+                            }
+                        }
+                    }
 
-                    for (const check of uniqueChecks) {
-                        if (!check.value) continue;
+                    const match = existingByRN.get(importedRN);
+                    if (match) {
+                        foundDuplicate = true;
 
-                        const match = allExisting.find((r: any) => {
-                            const v = r[check.field];
-                            return v != null && String(v).toLowerCase().trim() === check.value.toLowerCase().trim();
-                        });
-
-                        if (match) {
-                            foundDuplicate = true;
-
-                            if (opts.skipDuplicates || opts.importNewOnly) {
+                        if (opts.updateExisting) {
+                            // Strip recordNumber so it is NEVER overwritten during update
+                            delete payload.recordNumber;
+                            const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                body: JSON.stringify(payload),
+                            });
+                            const updateData = await updateRes.json();
+                            if (!updateRes.ok) {
                                 summary.failed++;
-                                summary.errors.push({
-                                    row: rowNumber,
-                                    errors: [`Record already exists (${check.field}: ${check.value})`],
-                                });
-                                break;
+                                summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
+                            } else {
+                                summary.successful++;
                             }
-
-                            if (opts.updateExisting) {
-                                const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                    body: JSON.stringify(payload),
-                                });
-                                const updateData = await updateRes.json();
-                                if (!updateRes.ok) {
-                                    summary.failed++;
-                                    summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
-                                } else {
-                                    summary.successful++;
-                                }
-                                break;
-                            }
+                        } else {
+                            // skipDuplicates or importNewOnly
+                            summary.failed++;
+                            summary.errors.push({
+                                row: rowNumber,
+                                errors: [`Record with record number #${importedRN} already exists in the system. Skipped as per import option.`],
+                            });
                         }
                     }
                 }
