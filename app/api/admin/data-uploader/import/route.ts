@@ -169,7 +169,10 @@ async function buildRecordNumberCache(
             const rn = item.record_number;
             const id = item.id;
             if (rn != null && id != null) {
-                map.set(Number(rn), String(id));
+                const num = normalizeRecordNumber(String(rn));
+                if (num !== null) {
+                    map.set(num, String(id));
+                }
             }
         }
     } catch (e) {
