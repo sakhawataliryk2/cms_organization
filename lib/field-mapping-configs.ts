@@ -234,99 +234,99 @@ export const jobsDirectHireBaseFields: FieldLockConfig[] = [
 ];
 export const jobsExecutiveSearchBaseFields: FieldLockConfig[] = [];
 export const jobSeekerBaseFields: FieldLockConfig[] = [
-    // {
-    //     name: "Field_1", // First Name
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_3", // Last Name
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_4", // Status
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_5", // Current Organization
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_8", // Primary Email
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_11", // Priamry Phone
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_15", // Address Line 1
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_17", // City
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_18", // State
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_19", // ZIP Code
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_21", // Current Salary
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_69", // Owner
-    //     is_label_locked: true,
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
-    // {
-    //     name: "Field_70", // Date Added
-    //     is_label_locked: true,
-    //     is_field_type_locked: true,
-    //     is_required_locked: true,
-    //     is_hidden_locked: true,
-    //     is_read_only_locked: true,
-    // },
+    {
+        name: "Field_1", // First Name
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_3", // Last Name
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_4", // Status
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_5", // Current Organization
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_8", // Primary Email
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_11", // Priamry Phone
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_15", // Address Line 1
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_17", // City
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_18", // State
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_19", // ZIP Code
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_21", // Current Salary
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_69", // Owner
+        is_label_locked: true,
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
+    {
+        name: "Field_70", // Date Added
+        is_label_locked: true,
+        is_field_type_locked: true,
+        is_required_locked: true,
+        is_hidden_locked: true,
+        is_read_only_locked: true,
+    },
 ];
 export const leadsBaseFields: FieldLockConfig[] = [];
 export const hiringManagersBaseFields: FieldLockConfig[] = [
