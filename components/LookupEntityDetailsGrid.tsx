@@ -47,6 +47,15 @@ function isValidNumericId(id: string | number | null | undefined): boolean {
   return /^\d+$/.test(s);
 }
 
+/** Panel configs use `custom:Field_N`; field defs use bare `field_name`. */
+function bareFieldKey(key: string): string {
+  return key.startsWith("custom:") ? key.slice("custom:".length) : key;
+}
+
+function stableFieldNameFromDef(f: Record<string, unknown>): string {
+  return String(f.field_name ?? f.field_key ?? f.api_name ?? f.id ?? "");
+}
+
 export interface LookupEntityDetailsGridProps {
   lookupType: string;
   recordId: string | number | null | undefined;
@@ -162,11 +171,14 @@ export default function LookupEntityDetailsGrid({
   const catalogByKey = useMemo(() => {
     const m = new Map<string, { key: string; label: string }>();
     for (const f of visibleFieldDefs) {
-      const key = String(f.field_key ?? f.field_name ?? f.api_name ?? f.id);
-      m.set(key, {
-        key,
-        label: String(f.field_label || f.field_name || f.field_key || key),
-      });
+      const bareKey = stableFieldNameFromDef(f);
+      if (!bareKey) continue;
+      const entry = {
+        key: bareKey,
+        label: String(f.field_label || f.field_name || f.field_key || bareKey),
+      };
+      m.set(bareKey, entry);
+      m.set(`custom:${bareKey}`, entry);
     }
     return m;
   }, [visibleFieldDefs]);
@@ -221,16 +233,18 @@ export default function LookupEntityDetailsGrid({
   return (
     <div className={`space-y-0 border border-gray-200 rounded ${className}`}>
       {keys.map((rowKey) => {
-        const cat = catalogByKey.get(rowKey);
-        const label = cat?.label ?? rowKey;
-        const def = visibleFieldDefs.find(
-          (f: any) => String(f.field_name || f.field_key || f.field_label || f.id) === rowKey
-        );
-        const value = resolver(record, rowKey, def, label);
+        const fieldKey = bareFieldKey(rowKey);
+        const cat = catalogByKey.get(rowKey) ?? catalogByKey.get(fieldKey);
+        const label = cat?.label ?? fieldKey;
+        const def = visibleFieldDefs.find((f: any) => {
+          const stable = stableFieldNameFromDef(f);
+          return stable === fieldKey || `custom:${stable}` === rowKey;
+        });
+        const value = resolver(record, fieldKey, def, label);
         const fieldInfo = {
-          key: rowKey,
+          key: fieldKey,
           label,
-          name: def?.field_name ?? rowKey,
+          name: def?.field_name ?? fieldKey,
           fieldType: def?.field_type ?? def?.fieldType,
           lookupType: def?.lookup_type ?? def?.lookupType,
           multiSelectLookupType:
