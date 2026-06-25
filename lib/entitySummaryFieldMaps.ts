@@ -47,6 +47,70 @@ export const statusMappings: Record<string, string> = {
 /** HM custom field (field_name) whose value is the related organization id (stored under field_label in custom_fields). */
 export const HM_ORGANIZATION_ID_FIELD_NAME = "Field_3";
 
+/** Stable organization lookup field_name per entity (admin labels may differ). */
+export const ORGANIZATION_LOOKUP_FIELD_BY_ENTITY: Record<string, string> = {
+  "hiring-managers": HM_ORGANIZATION_ID_FIELD_NAME,
+  jobs: "Field_2",
+  "job-seekers": "Field_5",
+  leads: "Field_6",
+  placements: "Field_22",
+};
+
+/**
+ * Lookup fields identified by stable field_name → top-level API column for import/create.
+ * Independent of admin field_label renames.
+ */
+export const LOOKUP_FIELD_BACKEND_COLUMN: Record<string, Record<string, string>> = {
+  "hiring-managers": {
+    [HM_ORGANIZATION_ID_FIELD_NAME]: "organizationId",
+    Field_69: "owner",
+  },
+  jobs: {
+    Field_2: "organizationId",
+    Field_22: "hiringManager",
+    Field_69: "owner",
+  },
+  "job-seekers": {
+    Field_5: "currentOrganization",
+    Field_69: "owner",
+  },
+  leads: {
+    Field_6: "organizationId",
+    Field_69: "owner",
+  },
+  placements: {
+    Field_22: "organization_id",
+    Field_21: "jobId",
+    Field_2: "job_seeker_id",
+  },
+};
+
+/** Resolve top-level API column for a lookup custom field (label-independent). */
+export function getLookupBackendColumn(
+  entityType: string,
+  fieldName: string,
+  lookupType?: string | null
+): string | null {
+  const slug = normalizeCrmEntityTypeSlug(entityType);
+  const byFieldName = LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[fieldName];
+  if (byFieldName) return byFieldName;
+
+  const normalizedLookup = String(lookupType ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+  if (normalizedLookup === "organizations") {
+    const orgField = ORGANIZATION_LOOKUP_FIELD_BY_ENTITY[slug];
+    if (orgField && fieldName === orgField) {
+      return slug === "job-seekers" ? "currentOrganization" : "organizationId";
+    }
+  }
+  if (normalizedLookup === "owner") {
+    return "owner";
+  }
+  return null;
+}
+
 /**
  * Next.js app-relative PUT URL for updating a record's custom_fields (and other fields).
  * Returns null when this entity has no standard CRM PUT route in the app.

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
 
-        const res = await fetch(`${apiUrl}/api/${endpoint}`, {
+        const res = await fetch(`${apiUrl}/api/${endpoint}?limit=10000`, {
             headers: { Authorization: `Bearer ${token}` },
         });
 
