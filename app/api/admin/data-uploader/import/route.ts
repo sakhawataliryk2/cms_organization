@@ -91,12 +91,21 @@ const LABEL_MAP_BY_ENTITY: Record<string, Record<string, string>> = {
 // Maps lookup_type → { endpoint, listKey } for fetching all records of that type
 const LOOKUP_TYPE_CONFIG: Record<string, { endpoint: string; listKey: string }> = {
     'organizations': { endpoint: 'organizations', listKey: 'organizations' },
+    'organization': { endpoint: 'organizations', listKey: 'organizations' },
     'job-seekers': { endpoint: 'job-seekers', listKey: 'jobSeekers' },
     'hiring-managers': { endpoint: 'hiring-managers', listKey: 'hiringManagers' },
     'jobs': { endpoint: 'jobs', listKey: 'jobs' },
     'leads': { endpoint: 'leads', listKey: 'leads' },
     'placements': { endpoint: 'placements', listKey: 'placements' },
 };
+
+type LookupCacheEntry = { id: string; name: string };
+
+function normalizeImportLookupType(lookupType: string): string {
+    const n = lookupType.toLowerCase().replace(/\s+/g, '-').trim();
+    if (n === 'organization') return 'organizations';
+    return n;
+}
 
 interface FieldDefinition {
     field_name: string;
@@ -148,14 +157,15 @@ async function buildRecordNumberCache(
     lookupType: string,
     apiUrl: string,
     token: string,
-    cache: Map<string, Map<number, string>>
-): Promise<Map<number, string>> {
-    if (cache.has(lookupType)) return cache.get(lookupType)!;
+    cache: Map<string, Map<number, LookupCacheEntry>>
+): Promise<Map<number, LookupCacheEntry>> {
+    const normalizedType = normalizeImportLookupType(lookupType);
+    if (cache.has(normalizedType)) return cache.get(normalizedType)!;
 
-    const config = LOOKUP_TYPE_CONFIG[lookupType];
+    const config = LOOKUP_TYPE_CONFIG[normalizedType];
     if (!config) return new Map();
 
-    const map = new Map<number, string>();
+    const map = new Map<number, LookupCacheEntry>();
     try {
         const res = await fetch(`${apiUrl}/api/${config.endpoint}?limit=10000`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -169,21 +179,50 @@ async function buildRecordNumberCache(
             if (rn != null && id != null) {
                 const num = normalizeRecordNumber(String(rn));
                 if (num !== null) {
-                    map.set(num, String(id));
+                    const name =
+                        item.name ??
+                        item.full_name ??
+                        item.job_title ??
+                        item.title ??
+                        '';
+                    map.set(num, { id: String(id), name: String(name || '') });
                 }
             }
         }
     } catch (e) {
-        console.warn(`Failed to fetch lookup cache for ${lookupType}:`, e);
+        console.warn(`Failed to fetch lookup cache for ${normalizedType}:`, e);
     }
 
-    cache.set(lookupType, map);
+    cache.set(normalizedType, map);
     return map;
 }
 
-function extractRecordNumber(value: string): number | null {
-    const match = String(value).match(/\d+/);
-    return match ? parseInt(match[0], 10) : null;
+const LOOKUP_RECORD_PREFIX: Record<string, string> = {
+    organizations: 'O',
+    'job-seekers': 'JS',
+    'hiring-managers': 'HM',
+    jobs: 'J',
+    leads: 'L',
+    placements: 'P',
+};
+
+/** Parse a prefixed record reference (e.g. "O 44335") for a lookup type. */
+function extractLookupRecordNumber(value: string, lookupType?: string | null): number | null {
+    const str = String(value).trim();
+    if (!str) return null;
+
+    const normalizedType = normalizeImportLookupType(lookupType ?? '');
+    const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
+    if (prefix) {
+        const prefixed = new RegExp(`^${prefix}\\s*#?\\s*(\\d+)`, 'i');
+        const match = str.match(prefixed);
+        if (match) {
+            const num = parseInt(match[1], 10);
+            return Number.isFinite(num) && num >= 0 ? num : null;
+        }
+    }
+
+    return normalizeRecordNumber(str);
 }
 
 function normalizeRecordNumber(value: string): number | null {
@@ -361,7 +400,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Per-request cache: lookup_type → Map<record_number, id>
-        const lookupCache = new Map<string, Map<number, string>>();
+        const lookupCache = new Map<string, Map<number, LookupCacheEntry>>();
 
         // Pre-fetch all existing records once for duplicate checking (avoids N queries per row)
         type ExistingRecord = { id: string;[key: string]: any };
@@ -491,7 +530,10 @@ export async function POST(request: NextRequest) {
 
         const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
         const lookupFields = (fieldDefinitions as FieldDefinition[]).filter(
-            (fd) => fd.field_name && fd.lookup_type && LOOKUP_TYPE_CONFIG[fd.lookup_type]
+            (fd) =>
+                fd.field_name &&
+                fd.lookup_type &&
+                LOOKUP_TYPE_CONFIG[normalizeImportLookupType(fd.lookup_type)]
         );
         // Resolve Field_69 label from admin center/custom-field service once per import request.
         const adminResolvedAutoDateLabel = await resolveFieldLabelByFieldName(
@@ -531,15 +573,16 @@ export async function POST(request: NextRequest) {
 
                     const lookupType = fieldDef.lookup_type!;
 
-                    const recordNum = extractRecordNumber(String(rawValue));
+                    const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
                     if (recordNum === null) continue;
 
                     const rnMap = await buildRecordNumberCache(lookupType, apiUrl, token, lookupCache);
-                    const resolvedId = rnMap.get(recordNum);
+                    const resolved = rnMap.get(recordNum);
 
-                    if (resolvedId) {
+                    if (resolved) {
+                        const resolvedId = resolved.id;
                         const label = fieldNameToLabel[fieldName] ?? fieldName;
-                        // Replace in custom_fields
+                        // Replace in custom_fields (lookup fields store the linked record PK id)
                         payload.custom_fields[label] = resolvedId;
                         // Mirror resolved ID to top-level column via stable field_name (not label).
                         const backendCol = getLookupBackendColumn(
@@ -549,6 +592,13 @@ export async function POST(request: NextRequest) {
                         );
                         if (backendCol) {
                             payload[backendCol] = resolvedId;
+                            if (
+                                backendCol === 'organizationId' &&
+                                resolved.name &&
+                                !payload.organizationName
+                            ) {
+                                payload.organizationName = resolved.name;
+                            }
                         }
                     }
                     // If not found, leave the original value as fallback (already set by buildPayload)

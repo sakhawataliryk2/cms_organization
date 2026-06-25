@@ -93,6 +93,47 @@ const HIRING_MANAGER_DEFAULT_SUMMARY_LAYOUT = {
   right: ["organizationDetails", "recentNotes", "openTasks"],
 };
 
+/** Resolve linked organization id from custom_fields (Field_3 label) or DB organization_id. */
+function resolveHmOrganizationId(
+  hiringManager: {
+    organization?: { id?: unknown };
+    customFields?: Record<string, unknown>;
+  } | null,
+  availableFields: Array<{ field_name?: string; field_label?: string | null }>
+): string | null {
+  if (!hiringManager) return null;
+
+  const cf = (hiringManager.customFields || {}) as Record<string, unknown>;
+  const def = availableFields.find(
+    (f) =>
+      String(f.field_name || "").toLowerCase() ===
+      HM_ORGANIZATION_ID_FIELD_NAME.toLowerCase()
+  );
+  const label = def?.field_label != null ? String(def.field_label) : "";
+
+  const candidates = [
+    label ? cf[label] : undefined,
+    cf[HM_ORGANIZATION_ID_FIELD_NAME],
+    hiringManager.organization?.id,
+  ];
+
+  for (const raw of candidates) {
+    if (raw === undefined || raw === null) continue;
+    const s = String(raw).trim();
+    if (/^\d+$/.test(s)) return s;
+  }
+  return null;
+}
+
+function findHmFieldDefForPanelKey(key: string, customFieldDefs: any[]) {
+  const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+  return customFieldDefs.find(
+    (f: any) =>
+      panelCatalogKeyFromField(f) === key ||
+      String(f.field_name || f.field_key || f.api_name || f.id) === rawKey
+  );
+}
+
 // Droppable Column Container
 function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
   const { setNodeRef } = useDroppable({ id });
@@ -708,23 +749,10 @@ out.sort((a, b) => {
     return [...fromApi];
   }, [availableFields]);
 
-  const organizationIdFromField3 = useMemo(() => {
-    if (!hiringManager?.customFields) return null;
-    const cf = hiringManager.customFields as Record<string, unknown>;
-    const def = (availableFields || []).find(
-      (f: any) =>
-        String(f.field_name || "").toLowerCase() === HM_ORGANIZATION_ID_FIELD_NAME.toLowerCase()
-    );
-    const label = def?.field_label != null ? String(def.field_label) : "";
-    const raw =
-      label && cf[label] !== undefined && cf[label] !== null && String(cf[label]).trim() !== ""
-        ? cf[label]
-        : cf[HM_ORGANIZATION_ID_FIELD_NAME];
-    if (raw === undefined || raw === null) return null;
-    const s = String(raw).trim();
-    if (!/^\d+$/.test(s)) return null;
-    return s;
-  }, [hiringManager, availableFields]);
+  const organizationIdFromField3 = useMemo(
+    () => resolveHmOrganizationId(hiringManager, availableFields || []),
+    [hiringManager, availableFields]
+  );
 
   // Organization Details field catalog: from admin field definitions for organizations + fetched org custom_fields (same as organizations view)
   const organizationDetailsFieldCatalog = useMemo(() => {
@@ -741,7 +769,7 @@ out.sort((a, b) => {
   // Render individual panels
   const renderDetailsPanel = () => {
     if (!hiringManager) return null;
-    const customObj = hiringManager.customFields || {};
+    const customObj = (hiringManager.customFields || {}) as Record<string, unknown>;
     const customFieldDefs = (availableFields || []).filter((f: any) => {
       const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
       return !isHidden;
@@ -758,10 +786,18 @@ out.sort((a, b) => {
 
     const getDetailsValue = (key: string): string => {
       const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-      const fieldDef = customFieldDefs.find(
-        (f: any) => panelCatalogKeyFromField(f) === key || String(f.field_name || f.field_key || f.api_name || f.id) === rawKey
-      );
-      const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || rawKey;
+      const fieldDef = findHmFieldDefForPanelKey(key, customFieldDefs);
+      const fieldLabel = String(fieldDef?.field_label ?? fieldDef?.field_name ?? rawKey);
+
+      const isOrgLookupField =
+        String(fieldDef?.field_name || "").toLowerCase() ===
+        HM_ORGANIZATION_ID_FIELD_NAME.toLowerCase();
+
+      if (isOrgLookupField) {
+        const orgId = resolveHmOrganizationId(hiringManager, availableFields || []);
+        if (orgId) return orgId;
+      }
+
       const v = customObj[fieldLabel] ?? customObj[rawKey] ?? customObj[key];
       return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
     };
@@ -774,14 +810,16 @@ out.sort((a, b) => {
 
     const renderDetailsRow = (row: { key: string; label: string }) => {
       const value = getDetailsValue(row.key);
-      const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
+      const def = findHmFieldDefForPanelKey(row.key, customFieldDefs);
       const fieldInfo = {
         key: row.key,
         label: row.label,
-        name: def?.field_name ?? row.key,
-        fieldType: def?.field_type ?? def?.fieldType,
-        lookupType: def?.lookup_type ?? def?.lookupType,
-        multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
+        name: String(def?.field_name ?? row.key),
+        fieldType: String(def?.field_type ?? def?.fieldType ?? ""),
+        lookupType: String(def?.lookup_type ?? def?.lookupType ?? ""),
+        multiSelectLookupType: String(
+          def?.multi_select_lookup_type ?? def?.multiSelectLookupType ?? ""
+        ),
       };
 
       const shouldShowCallButton = shouldShowHMPhoneCallButton(row.key, def, value);
@@ -1044,6 +1082,14 @@ out.sort((a, b) => {
 
   const getCustomFieldValue = (customKey: string) => {
     if (!hiringManager) return null;
+
+    if (
+      customKey.toLowerCase() === HM_ORGANIZATION_ID_FIELD_NAME.toLowerCase()
+    ) {
+      const orgId = resolveHmOrganizationId(hiringManager, availableFields || []);
+      if (orgId) return orgId;
+    }
+
     const direct = formatHeaderValue(hiringManager.customFields?.[customKey]);
     if (direct) return direct;
 
