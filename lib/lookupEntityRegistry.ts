@@ -27,6 +27,7 @@ function organizationResolveValue(
   fieldDef: Record<string, unknown> | undefined,
   catalogLabel: string
 ): string {
+  const fieldKey = key.startsWith("custom:") ? key.slice("custom:".length) : key;
   const customFields = asRecord(o.customFields) ?? {};
   const standard: Record<string, string> = {
     name: String(o.name ?? o.Name ?? ""),
@@ -54,15 +55,19 @@ function organizationResolveValue(
           ? String(o.numOffices)
           : "",
   };
-  if (standard[key] !== undefined && standard[key] !== null && String(standard[key]).trim() !== "") {
-    return String(standard[key]);
+  if (standard[fieldKey] !== undefined && standard[fieldKey] !== null && String(standard[fieldKey]).trim() !== "") {
+    return String(standard[fieldKey]);
   }
-  const direct = o[key];
+  const direct = o[fieldKey];
   if (direct !== undefined && direct !== null && String(direct).trim() !== "") {
     return String(direct);
   }
   const label = String(fieldDef?.field_label ?? fieldDef?.field_name ?? catalogLabel);
-  const customVal = customFields[catalogLabel] ?? customFields[label] ?? customFields[key];
+  const customVal =
+    customFields[catalogLabel] ??
+    customFields[label] ??
+    customFields[fieldKey] ??
+    customFields[key];
   if (customVal !== undefined && customVal !== null) return String(customVal);
   return "-";
 }
@@ -73,13 +78,18 @@ function genericResolveValue(
   fieldDef: Record<string, unknown> | undefined,
   catalogLabel: string
 ): string {
+  const fieldKey = key.startsWith("custom:") ? key.slice("custom:".length) : key;
   const customFields = asRecord(o.customFields) ?? {};
-  const direct = o[key];
+  const direct = o[fieldKey];
   if (direct !== undefined && direct !== null && String(direct).trim() !== "") {
     return String(direct);
   }
   const label = String(fieldDef?.field_label ?? fieldDef?.field_name ?? catalogLabel);
-  const customVal = customFields[catalogLabel] ?? customFields[label] ?? customFields[key];
+  const customVal =
+    customFields[catalogLabel] ??
+    customFields[label] ??
+    customFields[fieldKey] ??
+    customFields[key];
   if (customVal !== undefined && customVal !== null) return String(customVal);
   return "-";
 }
