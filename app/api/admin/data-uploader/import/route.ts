@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { normalizeDateInputToIso } from '@/lib/dateNormalize';
+import { getLookupBackendColumn, HM_ORGANIZATION_ID_FIELD_NAME } from '@/lib/entitySummaryFieldMaps';
 import { clearImportCancellation, isImportCancelled } from './state';
 
 // Mirror the exact same label→backend-column mappings used by the individual add pages.
@@ -54,7 +55,6 @@ const LEAD_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
     'Title': 'title', 'Job Title': 'title',
     'Status': 'status',
     'Department': 'department',
-    'Owner': 'owner',
 };
 
 const HM_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -65,6 +65,8 @@ const HM_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
     'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone',
     'Title': 'title', 'Job Title': 'title',
     'Status': 'status',
+    'Department': 'department',
+    'Reports To': 'reportsTo', 'Manager': 'reportsTo',
 };
 
 const JOB_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -142,10 +144,6 @@ async function resolveFieldLabelByFieldName(
     }
 }
 
-/**
- * Fetch all records for a lookup type and build a map of record_number → id.
- * Results are cached per lookup_type for the lifetime of a single import request.
- */
 async function buildRecordNumberCache(
     lookupType: string,
     apiUrl: string,
@@ -159,7 +157,7 @@ async function buildRecordNumberCache(
 
     const map = new Map<number, string>();
     try {
-        const res = await fetch(`${apiUrl}/api/${config.endpoint}`, {
+        const res = await fetch(`${apiUrl}/api/${config.endpoint}?limit=10000`, {
             headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return map;
@@ -183,21 +181,11 @@ async function buildRecordNumberCache(
     return map;
 }
 
-/**
- * Extract the first contiguous digit sequence from a string.
- * e.g. "O 5" → 5, "JS-12" → 12, "7" → 7, "abc" → null
- */
 function extractRecordNumber(value: string): number | null {
     const match = String(value).match(/\d+/);
     return match ? parseInt(match[0], 10) : null;
 }
 
-/**
- * Normalize an imported ID value to a numeric record number.
- * Extracts the first contiguous digit sequence — handles prefixes, suffixes,
- * mixed formatting, and plain numbers.
- * e.g. "O100" → 100, "CAND-001" → 1, "Org #45" → 45, "100" → 100, "" → null
- */
 function normalizeRecordNumber(value: string): number | null {
     if (!value || String(value).trim() === '') return null;
     const str = String(value).trim();
@@ -241,7 +229,10 @@ function buildPayload(
         const label = fieldNameToLabel[fieldName] ?? fieldName;
         customFields[label] = v;
 
-        const backendCol = labelMap[label];
+        const fieldDef = fieldDefByName?.get(fieldName);
+        const backendCol =
+            getLookupBackendColumn(entityType, fieldName, fieldDef?.lookup_type) ??
+            labelMap[label];
         if (backendCol) {
             // Keep only required/critical top-level fields for organizations.
             // This reduces payload size and DB write overhead for bulk imports.
@@ -379,7 +370,7 @@ export async function POST(request: NextRequest) {
         const getExistingRecords = async (): Promise<ExistingRecord[]> => {
             if (existingRecordsCache !== null) return existingRecordsCache;
             try {
-                const res = await fetch(`${apiUrl}/api/${endpoint}`, {
+                const res = await fetch(`${apiUrl}/api/${endpoint}?limit=10000`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!res.ok) { existingRecordsCache = []; return []; }
@@ -404,7 +395,7 @@ export async function POST(request: NextRequest) {
             totalRows: records.length,
             successful: 0,
             failed: 0,
-            errors: [] as Array<{ row: number; errors: string[] }>,
+            errors: [] as Array<{ row: number; errors: string[]; links?: Array<{ text: string; url: string }> }>,
         };
                     writeProgress(0, 0, 0, records.length, true);
 
@@ -499,7 +490,6 @@ export async function POST(request: NextRequest) {
         };
 
         const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
-        const entityLabelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
         const lookupFields = (fieldDefinitions as FieldDefinition[]).filter(
             (fd) => fd.field_name && fd.lookup_type && LOOKUP_TYPE_CONFIG[fd.lookup_type]
         );
@@ -551,9 +541,13 @@ export async function POST(request: NextRequest) {
                         const label = fieldNameToLabel[fieldName] ?? fieldName;
                         // Replace in custom_fields
                         payload.custom_fields[label] = resolvedId;
-                        // Also replace at top level if this label maps to a backend column
-                        const backendCol = entityLabelMap[label];
-                        if (backendCol && payload[backendCol] !== undefined) {
+                        // Mirror resolved ID to top-level column via stable field_name (not label).
+                        const backendCol = getLookupBackendColumn(
+                            entityType,
+                            fieldName,
+                            fieldDef.lookup_type
+                        );
+                        if (backendCol) {
                             payload[backendCol] = resolvedId;
                         }
                     }
@@ -587,6 +581,19 @@ export async function POST(request: NextRequest) {
                 if (entityType === 'hiring-managers' && payload.custom_fields) {
                     payload.customFields = payload.custom_fields;
                     delete payload.custom_fields;
+
+                    // Ensure organization_id column is set from the stable org lookup field (Field_3),
+                    // regardless of what the admin renamed the label to.
+                    const orgFieldLabel =
+                        fieldNameToLabel[HM_ORGANIZATION_ID_FIELD_NAME] ?? HM_ORGANIZATION_ID_FIELD_NAME;
+                    const orgVal = payload.customFields[orgFieldLabel];
+                    if (
+                        orgVal != null &&
+                        String(orgVal).trim() !== '' &&
+                        /^\d+$/.test(String(orgVal).trim())
+                    ) {
+                        payload.organizationId = String(orgVal).trim();
+                    }
                 }
 
                 // ── Preserve imported record numbers (create-only) ─────────────────
@@ -661,7 +668,11 @@ export async function POST(request: NextRequest) {
                             const updateData = await updateRes.json();
                             if (!updateRes.ok) {
                                 summary.failed++;
-                                summary.errors.push({ row: rowNumber, errors: [updateData.message ?? 'Failed to update record'] });
+                                summary.errors.push({
+                                    row: rowNumber,
+                                    errors: [updateData.message ?? 'Failed to update record'],
+                                    links: [{ text: 'View Record', url: `/dashboard/${endpoint}/view/${match.id}` }],
+                                });
                             } else {
                                 summary.successful++;
                             }
@@ -671,6 +682,7 @@ export async function POST(request: NextRequest) {
                             summary.errors.push({
                                 row: rowNumber,
                                 errors: [`Record with record number #${importedRN} already exists in the system. Skipped as per import option.`],
+                                links: [{ text: 'View Record', url: `/dashboard/${endpoint}/view/${match.id}` }],
                             });
                         }
                     }
