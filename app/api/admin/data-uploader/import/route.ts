@@ -99,6 +99,15 @@ const LOOKUP_TYPE_CONFIG: Record<string, { endpoint: string; listKey: string }> 
     'placements': { endpoint: 'placements', listKey: 'placements' },
 };
 
+const LOOKUP_RECORD_PREFIX: Record<string, string> = {
+    organizations: 'O',
+    'job-seekers': 'JS',
+    'hiring-managers': 'HM',
+    jobs: 'J',
+    leads: 'L',
+    placements: 'P',
+};
+
 type LookupCacheEntry = { id: string; name: string };
 
 function normalizeImportLookupType(lookupType: string): string {
@@ -115,7 +124,7 @@ interface FieldDefinition {
     lookupType?: string | null;
 }
 
-const LOOKUP_PAGE_SIZE = 500;
+const LOOKUP_RESOLVE_CONCURRENCY = 20;
 
 function fieldLookupType(fd: FieldDefinition): string | null {
     const t = fd.lookup_type ?? fd.lookupType;
@@ -184,56 +193,7 @@ async function resolveFieldLabelByFieldName(
     }
 }
 
-async function buildRecordNumberCache(
-    lookupType: string,
-    apiUrl: string,
-    token: string,
-    cache: Map<string, Map<number, LookupCacheEntry>>
-): Promise<Map<number, LookupCacheEntry>> {
-    const normalizedType = normalizeImportLookupType(lookupType);
-    if (cache.has(normalizedType)) return cache.get(normalizedType)!;
-
-    const config = LOOKUP_TYPE_CONFIG[normalizedType];
-    if (!config) return new Map();
-
-    const map = new Map<number, LookupCacheEntry>();
-    try {
-        let offset = 0;
-        let total = Number.POSITIVE_INFINITY;
-
-        while (offset < total) {
-            const qs = new URLSearchParams({
-                limit: String(LOOKUP_PAGE_SIZE),
-                offset: String(offset),
-            });
-            const res = await fetch(`${apiUrl}/api/${config.endpoint}?${qs}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) break;
-            const data = await res.json();
-            const list: Record<string, unknown>[] = data[config.listKey] ?? data.data ?? [];
-            for (const item of list) {
-                addItemToLookupMap(map, item);
-            }
-
-            if (typeof data.total === 'number' && data.total >= 0) {
-                total = data.total;
-            } else if (list.length < LOOKUP_PAGE_SIZE) {
-                break;
-            }
-
-            offset += list.length;
-            if (list.length === 0) break;
-        }
-    } catch (e) {
-        console.warn(`Failed to fetch lookup cache for ${normalizedType}:`, e);
-    }
-
-    cache.set(normalizedType, map);
-    return map;
-}
-
-/** Direct API search when the bulk cache misses (e.g. org not in first page). */
+/** Resolve one record number via targeted API search (not a full-table scan). */
 async function fetchLookupByRecordNumber(
     lookupType: string,
     recordNum: number,
@@ -244,6 +204,14 @@ async function fetchLookupByRecordNumber(
     const normalizedType = normalizeImportLookupType(lookupType);
     const config = LOOKUP_TYPE_CONFIG[normalizedType];
     if (!config) return null;
+
+    let rnMap = cache.get(normalizedType);
+    if (!rnMap) {
+        rnMap = new Map();
+        cache.set(normalizedType, rnMap);
+    }
+    const cached = rnMap.get(recordNum);
+    if (cached) return cached;
 
     const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
     const q = prefix ? `${prefix} ${recordNum}` : String(recordNum);
@@ -256,12 +224,6 @@ async function fetchLookupByRecordNumber(
         if (!res.ok) return null;
         const data = await res.json();
         const list: Record<string, unknown>[] = data[config.listKey] ?? data.data ?? [];
-
-        let rnMap = cache.get(normalizedType);
-        if (!rnMap) {
-            rnMap = new Map();
-            cache.set(normalizedType, rnMap);
-        }
 
         for (const item of list) {
             addItemToLookupMap(rnMap, item);
@@ -277,14 +239,59 @@ async function fetchLookupByRecordNumber(
     return null;
 }
 
-const LOOKUP_RECORD_PREFIX: Record<string, string> = {
-    organizations: 'O',
-    'job-seekers': 'JS',
-    'hiring-managers': 'HM',
-    jobs: 'J',
-    leads: 'L',
-    placements: 'P',
-};
+async function resolveLookupEntry(
+    lookupType: string,
+    recordNum: number,
+    apiUrl: string,
+    token: string,
+    cache: Map<string, Map<number, LookupCacheEntry>>
+): Promise<LookupCacheEntry | null> {
+    const normalizedType = normalizeImportLookupType(lookupType);
+    const rnMap = cache.get(normalizedType);
+    if (rnMap?.has(recordNum)) return rnMap.get(recordNum)!;
+    return fetchLookupByRecordNumber(lookupType, recordNum, apiUrl, token, cache);
+}
+
+/** Pre-resolve unique lookup values in parallel before the per-row import loop. */
+async function preResolveImportLookups(
+    records: Record<string, unknown>[],
+    lookupFields: FieldDefinition[],
+    apiUrl: string,
+    token: string,
+    cache: Map<string, Map<number, LookupCacheEntry>>,
+    throwIfAborted: () => void
+): Promise<void> {
+    if (lookupFields.length === 0) return;
+
+    const pending: Array<{ lookupType: string; recordNum: number }> = [];
+    const seen = new Set<string>();
+
+    for (const record of records) {
+        for (const fieldDef of lookupFields) {
+            const rawValue = record[fieldDef.field_name];
+            if (!rawValue || String(rawValue).trim() === '') continue;
+
+            const lookupType = fieldLookupType(fieldDef)!;
+            const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
+            if (recordNum === null) continue;
+
+            const cacheKey = `${normalizeImportLookupType(lookupType)}:${recordNum}`;
+            if (seen.has(cacheKey)) continue;
+            seen.add(cacheKey);
+            pending.push({ lookupType, recordNum });
+        }
+    }
+
+    for (let i = 0; i < pending.length; i += LOOKUP_RESOLVE_CONCURRENCY) {
+        throwIfAborted();
+        const batch = pending.slice(i, i + LOOKUP_RESOLVE_CONCURRENCY);
+        await Promise.all(
+            batch.map(({ lookupType, recordNum }) =>
+                resolveLookupEntry(lookupType, recordNum, apiUrl, token, cache)
+            )
+        );
+    }
+}
 
 /** Parse a prefixed record reference (e.g. "O 44335") for a lookup type. */
 function extractLookupRecordNumber(value: string, lookupType?: string | null): number | null {
@@ -626,6 +633,15 @@ export async function POST(request: NextRequest) {
             fieldNameToLabel[AUTO_DATE_FIELD_NAME] ??
             null;
 
+        await preResolveImportLookups(
+            records,
+            lookupFields,
+            apiUrl,
+            token,
+            lookupCache,
+            throwIfAborted
+        );
+
         for (let i = 0; i < records.length; i++) {
             throwIfAborted();
             const record = records[i];
@@ -654,18 +670,8 @@ export async function POST(request: NextRequest) {
                     const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
                     if (recordNum === null) continue;
 
-                    const rnMap = await buildRecordNumberCache(lookupType, apiUrl, token, lookupCache);
-                    let resolved = rnMap.get(recordNum);
-                    if (!resolved) {
-                        resolved =
-                            (await fetchLookupByRecordNumber(
-                                lookupType,
-                                recordNum,
-                                apiUrl,
-                                token,
-                                lookupCache
-                            )) ?? undefined;
-                    }
+                    const normalizedType = normalizeImportLookupType(lookupType);
+                    const resolved = lookupCache.get(normalizedType)?.get(recordNum);
 
                     if (resolved) {
                         const resolvedId = resolved.id;
