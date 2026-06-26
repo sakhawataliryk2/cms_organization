@@ -1011,7 +1011,7 @@ export default function DataUploader() {
                 field_name: f.field_name,
                 field_label: f.field_label,
                 field_type: f.field_type,
-                lookup_type: f.lookup_type ?? null,
+                lookup_type: f.lookup_type ?? (f as { lookupType?: string }).lookupType ?? null,
             }));
 
             // Prepare import data
