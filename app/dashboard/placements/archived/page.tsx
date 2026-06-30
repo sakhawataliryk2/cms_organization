@@ -1198,7 +1198,7 @@ export default function PlacementList() {
                               <div className="flex flex-col gap-1">
                                 <span>P {getColumnValue(placement, key)}</span>
                                 {placement.archived_at && (
-                                  <CountdownTimer archivedAt={placement.archived_at} />
+                                  <CountdownTimer archivedAt={placement.archived_at} archiveReason={placement.archive_reason} />
                                 )}
                               </div>
                             </td>

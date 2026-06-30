@@ -18,6 +18,7 @@ interface BulkActionsButtonProps {
     onSuccess?: () => void;
     onCSVExport?: () => void;
     onDelete?: () => void;
+    onArchive?: () => void;
 }
 
 export default function BulkActionsButton({
@@ -27,7 +28,8 @@ export default function BulkActionsButton({
     availableFields = [],
     onSuccess,
     onCSVExport,
-    onDelete
+    onDelete,
+    onArchive
 }: BulkActionsButtonProps) {
     const router = useRouter();
     const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -326,6 +328,11 @@ export default function BulkActionsButton({
             action: () => setShowTearsheetModal(true),
             disabled: false
         },
+        ...(onArchive ? [{
+            label: 'Archive',
+            action: () => onArchive(),
+            disabled: false
+        }] : []),
         // Convert to Opportunity - only for leads
         ...(entityType === 'lead' ? [{
             label: 'Convert to Opportunity',

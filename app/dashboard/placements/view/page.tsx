@@ -982,12 +982,20 @@ export default function PlacementView() {
           ? placement.customFields
           : {};
 
+        const getPlacementEntityType = (pl: any) => {
+          const t = String(pl?.placementType || pl?.placement_type || "").toLowerCase();
+          if (t.includes("direct")) return "placements-direct-hire";
+          if (t.includes("executive")) return "placements-executive-search";
+          return "placements";
+        };
+        const placementEntityType = getPlacementEntityType(placement);
+
         const [jobLabel, jobSeekerLabel, orgLabel, billingLabel, timecardLabel] = await Promise.all([
-          getCustomFieldLabel("placements", PLACEMENT_LINK_FIELD_NAMES.jobId),
-          getCustomFieldLabel("placements", PLACEMENT_LINK_FIELD_NAMES.jobSeekerId),
-          getCustomFieldLabel("placements", PLACEMENT_LINK_FIELD_NAMES.organizationId),
-          getCustomFieldLabel("placements", PLACEMENT_LINK_FIELD_NAMES.billingContactId),
-          getCustomFieldLabel("placements", PLACEMENT_LINK_FIELD_NAMES.timecardApproverId),
+          getCustomFieldLabel(placementEntityType, PLACEMENT_LINK_FIELD_NAMES.jobId),
+          getCustomFieldLabel(placementEntityType, PLACEMENT_LINK_FIELD_NAMES.jobSeekerId),
+          getCustomFieldLabel(placementEntityType, PLACEMENT_LINK_FIELD_NAMES.organizationId),
+          getCustomFieldLabel(placementEntityType, PLACEMENT_LINK_FIELD_NAMES.billingContactId),
+          getCustomFieldLabel(placementEntityType, PLACEMENT_LINK_FIELD_NAMES.timecardApproverId),
         ]);
 
         const jobId = jobLabel ? extractLookupId((placementCustom as Record<string, unknown>)[jobLabel]) : null;
@@ -1480,6 +1488,7 @@ export default function PlacementView() {
         placementType: data.placement.placement_type || 'Contract',
         customFields: customFieldsObj,  
         archived_at: data.placement.archivedAt || "",
+        archive_reason: data.placement.archive_reason || null,
       };
 
       console.log("Formatted placement:", formattedPlacement);
@@ -3889,10 +3898,21 @@ export default function PlacementView() {
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
             keys.map((key, index) => {
-              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-              const label = field?.field_label || field?.field_name || key;
-              let value: any = (candidate as any)[key === "name" ? "full_name" : key] ?? (candidate as any)[key] ?? candidate.customFields?.[label] ?? candidate.customFields?.[key];
-              return renderSummaryRow("candidateDetails", key, index, label, value, field, allFields, candidate.customFields || {}, "job-seekers", candidate.id);
+              const rawKey = String(key || "").startsWith("custom:")
+                ? String(key).slice("custom:".length)
+                : String(key || "");
+              const field = allFields.find((f: any) => {
+                const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+                const fieldLabel = String(f?.field_label || "");
+                return fieldName === rawKey || fieldLabel === rawKey;
+              });
+              const label = field?.field_label || field?.field_name || rawKey || key;
+              let value: any =
+                (candidate as any)[rawKey === "name" ? "full_name" : rawKey] ??
+                (candidate as any)[rawKey] ??
+                candidate.customFields?.[label] ??
+                candidate.customFields?.[rawKey];
+              return renderSummaryRow("candidateDetails", rawKey, index, label, value, field, allFields, candidate.customFields || {}, "job-seekers", candidate.id);
             })
           )}
         </div>
@@ -3915,10 +3935,20 @@ export default function PlacementView() {
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
             keys.map((key, index) => {
-              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-              const label = field?.field_label || field?.field_name || key;
-              const value = (company as any)[key] ?? company.customFields?.[label] ?? company.customFields?.[key];
-              return renderSummaryRow("companyDetails", key, index, label, value, field, allFields, company.customFields || {}, "organizations", company.id);
+              const rawKey = String(key || "").startsWith("custom:")
+                ? String(key).slice("custom:".length)
+                : String(key || "");
+              const field = allFields.find((f: any) => {
+                const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+                const fieldLabel = String(f?.field_label || "");
+                return fieldName === rawKey || fieldLabel === rawKey;
+              });
+              const label = field?.field_label || field?.field_name || rawKey || key;
+              const value =
+                (company as any)[rawKey] ??
+                company.customFields?.[label] ??
+                company.customFields?.[rawKey];
+              return renderSummaryRow("companyDetails", rawKey, index, label, value, field, allFields, company.customFields || {}, "organizations", company.id);
             })
           )}
         </div>
@@ -3979,10 +4009,20 @@ export default function PlacementView() {
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
             keys.map((key, index) => {
-              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-              const label = field?.field_label || field?.field_name || key;
-              const value = (billingContact as any)[key === "name" ? "full_name" : key] ?? billingContact.customFields?.[label] ?? billingContact.customFields?.[key];
-              return renderSummaryRow("billingContactDetails", key, index, label, value, field, allFields, billingContact.customFields || {}, "hiring-managers", billingContact.id);
+              const rawKey = String(key || "").startsWith("custom:")
+                ? String(key).slice("custom:".length)
+                : String(key || "");
+              const field = allFields.find((f: any) => {
+                const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+                const fieldLabel = String(f?.field_label || "");
+                return fieldName === rawKey || fieldLabel === rawKey;
+              });
+              const label = field?.field_label || field?.field_name || rawKey || key;
+              const value =
+                (billingContact as any)[rawKey === "name" ? "full_name" : rawKey] ??
+                billingContact.customFields?.[label] ??
+                billingContact.customFields?.[rawKey];
+              return renderSummaryRow("billingContactDetails", rawKey, index, label, value, field, allFields, billingContact.customFields || {}, "hiring-managers", billingContact.id);
             })
           )}
         </div>
@@ -4005,10 +4045,20 @@ export default function PlacementView() {
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
             keys.map((key, index) => {
-              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-              const label = field?.field_label || field?.field_name || key;
-              const value = (timesheetApprover as any)[key === "name" ? "full_name" : key] ?? timesheetApprover.customFields?.[label] ?? timesheetApprover.customFields?.[key];
-              return renderSummaryRow("timesheetApproverDetails", key, index, label, value, field, allFields, timesheetApprover.customFields || {}, "hiring-managers", timesheetApprover.id);
+              const rawKey = String(key || "").startsWith("custom:")
+                ? String(key).slice("custom:".length)
+                : String(key || "");
+              const field = allFields.find((f: any) => {
+                const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+                const fieldLabel = String(f?.field_label || "");
+                return fieldName === rawKey || fieldLabel === rawKey;
+              });
+              const label = field?.field_label || field?.field_name || rawKey || key;
+              const value =
+                (timesheetApprover as any)[rawKey === "name" ? "full_name" : rawKey] ??
+                timesheetApprover.customFields?.[label] ??
+                timesheetApprover.customFields?.[rawKey];
+              return renderSummaryRow("timesheetApproverDetails", rawKey, index, label, value, field, allFields, timesheetApprover.customFields || {}, "hiring-managers", timesheetApprover.id);
             })
           )}
         </div>
@@ -4031,10 +4081,20 @@ export default function PlacementView() {
             <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
             keys.map((key, index) => {
-              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-              const label = field?.field_label || field?.field_name || key;
-              const value = (job as any)[key] ?? job.customFields?.[label] ?? job.customFields?.[key];
-              return renderSummaryRow("jobDetails", key, index, label, value, field, allFields, job.customFields || {}, "jobs", job.id);
+              const rawKey = String(key || "").startsWith("custom:")
+                ? String(key).slice("custom:".length)
+                : String(key || "");
+              const field = allFields.find((f: any) => {
+                const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+                const fieldLabel = String(f?.field_label || "");
+                return fieldName === rawKey || fieldLabel === rawKey;
+              });
+              const label = field?.field_label || field?.field_name || rawKey || key;
+              const value =
+                (job as any)[rawKey] ??
+                job.customFields?.[label] ??
+                job.customFields?.[rawKey];
+              return renderSummaryRow("jobDetails", rawKey, index, label, value, field, allFields, job.customFields || {}, "jobs", job.id);
             })
           )}
         </div>
@@ -4046,15 +4106,27 @@ export default function PlacementView() {
     if (!placement) return null;
     const keys = Array.from(new Set(visibleFields.placementDetails || []));
     const renderPlacementDetailsRow = (key: string, index: number) => {
+      const rawKey = String(key || "").startsWith("custom:")
+        ? String(key).slice("custom:".length)
+        : String(key || "");
       const field = availableFields.find(
-        (f: any) => (f.field_name || f.field_label || f.id) === key
+        (f: any) => {
+          const fieldName = String(f?.field_name || f?.field_key || f?.id || "");
+          const fieldLabel = String(f?.field_label || "");
+          return fieldName === rawKey || fieldLabel === rawKey;
+        }
       );
-      const fieldLabel = field?.field_label || field?.field_name || key;
-      const fieldValue = placement.customFields?.[fieldLabel] ?? (placement as any)[key] ?? "-";
+      const fieldLabel = String(field?.field_label || rawKey || key);
+      const fieldValue =
+        placement.customFields?.[fieldLabel] ??
+        placement.customFields?.[rawKey] ??
+        (placement as any)[rawKey] ??
+        (placement as any)[key] ??
+        "-";
       const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
-      const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
+      const fieldInfo = { key: rawKey, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
       return (
-        <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        <div key={`placementDetails-${rawKey}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
           <div className="flex-1 p-2">
             <FieldValueRenderer
@@ -4480,7 +4552,7 @@ export default function PlacementView() {
             P {placement.record_number ?? placement.id} {placement.jobSeekerName} - {placement.jobTitle}
             {placement.archived_at && (
               <div className="ml-3">
-                <CountdownTimer archivedAt={placement.archived_at} />
+                <CountdownTimer archivedAt={placement.archived_at} archiveReason={placement.archive_reason} />
               </div>
             )}
           </h1>

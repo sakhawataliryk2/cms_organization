@@ -1567,7 +1567,8 @@ out.sort((a, b) => {
             : "Unknown",
         address: hm.address || "No address provided",
         customFields: hm.custom_fields || {},
-        archived_at: hm.archived_at
+        archived_at: hm.archived_at,
+        archive_reason: hm.archive_reason || null,
       };
 
       setHiringManager(formattedHiringManager);
@@ -4200,7 +4201,7 @@ out.sort((a, b) => {
           {
             hiringManager.archived_at && (
               <div className="ml-3">
-                <CountdownTimer archivedAt={hiringManager.archived_at} />
+                <CountdownTimer archivedAt={hiringManager.archived_at} archiveReason={hiringManager.archive_reason} />
               </div>
             )
           }

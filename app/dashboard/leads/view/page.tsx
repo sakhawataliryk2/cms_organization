@@ -1501,6 +1501,7 @@ out.sort((a, b) => {
         createdBy: data.lead.created_by_name || "Unknown",
         customFields: data.lead.custom_fields || {},
         archived_at: data.lead.archived_at || null,
+        archive_reason: data.lead.archive_reason || null,
       };
 
       console.log("Formatted lead:", formattedLead);
@@ -3367,7 +3368,7 @@ out.sort((a, b) => {
             {formatRecordId(lead.record_number ?? lead.id, "lead")} {lead.fullName}
             {lead.archived_at && (
               <div className="ml-3">
-                <CountdownTimer archivedAt={lead.archived_at} />
+                <CountdownTimer archivedAt={lead.archived_at} archiveReason={lead.archive_reason} />
               </div>
             )}
           </h1>

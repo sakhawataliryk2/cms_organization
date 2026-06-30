@@ -917,7 +917,7 @@ export default function ArchivedTasksList() {
                             <div className="flex flex-col gap-1">
                               <span className="text-sm font-medium text-gray-900">T {getColumnValue(task, key)}</span>
                               {task.archived_at && (
-                                <CountdownTimer archivedAt={task.archived_at} />
+                                <CountdownTimer archivedAt={task.archived_at} archiveReason={task.archive_reason} />
                               )}
                             </div>
                           </td>

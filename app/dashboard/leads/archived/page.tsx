@@ -927,7 +927,7 @@ export default function ArchivedLeadsList() {
                               <div className="flex flex-col gap-1">
                                 <span>L {getColumnValue(lead, key)}</span>
                                 {lead.archived_at && (
-                                  <CountdownTimer archivedAt={lead.archived_at} />
+                                  <CountdownTimer archivedAt={lead.archived_at} archiveReason={lead.archive_reason} />
                                 )}
                               </div>
                             </td>

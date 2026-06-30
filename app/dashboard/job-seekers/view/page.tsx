@@ -2999,6 +2999,7 @@ Best regards`;
         resumeText: jobSeekerData.resume_text || "",
         customFields: customFieldsObj,
         archived_at: jobSeekerData.archived_at || null,
+        archive_reason: jobSeekerData.archive_reason || null,
       };
 
       console.log("Formatted job seeker data:", formattedJobSeeker);
@@ -5040,7 +5041,7 @@ Best regards`;
             {formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
             {jobSeeker.archived_at && (
               <div className="shrink-0">
-                <CountdownTimer archivedAt={jobSeeker.archived_at} />
+                <CountdownTimer archivedAt={jobSeeker.archived_at} archiveReason={jobSeeker.archive_reason} />
               </div>
             )}
           </h1>
