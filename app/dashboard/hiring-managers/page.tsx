@@ -35,6 +35,7 @@ import AdvancedSearchPanel, {
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
+import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
 
 interface HiringManager {
   id: string;
@@ -108,6 +109,7 @@ export default function HiringManagerList() {
   const [selectedHmId, setSelectedHmId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
@@ -1004,6 +1006,7 @@ export default function HiringManagerList() {
                 }}
                 onCSVExport={handleCSVExport}
                 onDelete={() => setShowBulkDeleteModal(true)}
+                onArchive={() => setShowBulkArchiveModal(true)}
               />
             </>
           )}
@@ -1054,6 +1057,7 @@ export default function HiringManagerList() {
               }}
               onCSVExport={handleCSVExport}
               onDelete={() => setShowBulkDeleteModal(true)}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
           </div>
         )}
@@ -1583,6 +1587,20 @@ export default function HiringManagerList() {
       <EntityBulkDeleteModal
         open={showBulkDeleteModal}
         onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          hmQueryCacheRef.current.clear();
+          void fetchHiringManagers(currentPage);
+          setSelectedHiringManagers([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedHiringManagers}
+        entityType="hiring-managers"
+        selectedCount={selectedHiringManagers.length}
+      />
+
+      <EntityBulkArchiveModal
+        open={showBulkArchiveModal}
+        onClose={() => setShowBulkArchiveModal(false)}
         onSuccess={() => {
           hmQueryCacheRef.current.clear();
           void fetchHiringManagers(currentPage);

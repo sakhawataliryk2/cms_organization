@@ -10,18 +10,35 @@ import { formatRecordId } from "@/lib/recordIdFormatter";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
 
-/** Map job_type from API to placement add segment (URL path). */
-function jobTypeToPlacementSegment(jobType: string): string {
-  const t = String(jobType || "").toLowerCase().replace(/\s+/g, "-");
-  if (t.includes("direct")) return "direct-hire";
-  if (t.includes("executive")) return "executive-search";
-  return "contract";
-}
+/**
+ * Resolve placement segment from a job record.
+ * job_type = which add form was used (contract / direct-hire / executive-search).
+ * employment_type = HR dropdown (Contract, Temp to Hire, Full-time, etc.).
+ * Temp to Hire and most employment types map to Contract placements.
+ */
+function resolvePlacementSegmentFromJob(job: any): string {
+  const customFields = parseCustomFieldsObject(job?.custom_fields);
+  const candidates: unknown[] = [
+    job?.employment_type,
+    job?.employmentType,
+    job?.job_type,
+    job?.jobType,
+    customFields["Employment Type"],
+    customFields["employment_type"],
+    customFields["Job Type"],
+    customFields["job_type"],
+  ];
 
-/** Whether the job type is recognized for placements. */
-function isKnownJobType(jobType: string): boolean {
-  const t = String(jobType || "").toLowerCase();
-  return t.includes("direct") || t.includes("executive") || t.includes("contract") || t === "";
+  for (const raw of candidates) {
+    const t = String(raw ?? "").toLowerCase().trim();
+    if (!t) continue;
+    if (t.includes("direct")) return "direct-hire";
+    if (t.includes("executive")) return "executive-search";
+    if (t.includes("contract") || t.includes("temp")) return "contract";
+  }
+
+  // Default: contract placement (covers Full-time, Part-time, empty job_type, etc.)
+  return "contract";
 }
 
 type JobItem = {
@@ -149,14 +166,7 @@ export default function AddPlacementLanding() {
         }
         const data = await res.json();
         const job = data.job;
-        const jobType = job?.job_type ?? job?.jobType ?? "";
-        if (!isKnownJobType(jobType) && jobType !== "") {
-          setSelectError(
-            "This job's type is not configured for placements. Please choose another job or contact your administrator."
-          );
-          return;
-        }
-        const segment = jobTypeToPlacementSegment(jobType);
+        const segment = resolvePlacementSegmentFromJob(job);
         const jobSeekerId = searchParams.get("jobSeekerId");
         const organizationId = await getOrganizationValueFromJobCustomFields(job);
         const qs = new URLSearchParams();
@@ -202,14 +212,7 @@ export default function AddPlacementLanding() {
       }
       const data = await res.json();
       const job = data.job;
-      const jobType = job?.employment_type ?? job?.employmentType ?? job?.job_type ?? job?.jobType ?? "";
-      if (!isKnownJobType(jobType) && jobType !== "") {
-        setSelectError(
-          "This job's type is not configured for placements. Please choose another job or contact your administrator."
-        );
-        return;
-      }
-      const segment = jobTypeToPlacementSegment(jobType);
+      const segment = resolvePlacementSegmentFromJob(job);
       const jobSeekerId = searchParams.get("jobSeekerId");
       const organizationId = await getOrganizationValueFromJobCustomFields(job);
       const qs = new URLSearchParams();

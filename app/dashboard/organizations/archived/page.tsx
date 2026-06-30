@@ -943,7 +943,7 @@ export default function ArchivedOrganizationsList() {
                               <div className="flex flex-col gap-1">
                                 <span>O {getColumnValue(org, key)}</span>
                                 {org.archived_at && (
-                                  <CountdownTimer archivedAt={org.archived_at} />
+                                  <CountdownTimer archivedAt={org.archived_at} archiveReason={org.archive_reason} />
                                 )}
                               </div>
                             </td>

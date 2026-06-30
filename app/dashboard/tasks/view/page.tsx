@@ -2462,7 +2462,7 @@ export default function TaskView() {
                     </h1>
                     {task.archivedAt && (
                         <div className="ml-3">
-                            <CountdownTimer archivedAt={task.archivedAt} />
+                            <CountdownTimer archivedAt={task.archivedAt} archiveReason={task.archiveReason} />
                         </div>
                     )}
                 </div>

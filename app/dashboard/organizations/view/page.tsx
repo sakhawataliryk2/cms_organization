@@ -1841,6 +1841,7 @@ export default function OrganizationView() {
         parentOrganization: data.organization.parent_organization_name || data.organization.parent_organization || "",
         status: data.organization.status || "Active",
         archived_at: data.organization.archived_at ?? data.organization.archivedAt ?? null,
+        archive_reason: data.organization.archive_reason || null,
         contractOnFile: data.organization.contract_on_file || "No",
         dateContractSigned: data.organization.date_contract_signed || "",
         yearFounded: data.organization.year_founded || "",
@@ -5641,7 +5642,7 @@ export default function OrganizationView() {
             {organization.archived_at && (
               <div className="ml-3">
                 {/* <span>Archived at</span> */}
-                <CountdownTimer archivedAt={organization.archived_at} />
+                <CountdownTimer archivedAt={organization.archived_at} archiveReason={organization.archive_reason} />
               </div>
             )}
           </h1>

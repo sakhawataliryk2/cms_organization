@@ -35,6 +35,7 @@ import AdvancedSearchPanel, {
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
+import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
 import { toast } from "sonner";
 
 interface Job {
@@ -137,6 +138,7 @@ export default function JobList() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // XML Feed In
@@ -1606,6 +1608,7 @@ export default function JobList() {
               }}
               onCSVExport={handleCSVExport}
               onDelete={() => setShowBulkDeleteModal(true)}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
@@ -1660,6 +1663,7 @@ export default function JobList() {
               }}
               onCSVExport={handleCSVExport}
               onDelete={() => setShowBulkDeleteModal(true)}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
           </div>
         )}
@@ -2366,6 +2370,21 @@ export default function JobList() {
       <EntityBulkDeleteModal
         open={showBulkDeleteModal}
         onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          jobsQueryCacheRef.current.clear();
+          advancedJobsCacheRef.current.clear();
+          void fetchJobs(currentPage);
+          setSelectedJobs([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedJobs}
+        entityType="jobs"
+        selectedCount={selectedJobs.length}
+      />
+
+      <EntityBulkArchiveModal
+        open={showBulkArchiveModal}
+        onClose={() => setShowBulkArchiveModal(false)}
         onSuccess={() => {
           jobsQueryCacheRef.current.clear();
           advancedJobsCacheRef.current.clear();

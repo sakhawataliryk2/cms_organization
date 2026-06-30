@@ -40,6 +40,7 @@ import BulkActionsButton from "@/components/BulkActionsButton";
 import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
@@ -314,6 +315,7 @@ export default function OrganizationList() {
 
   // Bulk delete state
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [bulkDeleteForm, setBulkDeleteForm] = useState({ reason: "" });
   const [isSubmittingBulkDelete, setIsSubmittingBulkDelete] = useState(false);
   const [bulkDeleteResults, setBulkDeleteResults] = useState<{ success: number; failed: number; errors: { name: string; error: string }[] } | null>(null);
@@ -1505,6 +1507,7 @@ export default function OrganizationList() {
                   setBulkDeleteResults(null);
                   setShowBulkDeleteModal(true);
                 }}
+                onArchive={() => setShowBulkArchiveModal(true)}
               />
             </div>
           )}
@@ -1640,6 +1643,7 @@ export default function OrganizationList() {
                 setBulkDeleteResults(null);
                 setShowBulkDeleteModal(true);
               }}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
             <button
               onClick={() => {
@@ -2652,6 +2656,21 @@ export default function OrganizationList() {
           </div>
         </div>
       )}
+
+      <EntityBulkArchiveModal
+        open={showBulkArchiveModal}
+        onClose={() => setShowBulkArchiveModal(false)}
+        onSuccess={() => {
+          organizationsQueryCacheRef.current.clear();
+          advancedOrganizationsCacheRef.current.clear();
+          void fetchOrganizations(currentPage);
+          setSelectedOrganizations([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedOrganizations}
+        entityType="organizations"
+        selectedCount={selectedOrganizations.length}
+      />
     </div>
   );
 }

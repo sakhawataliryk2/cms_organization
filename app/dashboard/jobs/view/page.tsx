@@ -2942,7 +2942,8 @@ out.sort((a, b) => {
         location: data.job.remote_option || "On-site",
         applicants: 0,
         customFields: customFieldsObj, // Use our properly parsed object
-        archived_at: data.job.archived_at
+        archived_at: data.job.archived_at,
+        archive_reason: data.job.archive_reason || null,
       };
 
       setJob(formattedJob);
@@ -5553,7 +5554,7 @@ out.sort((a, b) => {
           </h1>
           {job.archived_at && (
             <div className="ml-3">
-              <CountdownTimer archivedAt={job.archived_at} />
+              <CountdownTimer archivedAt={job.archived_at} archiveReason={job.archive_reason} />
             </div>
           )}
         </div>

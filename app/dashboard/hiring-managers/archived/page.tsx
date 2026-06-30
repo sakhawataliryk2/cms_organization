@@ -868,7 +868,7 @@ export default function ArchivedHiringManagersList() {
                               <div className="flex flex-col gap-1">
                                 <span className="text-sm font-medium text-gray-900">HM {getColumnValue(hm, key)}</span>
                                 {hm.archived_at && (
-                                  <CountdownTimer archivedAt={hm.archived_at} />
+                                  <CountdownTimer archivedAt={hm.archived_at} archiveReason={hm.archive_reason} />
                                 )}
                               </div>
                             </td>

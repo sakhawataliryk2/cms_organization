@@ -34,6 +34,7 @@ import AdvancedSearchPanel, {
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
+import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
 
 interface Lead {
   id: string;
@@ -136,6 +137,7 @@ export default function LeadList() {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
@@ -892,6 +894,7 @@ export default function LeadList() {
                   setSelectAll(false);
                 }}
                 onDelete={() => setShowBulkDeleteModal(true)}
+                onArchive={() => setShowBulkArchiveModal(true)}
               />
             </div>
           )}
@@ -1077,6 +1080,7 @@ export default function LeadList() {
                 setSelectAll(false);
               }}
               onDelete={() => setShowBulkDeleteModal(true)}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
           </div>
         )}
@@ -1647,6 +1651,20 @@ export default function LeadList() {
       <EntityBulkDeleteModal
         open={showBulkDeleteModal}
         onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          leadsQueryCacheRef.current.clear();
+          void fetchLeads(currentPage);
+          setSelectedLeads([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedLeads}
+        entityType="leads"
+        selectedCount={selectedLeads.length}
+      />
+
+      <EntityBulkArchiveModal
+        open={showBulkArchiveModal}
+        onClose={() => setShowBulkArchiveModal(false)}
         onSuccess={() => {
           leadsQueryCacheRef.current.clear();
           void fetchLeads(currentPage);

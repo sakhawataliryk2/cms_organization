@@ -35,6 +35,7 @@ import AdvancedSearchPanel, {
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
+import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
 
 type PlacementFavorite = {
   id: string;
@@ -140,6 +141,7 @@ export default function PlacementList() {
   const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
@@ -953,6 +955,7 @@ export default function PlacementList() {
                 }}
                 onCSVExport={handleCSVExport}
                 onDelete={() => setShowBulkDeleteModal(true)}
+                onArchive={() => setShowBulkArchiveModal(true)}
               />
             </div>
           )}
@@ -1109,6 +1112,7 @@ export default function PlacementList() {
               }}
               onCSVExport={handleCSVExport}
               onDelete={() => setShowBulkDeleteModal(true)}
+              onArchive={() => setShowBulkArchiveModal(true)}
             />
           </div>
         )}
@@ -1673,6 +1677,20 @@ export default function PlacementList() {
       <EntityBulkDeleteModal
         open={showBulkDeleteModal}
         onClose={() => setShowBulkDeleteModal(false)}
+        onSuccess={() => {
+          clearCache();
+          void fetchPage(currentPage);
+          setSelectedPlacements([]);
+          setSelectAll(false);
+        }}
+        entityIds={selectedPlacements}
+        entityType="placements"
+        selectedCount={selectedPlacements.length}
+      />
+
+      <EntityBulkArchiveModal
+        open={showBulkArchiveModal}
+        onClose={() => setShowBulkArchiveModal(false)}
         onSuccess={() => {
           clearCache();
           void fetchPage(currentPage);

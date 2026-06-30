@@ -1053,7 +1053,7 @@ export default function ArchivedJobSeekersList() {
                             <div className="flex flex-col gap-1">
                               <span className="text-sm font-medium text-gray-900">JS {getColumnValue(js, key)}</span>
                               {js.archived_at && (
-                                <CountdownTimer archivedAt={js.archived_at} />
+                                <CountdownTimer archivedAt={js.archived_at} archiveReason={js.archive_reason} />
                               )}
                             </div>
                           </td>

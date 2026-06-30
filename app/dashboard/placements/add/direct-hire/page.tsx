@@ -10,17 +10,19 @@ import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import LookupField from "@/components/LookupField";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import JobSummaryCard from "../JobSummaryCard";
 import Link from "next/link";
-import { FiInfo } from "react-icons/fi";
+import { FiX, FiInfo } from "react-icons/fi";
+import Tooltip from "@/components/Tooltip";
+import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Job Seeker": "job_seeker_id",
+  "Job Seeker ID": "job_seeker_id",
   "Candidate": "job_seeker_id",
   "Job": "job_id",
+  "Job ID": "job_id",
   "Organization": "organization_id",
   "Organization Name": "organization_id",
   "Status": "status",
@@ -33,13 +35,155 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 };
 
 const PLACEMENT_SEGMENT = "direct-hire" as const;
+/** Job type must include this to match this form. */
 const EXPECTED_JOB_TYPE = "direct";
 
-export default function AddPlacement() {
+function getJobTypeForPlacementMatch(job: any): string {
+  const cf =
+    typeof job?.custom_fields === "string"
+      ? tryParseJson(job.custom_fields)
+      : job?.custom_fields;
+  const candidates = [
+    job?.employment_type,
+    job?.employmentType,
+    job?.job_type,
+    job?.jobType,
+    cf?.["Employment Type"],
+    cf?.["employment_type"],
+    cf?.["Job Type"],
+    cf?.["job_type"],
+  ];
+  for (const raw of candidates) {
+    const t = String(raw ?? "").toLowerCase().trim();
+    if (t) return t;
+  }
+  return "";
+}
+
+function jobMatchesPlacementType(job: any, expectedJobType: string): boolean {
+  const t = getJobTypeForPlacementMatch(job);
+  if (!t) return true;
+  if (expectedJobType === "direct") return t.includes("direct");
+  if (expectedJobType === "contract") return t.includes("contract") || t.includes("temp");
+  if (expectedJobType === "executive") return t.includes("executive");
+  return t.includes(expectedJobType);
+}
+
+/** Normalize job type (admin-driven) to Employment Type: Executive-Search | Direct-Hire | Contract. Uses .includes() for flexible matching. */
+function getEmploymentTypeFromJob(job: any): string | null {
+  const fromJob =
+    job?.job_type ??
+    job?.jobType ??
+    job?.employment_type ??
+    job?.employmentType;
+  let raw = String(fromJob ?? "").trim();
+  if (!raw && job?.custom_fields) {
+    const cf = typeof job.custom_fields === "string" ? tryParseJson(job.custom_fields) : job.custom_fields;
+    if (cf && typeof cf === "object") {
+      raw = String(
+        cf["Job Type"] ?? cf["job_type"] ?? cf["Employment Type"] ?? cf["employment_type"] ?? ""
+      ).trim();
+    }
+  }
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower.includes("executive-search") || lower.includes("executive search")) return "Executive-Search";
+  if (lower.includes("direct-hire") || lower.includes("direct hire")) return "Direct-Hire";
+  if (lower.includes("contract")) return "Contract";
+  return null;
+}
+function tryParseJson(s: string): object | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve value to set for employment type field: use admin option that matches normalized type (via .includes) or the normalized string. */
+function resolveEmploymentTypeOptionValue(field: any, normalizedType: string): string {
+  const opts = field?.options;
+  const keysToTry: string[] = [
+    normalizedType.toLowerCase().replace(/-/g, " "),
+    normalizedType.toLowerCase().replace(/-/g, ""),
+    normalizedType.toLowerCase(),
+  ];
+  if (normalizedType === "Direct-Hire") keysToTry.push("direct hire", "direct");
+  else if (normalizedType === "Executive-Search") keysToTry.push("executive search", "executive");
+  else if (normalizedType === "Contract") keysToTry.push("contract");
+  const matchOption = (o: string) => keysToTry.some((k) => String(o).toLowerCase().includes(k));
+  const isPlaceholder = (o: string) => {
+    const s = String(o).toLowerCase().trim();
+    return !s || s === "select an option" || s === "select" || s === "choose";
+  };
+  if (Array.isArray(opts)) {
+    const found = opts.find((o: string) => {
+      const v = String(o).trim();
+      return v && !isPlaceholder(v) && matchOption(v);
+    });
+    if (found) return String(found).trim();
+  }
+  if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+    const entries = Object.entries(opts);
+    const found = entries.find(([, v]) => {
+      const s = String(v).trim();
+      return s && !isPlaceholder(s) && matchOption(s);
+    });
+    if (found) return String(found[1]).trim();
+  }
+  return normalizedType;
+}
+
+/** Normalize label for comparison: lowercase, collapse spaces, normalize % and punctuation (same as Job add contract). */
+function normalizeLabelForMatch(label: string | null | undefined): string {
+  if (label == null) return "";
+  return String(label)
+    .toLowerCase()
+    .replace(/%/g, " percent ")
+    .replace(/[_\s]+/g, " ")
+    .trim();
+}
+
+/** Find the custom field whose label best matches one of the candidate labels (exact > includes > word overlap). Same as Job add contract. */
+function findFieldByLabelMatch<T extends { field_label?: string | null }>(
+  fields: T[],
+  ...candidateLabels: string[]
+): T | null {
+  if (!fields?.length || !candidateLabels.length) return null;
+  const normalizedCandidates = candidateLabels.map(normalizeLabelForMatch).filter(Boolean);
+  if (!normalizedCandidates.length) return null;
+
+  let best: { field: T; score: number } | null = null;
+
+  for (const field of fields) {
+    const fieldNorm = normalizeLabelForMatch(field.field_label);
+    if (!fieldNorm) continue;
+    for (const cand of normalizedCandidates) {
+      if (fieldNorm === cand) {
+        return field; // exact match wins
+      }
+      let score = 0;
+      if (fieldNorm.includes(cand) || cand.includes(fieldNorm)) score = 0.8;
+      else {
+        const fieldWords = new Set(fieldNorm.split(/\s+/).filter(Boolean));
+        const candWords = cand.split(/\s+/).filter(Boolean);
+        const overlap = candWords.filter((w) => fieldWords.has(w)).length;
+        if (candWords.length) score = overlap / candWords.length;
+      }
+      if (score > 0 && (!best || score > best.score)) {
+        best = { field, score };
+      }
+    }
+  }
+  return best?.field ?? null;
+}
+
+export default function AddPlacementDirectHire() {
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const placementId = searchParams.get("id");
   const jobIdFromUrl = searchParams.get("jobId");
+  const organizationIdFromUrl = searchParams.get("organizationId");
   const jobSeekerIdFromUrl = searchParams.get("jobSeekerId");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,6 +194,8 @@ export default function AddPlacement() {
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [jobTypeMismatch, setJobTypeMismatch] = useState(false);
   const [jobFetchError, setJobFetchError] = useState<string | null>(null);
+  const [placementField21Label, setPlacementField21Label] = useState<string | null>(null);
+  const [placementField22Label, setPlacementField22Label] = useState<string | null>(null);
 
   const {
     customFields,
@@ -70,10 +216,15 @@ export default function AddPlacement() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  /** Job seeker's organization ID — used to filter Billing contacts / HM lookups to those under the job seeker's org */
+  const [billingContactsOrganizationId, setBillingContactsOrganizationId] = useState<string | undefined>(undefined);
+  /** Full job fetched when user selects job from dropdown (list may not include start_date/pay_rate) */
+  const [fetchedJobForPrefill, setFetchedJobForPrefill] = useState<any>(null);
 
   const sortedCustomFields = useMemo(() => {
     return [...customFields]
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .filter((f: any) => f?.field_name !== "Field_21" && f?.field_name !== "Field_22")
       .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   }, [customFields]);
 
@@ -89,7 +240,124 @@ export default function AddPlacement() {
   const jobField = fieldByColumn.job_id;
   const candidateField = fieldByColumn.job_seeker_id;
   const organizationField = fieldByColumn.organization_id;
+  const statusField = fieldByColumn.status;
 
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const [field21Label, field22Label] = await Promise.all([
+        getCustomFieldLabel("placements-direct-hire", "Field_21"),
+        getCustomFieldLabel("placements-direct-hire", "Field_22"),
+      ]);
+      if (cancelled) return;
+      setPlacementField21Label(field21Label);
+      setPlacementField22Label(field22Label);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Employment type field: admin-driven label (prefer "Employment Type" / "Employee Type", else "Job Type")
+  const employmentTypeField = useMemo(() => {
+    const withEmployment = sortedCustomFields.find((f: any) => {
+      const label = String(f.field_label || "").toLowerCase().replace(/\s+/g, " ").trim();
+      return label.includes("employment") || label === "employee type";
+    });
+    if (withEmployment) return withEmployment;
+    return sortedCustomFields.find((f: any) => {
+      const label = String(f.field_label || "").toLowerCase().replace(/\s+/g, " ").trim();
+      return label.includes("job") && label.includes("type");
+    }) ?? null;
+  }, [sortedCustomFields]);
+
+  // Pay Rate, Mark-up %, and Client Bill Rate — same label resolution as Job add contract
+  const payRateField = useMemo(
+    () => findFieldByLabelMatch(customFields, "Pay Rate", "pay rate"),
+    [customFields]
+  );
+  const markUpField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Mark-up %",
+        "Mark-up",
+        "Mark up",
+        "Mark up %",
+        "mark up percent",
+        "Markup %",
+        "Markup"
+      ),
+    [customFields]
+  );
+  const clientBillRateField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Client Bill Rate",
+        "client bill rate"
+      ),
+    [customFields]
+  );
+
+  const startDateField = fieldByColumn.start_date ?? findFieldByLabelMatch(customFields, "Start Date", "start date");
+  const effectiveDateField = useMemo(
+    () => findFieldByLabelMatch(customFields, "Effective Date", "Effective date", "effective date"),
+    [customFields]
+  );
+
+  /** Get start date from job as YYYY-MM-DD for date inputs. Checks top-level and custom_fields. */
+  const getStartDateFromJob = useCallback((job: any): string => {
+    let raw = job?.start_date ?? job?.startDate ?? "";
+    if (!raw && job?.custom_fields) {
+      const cf = typeof job.custom_fields === "string" ? tryParseJson(job.custom_fields) : job.custom_fields;
+      if (cf && typeof cf === "object") {
+        raw = (cf as any)["Start Date"] ?? (cf as any).start_date ?? (cf as any).startDate ?? (cf as any)["Start date"] ?? "";
+      }
+    }
+    if (!raw) return "";
+    const s = String(raw).trim();
+    if (s.includes("T")) return s.split("T")[0];
+    return s;
+  }, []);
+
+  /** Get pay rate from job (top-level or custom_fields). */
+  const getPayRateFromJob = useCallback((job: any): string => {
+    const fromTop = job?.pay_rate ?? job?.payRate;
+    if (fromTop != null && String(fromTop).trim() !== "") return String(fromTop).trim();
+    const cf = typeof job?.custom_fields === "string" ? tryParseJson(job.custom_fields) : job?.custom_fields;
+    if (cf && typeof cf === "object") {
+      const v = (cf as any)["Pay Rate"] ?? (cf as any).pay_rate ?? (cf as any).payRate ?? (cf as any)["Pay rate"];
+      if (v != null && String(v).trim() !== "") return String(v).trim();
+    }
+    return "";
+  }, []);
+
+  // When redirected from job application status changed to "placed" (jobId + jobSeekerId in URL), default status to Pending
+  useEffect(() => {
+    if (!statusField || placementId) return;
+    if (!jobIdFromUrl || !jobSeekerIdFromUrl) return;
+    const current = customFieldValues[statusField.field_name] ?? "";
+    if (String(current).trim() === "") {
+      handleCustomFieldChange(statusField.field_name, "Pending");
+    }
+  }, [statusField, jobIdFromUrl, jobSeekerIdFromUrl, placementId, handleCustomFieldChange, customFieldValues[statusField?.field_name ?? ""]]);
+
+  // Prefer admin-configured lookup field for Job Seekers when available
+  const jobSeekerLookupField = useMemo(
+    () =>
+      sortedCustomFields.find(
+        (f: any) =>
+          f.field_type === "lookup" &&
+          String((f as any).lookup_type || "")
+            .trim()
+            .toLowerCase() === "job-seekers"
+      ),
+    [sortedCustomFields]
+  );
+
+  // Fetch job by jobId when coming from job-first flow (validate type and prefill)
   useEffect(() => {
     if (!jobIdFromUrl || placementId) return;
     let cancelled = false;
@@ -107,13 +375,17 @@ export default function AddPlacement() {
         }
         const data = await res.json();
         const job = data.job;
-        const jobType = String(job?.job_type ?? job?.jobType ?? "").toLowerCase();
-        const matches = jobType.includes(EXPECTED_JOB_TYPE) || jobType === "";
+        const matches = jobMatchesPlacementType(job, EXPECTED_JOB_TYPE);
         if (!matches) {
           setJobTypeMismatch(true);
           return;
         }
         setSelectedJob(job);
+        // Set billing contacts filter from job immediately so Billing contacts dropdown is filtered from first render
+        const jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+        if (jobOrgId != null) {
+          setBillingContactsOrganizationId(String(jobOrgId));
+        }
       } catch {
         if (!cancelled) setJobFetchError("Could not load job details. Please try again.");
       } finally {
@@ -124,6 +396,7 @@ export default function AddPlacement() {
     return () => { cancelled = true; };
   }, [jobIdFromUrl, placementId]);
 
+  // Prefill Job (and org, employment type, start date, pay rate, effective date) when selectedJob is set from job-first flow
   useEffect(() => {
     if (!jobField || !selectedJob) return;
     const id = selectedJob.id ?? selectedJob.Id;
@@ -136,15 +409,88 @@ export default function AddPlacement() {
         handleCustomFieldChange(organizationField.field_name, String(orgId));
       }
     }
-  }, [selectedJob, jobField, organizationField, handleCustomFieldChange]);
+    if (employmentTypeField) {
+      const empType = getEmploymentTypeFromJob(selectedJob);
+      if (empType) {
+        const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+        if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+      }
+    }
+    const startDateVal = getStartDateFromJob(selectedJob);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(selectedJob);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+    // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+  }, [selectedJob, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
 
   // Prefill Job Seeker when coming from Jobs → Applied → Placement flow
   useEffect(() => {
     if (!jobSeekerIdFromUrl || placementId) return;
-    if (!candidateField) return;
+    // Prefer admin-configured lookup field when available
+    const targetFieldName =
+      jobSeekerLookupField?.field_name || candidateField?.field_name;
+    if (!targetFieldName) return;
     if (!jobSeekerIdFromUrl.trim()) return;
-    handleCustomFieldChange(candidateField.field_name, jobSeekerIdFromUrl);
-  }, [jobSeekerIdFromUrl, placementId, candidateField, handleCustomFieldChange]);
+    handleCustomFieldChange(targetFieldName, jobSeekerIdFromUrl);
+  }, [jobSeekerIdFromUrl, placementId, jobSeekerLookupField, candidateField, handleCustomFieldChange]);
+
+  // Resolve organization for Billing contacts: job seeker's organization (or job's org as fallback)
+  const effectiveJobSeekerId = (() => {
+    if (jobSeekerIdFromUrl?.trim()) return jobSeekerIdFromUrl.trim();
+    const fromLookup = jobSeekerLookupField && customFieldValues[jobSeekerLookupField.field_name];
+    const s1 = fromLookup != null && String(fromLookup).trim() !== "" ? String(fromLookup).trim() : null;
+    if (s1) return s1;
+    const fromCandidate = candidateField && customFieldValues[candidateField.field_name];
+    return (fromCandidate != null && String(fromCandidate).trim() !== "" ? String(fromCandidate).trim() : null) || null;
+  })();
+
+  useEffect(() => {
+    if (!effectiveJobSeekerId) {
+      // No job seeker selected: use job's organization so HM/contacts still filter by job org if any
+      let jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+      if (jobOrgId == null && jobField && jobs.length > 0) {
+        const formJobId = customFieldValues[jobField.field_name];
+        const job = formJobId ? jobs.find((j: any) => String(j.id) === String(formJobId)) : null;
+        jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+      }
+      setBillingContactsOrganizationId(jobOrgId != null ? String(jobOrgId) : undefined);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/job-seekers/${effectiveJobSeekerId}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+          return;
+        }
+        const data = await res.json();
+        const js = data.jobSeeker ?? data.job_seeker ?? data;
+        const orgId = js?.organization_id ?? js?.organizationId ?? js?.organization?.id;
+        if (cancelled) return;
+        if (orgId != null) {
+          setBillingContactsOrganizationId(String(orgId));
+        } else {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        }
+      } catch {
+        if (!cancelled) {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [effectiveJobSeekerId, selectedJob?.id, selectedJob?.organization_id, selectedJob?.organizationId, selectedJob?.organization?.id, jobField?.field_name, jobs, customFieldValues[jobField?.field_name ?? ""]]);
 
   // Fetch job seekers and jobs on mount (for Job/Candidate dropdown options)
   useEffect(() => {
@@ -154,19 +500,119 @@ export default function AddPlacement() {
 
   // Auto-populate organization when job is selected and jobs are loaded
   useEffect(() => {
-    if (jobField && organizationField && jobs.length > 0) {
-      const selectedJobId = customFieldValues[jobField.field_name];
-      if (selectedJobId && (!customFieldValues[organizationField.field_name] || customFieldValues[organizationField.field_name] === "")) {
-        const job = jobs.find((j: any) => String(j.id) === String(selectedJobId));
-        if (job) {
-          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) {
-            handleCustomFieldChange(organizationField.field_name, String(orgId));
-          }
-        }
+    if (!jobField || jobs.length === 0) return;
+    const selectedJobId = customFieldValues[jobField.field_name];
+    const job = selectedJobId ? jobs.find((j: any) => String(j.id) === String(selectedJobId)) : null;
+    if (!job) return;
+    if (organizationField && (!customFieldValues[organizationField.field_name] || customFieldValues[organizationField.field_name] === "")) {
+      const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+      if (orgId != null) {
+        handleCustomFieldChange(organizationField.field_name, String(orgId));
       }
     }
-  }, [jobs, customFieldValues, jobField, organizationField, handleCustomFieldChange]);
+    if (employmentTypeField) {
+      const empType = getEmploymentTypeFromJob(job);
+      if (empType) {
+        const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+        if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+      }
+    }
+    const startDateVal = getStartDateFromJob(job);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(job);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+    // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+  }, [jobs, customFieldValues, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
+
+  // When user selects a job from the dropdown, fetch full job so we have start_date, pay_rate (list may omit them)
+  const formJobId = jobField ? customFieldValues[jobField.field_name] : null;
+  useEffect(() => {
+    if (!formJobId || String(formJobId).trim() === "") {
+      setFetchedJobForPrefill(null);
+      return;
+    }
+    if (selectedJob && String(selectedJob.id ?? selectedJob.Id) === String(formJobId)) {
+      setFetchedJobForPrefill(selectedJob);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${formJobId}`);
+        if (cancelled) return;
+        if (!res.ok) return;
+        const data = await res.json();
+        const job = data.job;
+        if (cancelled) return;
+        setFetchedJobForPrefill(job || null);
+      } catch {
+        if (!cancelled) setFetchedJobForPrefill(null);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [formJobId, selectedJob?.id, selectedJob?.Id]);
+
+  // Current job for prefilling: from URL (selectedJob) or from dropdown (fetchedJobForPrefill or list)
+  const currentJobForPrefill = selectedJob ?? fetchedJobForPrefill ?? (jobField && formJobId && jobs.length > 0 ? jobs.find((j: any) => String(j.id) === String(formJobId)) : null);
+
+  // Dedicated effect: set employment type whenever we have a current job and the field exists.
+  useEffect(() => {
+    if (!employmentTypeField || !currentJobForPrefill) return;
+    const empType = getEmploymentTypeFromJob(currentJobForPrefill);
+    if (!empType) return;
+    const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+    if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+  }, [employmentTypeField, currentJobForPrefill, handleCustomFieldChange]);
+
+  // Dedicated effect: set start date, pay rate, effective date from job when fields exist (runs when fields load or job becomes available)
+  useEffect(() => {
+    if (!currentJobForPrefill) return;
+    const startDateVal = getStartDateFromJob(currentJobForPrefill);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(currentJobForPrefill);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+  }, [currentJobForPrefill, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
+
+  // Compute Client Bill Rate from Pay Rate × (1 + Mark-up % / 100) — same as Job add contract
+  useEffect(() => {
+    if (!clientBillRateField || !payRateField || !markUpField) return;
+    const payRaw = customFieldValues[payRateField.field_name];
+    const markUpRaw = customFieldValues[markUpField.field_name];
+    const payNum = parseFloat(String(payRaw ?? "").trim());
+    const markUpNum = parseFloat(String(markUpRaw ?? "").replace(/%/g, "").trim());
+    if (Number.isNaN(payNum) || Number.isNaN(markUpNum)) {
+      return;
+    }
+    const computed = payNum * (1 + markUpNum / 100);
+    const formatted =
+      computed % 1 === 0
+        ? String(Math.round(computed))
+        : computed.toFixed(2);
+    const current = customFieldValues[clientBillRateField.field_name];
+    if (current === formatted) return;
+    setCustomFieldValues((prev: Record<string, any>) => ({
+      ...prev,
+      [clientBillRateField.field_name]: formatted,
+    }));
+  }, [
+    clientBillRateField,
+    payRateField,
+    markUpField,
+    customFieldValues[payRateField?.field_name ?? ""],
+    customFieldValues[markUpField?.field_name ?? ""],
+    setCustomFieldValues,
+  ]);
 
   const fetchJobSeekers = async () => {
     setIsLoadingJobSeekers(true);
@@ -202,18 +648,38 @@ export default function AddPlacement() {
     (fieldName: string, value: any) => {
       handleCustomFieldChange(fieldName, value);
       const field = sortedCustomFields.find((f: any) => f.field_name === fieldName);
-      if (field && BACKEND_COLUMN_BY_LABEL[field.field_label] === "job_id" && organizationField) {
+      if (field && BACKEND_COLUMN_BY_LABEL[field.field_label] === "job_id") {
         const job = jobs.find((j: any) => String(j.id) === String(value));
         if (job) {
-          // Store organization ID instead of name
-          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) {
-            handleCustomFieldChange(organizationField.field_name, String(orgId));
+          if (organizationField) {
+            const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+            if (orgId != null) {
+              handleCustomFieldChange(organizationField.field_name, String(orgId));
+            }
+          }
+          if (employmentTypeField) {
+            const empType = getEmploymentTypeFromJob(job);
+            if (empType) {
+              const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+              if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+            }
+          }
+          const startDateVal = getStartDateFromJob(job);
+          if (startDateField && startDateVal) {
+            handleCustomFieldChange(startDateField.field_name, startDateVal);
+            if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+          }
+          const payRateVal = getPayRateFromJob(job);
+          if (payRateField && payRateVal) {
+            handleCustomFieldChange(payRateField.field_name, payRateVal);
           }
         }
       }
+      if (startDateField && effectiveDateField && fieldName === startDateField.field_name && value != null && String(value).trim() !== "") {
+        handleCustomFieldChange(effectiveDateField.field_name, String(value).trim());
+      }
     },
-    [handleCustomFieldChange, sortedCustomFields, organizationField, jobs]
+    [handleCustomFieldChange, sortedCustomFields, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, jobs]
   );
 
   const fetchPlacement = useCallback(
@@ -275,9 +741,11 @@ export default function AddPlacement() {
                 : placement.custom_fields;
           } catch (_) { }
         }
+        // Prefer exact values from placement.custom_fields (source of truth for admin fields),
+        // and only fall back to mapped top-level columns when custom_fields value is missing.
         sortedCustomFields.forEach((field: any) => {
           const label = field.field_label || field.field_name;
-          if (existingCustomFields[label] != null && !(field.field_name in mapped)) {
+          if (existingCustomFields[label] != null) {
             mapped[field.field_name] = existingCustomFields[label];
           }
         });
@@ -297,6 +765,26 @@ export default function AddPlacement() {
         }
 
         setCustomFieldValues((prev: Record<string, any>) => ({ ...prev, ...mapped }));
+
+        // Set billing contacts org when editing so Billing contact dropdown filters by org from first paint
+        const placementOrgId = placement.organization_id ?? placement.organizationId ?? placement.organization?.id;
+        if (placementOrgId != null) {
+          setBillingContactsOrganizationId(String(placementOrgId));
+        } else if (placement.job_id && jobs.length > 0) {
+          const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
+          const jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        } else if (placement.job_seeker_id) {
+          try {
+            const jsRes = await fetch(`/api/job-seekers/${placement.job_seeker_id}`);
+            if (jsRes.ok) {
+              const jsData = await jsRes.json();
+              const js = jsData.jobSeeker ?? jsData.job_seeker ?? jsData;
+              const orgId = js?.organization_id ?? js?.organizationId ?? js?.organization?.id;
+              if (orgId != null) setBillingContactsOrganizationId(String(orgId));
+            }
+          } catch (_) { /* ignore */ }
+        }
       } catch (err) {
         console.error("Error fetching placement:", err);
         setError(err instanceof Error ? err.message : "An error occurred while fetching placement details");
@@ -341,14 +829,71 @@ export default function AddPlacement() {
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           if (column === "job_seeker_id" || column === "job_id" || column === "organization_id") {
-            const n = Number(value);
-            apiData[column] = !isNaN(n) ? n : null;
+            const str = String(value).trim();
+            if (str === "") {
+              apiData[column] = null;
+            } else {
+              const n = Number(str);
+              apiData[column] = !isNaN(n) ? n : null;
+            }
           } else {
             apiData[column] = value;
           }
         }
         customFieldsForDB[label] = value;
       });
+
+      // Ensure job_id is always set from either:
+      // - The Job field in admin mapping (label -> job_id), OR
+      // - The selected job from job-first flow (jobIdFromUrl / selectedJob)
+      if (apiData.job_id == null) {
+        let finalJobId: number | null = null;
+
+        // Try Job custom field (if present)
+        if (jobField) {
+          const jobLabel = jobField.field_label;
+          const raw = customFieldsToSend[jobLabel];
+          if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+            const n = Number(raw);
+            if (!isNaN(n) && n > 0) {
+              finalJobId = n;
+            }
+          }
+        }
+
+        // Fallback to selected job / URL param
+        if (finalJobId == null) {
+          const source = selectedJob?.id ?? (selectedJob as any)?.Id ?? jobIdFromUrl;
+          if (source != null) {
+            const n = Number(source);
+            if (!isNaN(n) && n > 0) {
+              finalJobId = n;
+            }
+          }
+        }
+
+        if (finalJobId != null) {
+          apiData.job_id = finalJobId;
+        }
+      }
+
+      if (apiData.job_id == null && jobIdFromUrl?.trim()) {
+        const n = Number(jobIdFromUrl.trim());
+        apiData.job_id = !Number.isNaN(n) && n > 0 ? n : null;
+      }
+
+      // When admin has configured a Job Seeker lookup field, treat it as the source of truth
+      // for job_seeker_id regardless of its label.
+      if (jobSeekerLookupField) {
+        const rawJs = customFieldValues[jobSeekerLookupField.field_name];
+        const jsStr = String(rawJs ?? "").trim();
+        if (jsStr === "") {
+          apiData.job_seeker_id = null;
+        } else {
+          const n = Number(jsStr);
+          apiData.job_seeker_id = !isNaN(n) ? n : null;
+        }
+      }
 
       // Ensure organization_id is set from job if not already set
       if (apiData.job_id != null && jobs.length > 0) {
@@ -369,6 +914,18 @@ export default function AddPlacement() {
       if (apiData.organization_id !== undefined && apiData.organization_id !== null) {
         const orgIdNum = Number(apiData.organization_id);
         apiData.organization_id = !isNaN(orgIdNum) ? orgIdNum : null;
+      }
+
+      if ((apiData.organization_id === undefined || apiData.organization_id === null) && organizationIdFromUrl?.trim()) {
+        const orgIdNum = Number(organizationIdFromUrl.trim());
+        apiData.organization_id = !Number.isNaN(orgIdNum) ? orgIdNum : null;
+      }
+
+      if (placementField21Label && jobIdFromUrl?.trim()) {
+        customFieldsForDB[placementField21Label] = jobIdFromUrl.trim();
+      }
+      if (placementField22Label && organizationIdFromUrl?.trim()) {
+        customFieldsForDB[placementField22Label] = organizationIdFromUrl.trim();
       }
 
       apiData.custom_fields =
@@ -443,23 +1000,11 @@ export default function AddPlacement() {
   };
 
   const handleGoBack = () => router.back();
-  const backToJobSelection = () => router.push("/dashboard/placements/add");
-
-  // Get organization ID value for LookupField
-  const organizationIdValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
 
   const validationStatus = useMemo(() => {
     const v = validateCustomFields();
-    if (!v.isValid) return { isValid: false, message: v.message };
-    if (!jobField || !candidateField) return { isValid: true, message: "" };
-    const j = customFieldValues[jobField.field_name];
-    const c = customFieldValues[candidateField.field_name];
-    const jValid = j != null && String(j).trim() !== "";
-    const cValid = c != null && String(c).trim() !== "";
-    if (!jValid) return { isValid: false, message: "Job is required" };
-    if (!cValid) return { isValid: false, message: "Candidate is required" };
-    return { isValid: true, message: "" };
-  }, [jobField, candidateField, customFieldValues, validateCustomFields]);
+    return { isValid: v.isValid, message: v.message };
+  }, [validateCustomFields]);
 
   const canSubmit = validationStatus.isValid;
 
@@ -520,7 +1065,7 @@ export default function AddPlacement() {
             <Image src="/window.svg" alt="Placement" width={24} height={24} className="mr-2" />
             <h1 className="text-xl font-bold">{isEditMode ? "Edit" : "Add"} Placement Direct Hire</h1>
           </div>
-          <div className="flex items-center gap-4 gap-2">
+          <div className="flex items-center gap-4 gap-6">
             {jobIdFromUrl && !isEditMode && (
               <Link
                 href="/dashboard/placements/add"
@@ -530,7 +1075,7 @@ export default function AddPlacement() {
               </Link>
             )}
             <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700">
-              <span className="text-2xl font-bold">X</span>
+              <span className="text-2xl font-bold"><FiX size={20} /></span>
             </button>
           </div>
         </div>
@@ -548,6 +1093,47 @@ export default function AddPlacement() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Explicit Job Seeker selector so a real candidate is always chosen.
+              Use this only when admin has NOT provided a Job Seeker lookup field. */}
+          {!jobSeekerLookupField && candidateField && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Job Seeker
+                {candidateField.is_required && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
+              </label>
+              <select
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={customFieldValues[candidateField.field_name] || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handlePlacementFieldChange(
+                    candidateField.field_name,
+                    val === "" ? "" : val
+                  );
+                }}
+              >
+                <option value="">
+                  {isLoadingJobSeekers ? "Loading job seekers..." : "Select Job Seeker"}
+                </option>
+                {jobSeekers.map((js: any) => {
+                  const id = js.id ?? js.Id;
+                  const fullName =
+                    js.full_name ||
+                    `${js.first_name || js.firstName || ""} ${js.last_name || js.lastName || ""}`.trim() ||
+                    js.email ||
+                    `Job Seeker #${id}`;
+                  return (
+                    <option key={id} value={id}>
+                      {fullName}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4">
             {customFieldsLoading ? (
               <div className="text-center py-4 text-gray-500">Loading custom fields...</div>
@@ -556,135 +1142,78 @@ export default function AddPlacement() {
                 // const column = BACKEND_COLUMN_BY_LABEL[field.field_label];
                 const fieldValue = customFieldValues[field.field_name] ?? field.default_value ?? "";
 
-                // if (column === "job_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center gap-4">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                //       </label>
-                //       <div className="flex-1 relative">
-                //         {isLoadingJobs ? (
-                //           <div className="p-2 text-gray-500">Loading jobs...</div>
-                //         ) : (
-                //           <select
-                //             value={String(fieldValue)}
-                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                //             required={field.is_required}
-                //           >
-                //             <option value="">Select a job</option>
-                //             {jobs.map((job: any) => (
-                //               <option key={job.id} value={job.id}>
-                //                 {job.title ?? job.job_title ?? `Job #${job.id}`}
-                //               </option>
-                //             ))}
-                //           </select>
-                //         )}
-                //       </div>
-                //     </div>
-                //   );
-                // }
+                // Hide Full Address field (combined display only; address is shown via Address group above)
+                const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
+                const isFullAddressField =
+                  labelNorm.includes("full") && labelNorm.includes("address");
+                if (isFullAddressField) return null;
 
-                // if (column === "job_seeker_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center gap-4">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                //       </label>
-                //       <div className="flex-1 relative">
-                //         {isLoadingJobSeekers ? (
-                //           <div className="p-2 text-gray-500">Loading job seekers...</div>
-                //         ) : (
-                //           <select
-                //             value={String(fieldValue)}
-                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                //             required={field.is_required}
-                //           >
-                //             <option value="">Select a job seeker</option>
-                //             {jobSeekers.map((js: any) => (
-                //               <option key={js.id} value={js.id}>
-                //                 {(() => {
-                //                   const name = js.full_name ?? `${js.first_name ?? ""} ${js.last_name ?? ""}`.trim();
-                //                   return name || `Job Seeker #${js.id}`;
-                //                 })()}
-                //               </option>
-                //             ))}
-                //           </select>
-                //         )}
-                //       </div>
-                //     </div>
-                //   );
-                // }
-
-                // if (column === "organization_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center gap-4">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {(field.is_required) &&
-                //           (hasValidValue() ? (
-                //             <span className="text-green-500 ml-1">✔</span>
-                //           ) : (
-                //             <span className="text-red-500 ml-1">*</span>
-                //           ))}
-                //       </label>
-                //       <div className="flex-1">
-                //         <LookupField
-                //           value={String(organizationIdValue)}
-                //           onChange={(value) => {
-                //             // Store the organization ID
-                //             handleCustomFieldChange(field.field_name, value);
-                //           }}
-                //           lookupType="organizations"
-                //           placeholder="Select an organization"
-                //           required={field.is_required}
-                //           disabled={true}
-                //           className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                //         />
-                //       </div>
-                //     </div>
-                //   );
-                // }
-
+                const billingLabel = String((field.field_label ?? (field as any).label ?? field.field_name ?? "")).trim().toLowerCase();
+                const isBillingContactLookup =
+                  billingLabel.includes("billing") &&
+                  field.field_type === "lookup" &&
+                  ((field as any).lookup_type === "hiring-managers" || (field as any).lookup_type === "contacts");
+                const isStatusReadOnlyFromRedirect = Boolean(
+                  statusField && field.field_name === statusField.field_name && jobIdFromUrl && jobSeekerIdFromUrl && !placementId
+                );
+                const isClientBillRateField = clientBillRateField && field.id === clientBillRateField.id;
+                const isClientBillRateEditable = isClientBillRateField && !field.is_read_only;
+                const handlePlacementChangeWithBillRateClear = (name: string, value: any) => {
+                  handlePlacementFieldChange(name, value);
+                  if (
+                    isClientBillRateField &&
+                    name === clientBillRateField!.field_name &&
+                    payRateField &&
+                    markUpField
+                  ) {
+                    setCustomFieldValues((prev: Record<string, any>) => ({
+                      ...prev,
+                      [payRateField.field_name]: "",
+                      [markUpField.field_name]: "",
+                    }));
+                  }
+                };
                 return (
-                  <div key={field.id} className="flex items-center gap-4">
-                    <label className="w-48 font-medium shrink-0">
+                  <div
+                    key={
+                      isBillingContactLookup
+                        ? `${field.id}-org-${billingContactsOrganizationId ?? "none"}`
+                        : field.id
+                    }
+                    className="flex items-center gap-4"
+                  >
+                    <label className="w-48 font-medium shrink-0 flex items-center">
                       {field.field_label}
+                      {isClientBillRateEditable && (
+                        <Tooltip
+                          text="Changing this value will clear Pay Rate and Mark-up %."
+                          className="ml-2"
+                        >
+                          <FiInfo className="w-5 h-5 text-gray-600 shrink-0" aria-hidden />
+                        </Tooltip>
+                      )}
                     </label>
                     <div className="flex-1">
-                        {
-                          field?.field_label === "Organization" ? (
-                            <LookupField
-                              value={String(organizationIdValue)}
-                              onChange={(value) => {
-                                handleCustomFieldChange(field.field_name, value);
-                              }}
-                              lookupType="organizations"
-                              placeholder="Select an organization"
-                              required={field.is_required}
-                              disabled={true}
-                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            />
-                          ) : (
-                            <CustomFieldRenderer
-                              field={field}
-                              value={fieldValue}
-                              allFields={customFields}
-                              values={customFieldValues}
-                              onChange={handlePlacementFieldChange}
-                              validationIndicator={
-                                field.is_required
-                                  ? isCustomFieldValueValid(field, fieldValue)
-                                    ? "valid"
-                                    : "required"
-                                  : undefined
-                              }
-                            />
-                          )
+                      <CustomFieldRenderer
+                        field={field}
+                        value={fieldValue}
+                        allFields={customFields}
+                        values={customFieldValues}
+                        onChange={isClientBillRateField ? handlePlacementChangeWithBillRateClear : handlePlacementFieldChange}
+                        context={
+                          billingContactsOrganizationId
+                            ? { organizationIdOnlyForBillingContacts: billingContactsOrganizationId }
+                            : undefined
                         }
+                        forceReadOnly={isStatusReadOnlyFromRedirect}
+                        validationIndicator={
+                          field.is_required
+                            ? isCustomFieldValueValid(field, fieldValue)
+                              ? "valid"
+                              : "required"
+                            : undefined
+                        }
+                      />
                     </div>
                   </div>
                 );
@@ -694,9 +1223,9 @@ export default function AddPlacement() {
 
           <div className="h-20" aria-hidden="true" />
           <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end items-center space-x-4">
-            {!canSubmit && (
-              <div className="mr-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-sm animate-pulse">
-                <FiInfo className="shrink-0" />
+            {process.env.NODE_ENV === "development" && !canSubmit && (
+              <div className="text-red-500">
+                Debug:
                 <span>{validationStatus.message || "Missing required fields"}</span>
               </div>
             )}

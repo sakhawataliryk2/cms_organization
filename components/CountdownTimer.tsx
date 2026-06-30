@@ -6,6 +6,7 @@ interface CountdownTimerProps {
   archivedAt: string | null
   deletionPeriodDays?: number
   className?: string
+  archiveReason?: string | null
 }
 
 /**
@@ -40,6 +41,7 @@ export default function CountdownTimer({
   archivedAt,
   deletionPeriodDays = 7,
   className = "",
+  archiveReason,
 }: CountdownTimerProps) {
 
   const [timeLeft, setTimeLeft] = useState<{
@@ -111,7 +113,29 @@ export default function CountdownTimer({
 
   }, [archivedAt, deletionPeriodDays])
 
-  if (!archivedAt || !timeLeft) return null
+  if (!archivedAt) return null
+
+  // If archive_reason is 'Archived', this was a bulk archive (no auto-deletion)
+  if (archiveReason === 'Archived') {
+    return (
+      <div className={`flex items-center gap-1 ${className}`}>
+        <svg
+          className="w-4 h-4 text-blue-500"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
+        </svg>
+        <span className="text-sm font-medium text-blue-600">Archived</span>
+      </div>
+    )
+  }
+
+  if (!timeLeft) return null
 
   const isUrgent = timeLeft.days <= 1 && !timeLeft.expired
   const timerColor = timeLeft.expired
