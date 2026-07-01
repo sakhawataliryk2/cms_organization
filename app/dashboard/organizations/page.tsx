@@ -53,6 +53,10 @@ import SortableColumnHeader, {
 import { SEARCH_DEBOUNCE_MS } from "@/lib/apiListParams";
 import { toast } from "sonner";
 import { formatRecordId } from "@/lib/recordIdFormatter";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import PermissionGate from "@/components/PermissionGate";
+import { useOrganizationPermissions } from "@/hooks/useOrganizationPermissions";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 interface Organization {
   record_number: number;
@@ -64,6 +68,7 @@ interface Organization {
   contact_phone: string;
   address: string;
   created_at: string;
+  created_by?: number | string | null;
   created_by_name: string;
   job_orders_count?: number;
   placements_count?: number;
@@ -88,6 +93,14 @@ const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
 
 export default function OrganizationList() {
   const router = useRouter();
+  const {
+    canCreate,
+    canViewArchived,
+    canBulkArchive,
+    canBulkDelete,
+    canDeleteRequest,
+    canUpdate,
+  } = useOrganizationPermissions();
 
   // =====================
   // TABLE COLUMNS (Overview List) – driven by admin field-management only
@@ -1319,6 +1332,7 @@ export default function OrganizationList() {
   // console.log('filteredAndSortedOrganizations', filteredAndSortedOrganizations)
 
   return (
+    <PermissionRouteGuard permission={ORG_PERMISSIONS.LIST_VIEW}>
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: mobile = title+add row, then full-width Favorites, then full-width Columns */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full ">
@@ -1386,6 +1400,7 @@ export default function OrganizationList() {
             </div>
           </div>
           {/* Add Organization - visible on mobile only; desktop version below */}
+          <PermissionGate permission={ORG_PERMISSIONS.RECORD_CREATE}>
           <button
             onClick={handleAddOrganization}
             className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0"
@@ -1404,6 +1419,7 @@ export default function OrganizationList() {
             </svg>
             Add
           </button>
+          </PermissionGate>
         </div>
 
         {/* Desktop: Favorites, Delete Selected, Columns, Add - single row */}
@@ -1502,12 +1518,18 @@ export default function OrganizationList() {
                   setSelectAll(false);
                 }}
                 onCSVExport={handleCSVExport}
-                onDelete={() => {
-                  setBulkDeleteForm({ reason: "" });
-                  setBulkDeleteResults(null);
-                  setShowBulkDeleteModal(true);
-                }}
-                onArchive={() => setShowBulkArchiveModal(true)}
+                onDelete={
+                  canBulkDelete
+                    ? () => {
+                        setBulkDeleteForm({ reason: "" });
+                        setBulkDeleteResults(null);
+                        setShowBulkDeleteModal(true);
+                      }
+                    : undefined
+                }
+                onArchive={
+                  canBulkArchive ? () => setShowBulkArchiveModal(true) : undefined
+                }
               />
             </div>
           )}
@@ -1518,12 +1540,15 @@ export default function OrganizationList() {
           >
             Columns
           </button>
+          <PermissionGate permission={ORG_PERMISSIONS.ARCHIVED_VIEW}>
           <button
             onClick={handleViewArchived}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 whitespace-nowrap"
           >
             Archived
           </button>
+          </PermissionGate>
+          <PermissionGate permission={ORG_PERMISSIONS.RECORD_CREATE}>
           <button
             onClick={handleAddOrganization}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0 whitespace-nowrap"
@@ -1542,9 +1567,8 @@ export default function OrganizationList() {
             </svg>
             Add
           </button>
+          </PermissionGate>
         </div>
-
-        {/* Mobile: Favorites - full width */}
         <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
           <div className="relative">
             <button
@@ -1638,13 +1662,20 @@ export default function OrganizationList() {
                 setSelectAll(false);
               }}
               onCSVExport={handleCSVExport}
-              onDelete={() => {
-                setBulkDeleteForm({ reason: "" });
-                setBulkDeleteResults(null);
-                setShowBulkDeleteModal(true);
-              }}
-              onArchive={() => setShowBulkArchiveModal(true)}
+              onDelete={
+                canBulkDelete
+                  ? () => {
+                      setBulkDeleteForm({ reason: "" });
+                      setBulkDeleteResults(null);
+                      setShowBulkDeleteModal(true);
+                    }
+                  : undefined
+              }
+              onArchive={
+                canBulkArchive ? () => setShowBulkArchiveModal(true) : undefined
+              }
             />
+            {canBulkDelete && (
             <button
               onClick={() => {
                 setBulkDeleteForm({ reason: "" });
@@ -1667,6 +1698,7 @@ export default function OrganizationList() {
               </svg>
               Delete Selected ({selectedOrganizations.length})
             </button>
+            )}
           </div>
         )}
 
@@ -1681,12 +1713,14 @@ export default function OrganizationList() {
         </div>
         {/* Mobile: Archived - full width */}
         <div className="w-full md:hidden">
+          <PermissionGate permission={ORG_PERMISSIONS.ARCHIVED_VIEW}>
           <button
             onClick={handleViewArchived}
             className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
           >
             Archived
           </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -1804,7 +1838,7 @@ export default function OrganizationList() {
                                 label: "View",
                                 action: () => handleViewOrganization(org.id),
                               },
-                              ...(ownerField
+                              ...(ownerField && canUpdate(org)
                                 ? [
                                     {
                                       label: "Change Ownership",
@@ -1815,7 +1849,7 @@ export default function OrganizationList() {
                                     },
                                   ]
                                 : []),
-                              ...(statusField
+                              ...(statusField && canUpdate(org)
                                 ? [
                                     {
                                       label: "Change Status",
@@ -1833,10 +1867,14 @@ export default function OrganizationList() {
                                   setShowTearsheetModal(true);
                                 },
                               },
-                              {
-                                label: "Delete",
-                                action: () => handleSingleDelete(org),
-                              },
+                              ...(canDeleteRequest(org)
+                                ? [
+                                    {
+                                      label: "Delete",
+                                      action: () => handleSingleDelete(org),
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </td>
@@ -2672,5 +2710,6 @@ export default function OrganizationList() {
         selectedCount={selectedOrganizations.length}
       />
     </div>
+    </PermissionRouteGuard>
   );
 }

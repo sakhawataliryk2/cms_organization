@@ -29,6 +29,8 @@ import SortableColumnHeader, {
   type ColumnSortState,
 } from "@/components/SortableColumnHeader";
 import ServerListPagination from "@/components/ServerListPagination";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 interface Organization {
   id: string;
@@ -544,6 +546,7 @@ export default function ArchivedOrganizationsList() {
   // console.log('filteredAndSortedOrganizations', filteredAndSortedOrganizations)
 
   return (
+    <PermissionRouteGuard permission={ORG_PERMISSIONS.ARCHIVED_VIEW}>
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search on top, then actions */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1131,5 +1134,6 @@ export default function ArchivedOrganizationsList() {
         </div>
       )}
     </div>
+    </PermissionRouteGuard>
   );
 }

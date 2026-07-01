@@ -75,6 +75,10 @@ import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import PermissionGate from "@/components/PermissionGate";
+import { useOrganizationPermissions } from "@/hooks/useOrganizationPermissions";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -389,6 +393,7 @@ export default function OrganizationView() {
   const organizationId = safeSearchParams.get("id");
 
   const [organization, setOrganization] = useState<any>(null);
+  const orgPerms = useOrganizationPermissions(organization);
   // console.log("Organi")
   console.log("Organization", organization)
   const [originalData, setOriginalData] = useState<any>(null);
@@ -1097,6 +1102,30 @@ export default function OrganizationView() {
       fetchInvoices(organizationId);
     }
   }, [organizationId, activeTab]);
+
+  const canUpdateOrganization = orgPerms.canUpdate();
+
+  useEffect(() => {
+    if (orgPerms.isLoading) return;
+    if (activeTab === "invoices" && !orgPerms.canViewInvoices) {
+      setActiveTab("summary");
+    }
+    if (
+      (activeTab === "docs" || activeTab === "quotes") &&
+      !orgPerms.canViewDocuments
+    ) {
+      setActiveTab("summary");
+    }
+    if (activeTab === "modify" && !canUpdateOrganization) {
+      setActiveTab("summary");
+    }
+  }, [
+    activeTab,
+    orgPerms.isLoading,
+    orgPerms.canViewInvoices,
+    orgPerms.canViewDocuments,
+    canUpdateOrganization,
+  ]);
 
   // Fetch available fields after organization is loaded
   useEffect(() => {
@@ -1834,6 +1863,7 @@ export default function OrganizationView() {
       const formattedOrg = {
         id: data.organization.id,
         record_number: data.organization.record_number,
+        created_by: data.organization.created_by ?? null,
         name: data.organization.name || "No name provided",
         phone: data.organization.contact_phone || "(Not provided)",
         website: data.organization.website || "https://example.com",
@@ -3314,7 +3344,11 @@ export default function OrganizationView() {
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
             title="Organization Contact Info"
-            onEdit={() => handleEditPanel("contactInfo")}
+            onEdit={
+              orgPerms.canUpdate()
+                ? () => handleEditPanel("contactInfo")
+                : undefined
+            }
           >
             <div className="space-y-0 border border-gray-200 rounded">
               {effectiveRows.map((row) => {
@@ -3379,10 +3413,14 @@ export default function OrganizationView() {
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
             title="About the Organization"
-            onEdit={() => {
-              setIsEditingAbout(true);
-              setTempAboutText(aboutText);
-            }}
+            onEdit={
+              orgPerms.canUpdate()
+                ? () => {
+                    setIsEditingAbout(true);
+                    setTempAboutText(aboutText);
+                  }
+                : undefined
+            }
           >
             <div className="border border-gray-200 rounded">
               {isEditingAbout ? (
@@ -3496,10 +3534,14 @@ export default function OrganizationView() {
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
             title="Jobs from Website:"
-            onEdit={() => {
-              setIsEditingWebsiteUrl(true);
-              setTempWebsiteUrl(organization?.website || "");
-            }}
+            onEdit={
+              orgPerms.canUpdate()
+                ? () => {
+                    setIsEditingWebsiteUrl(true);
+                    setTempWebsiteUrl(organization?.website || "");
+                  }
+                : undefined
+            }
           >
             <div className="border border-gray-200 rounded">
               {/* Website URL Display */}
@@ -3997,6 +4039,10 @@ export default function OrganizationView() {
     if (action === "edit" && organizationId) {
       router.push(`/dashboard/organizations/add?id=${organizationId}`);
     } else if (action === "delete" && organizationId) {
+      if (!orgPerms.canDeleteRequest(organization)) {
+        toast.error("You don't have permission to request deletion.");
+        return;
+      }
       // Check for pending delete request first
       checkPendingDeleteRequest();
       // Check dependencies before showing modal
@@ -4036,6 +4082,10 @@ export default function OrganizationView() {
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "transfer") {
+      if (!orgPerms.canTransferRequest(organization)) {
+        toast.error("You don't have permission to request a transfer.");
+        return;
+      }
       setShowTransferModal(true);
       fetchAvailableOrganizations();
     } else {
@@ -5022,7 +5072,9 @@ export default function OrganizationView() {
 
   // When archived: only Unarchive is enabled; all other actions disabled
   const actionOptions = isArchived
-    ? [{ label: "Unarchive", action: () => openUnarchiveModal() }]
+    ? orgPerms.canUnarchiveRequest(organization)
+      ? [{ label: "Unarchive", action: () => openUnarchiveModal() }]
+      : []
     : [
       { label: "Add Note", action: () => handleActionSelected("add-note") },
       {
@@ -5035,25 +5087,53 @@ export default function OrganizationView() {
         label: "Add Tearsheet",
         action: () => handleActionSelected("add-tearsheet"),
       },
-      { label: "Transfer", action: () => handleActionSelected("transfer") },
-      {
-        label: getDeleteLabel(),
-        action: () => handleActionSelected("delete"),
-        disabled: isDeleteDisabled(),
-      },
+      ...(orgPerms.canTransferRequest(organization)
+        ? [{ label: "Transfer", action: () => handleActionSelected("transfer") }]
+        : []),
+      ...(orgPerms.canDeleteRequest(organization)
+        ? [
+            {
+              label: getDeleteLabel(),
+              action: () => handleActionSelected("delete"),
+              disabled: isDeleteDisabled(),
+            },
+          ]
+        : []),
     ];
 
   const tabs = [
     { id: "summary", label: "Summary" },
-    { id: "modify", label: "Modify" },
+    ...(orgPerms.canUpdate()
+      ? [{ id: "modify", label: "Modify" }]
+      : []),
     { id: "notes", label: "Notes" },
     { id: "history", label: "History" },
-    { id: "quotes", label: "Quotes" },
-    { id: "invoices", label: "Invoices" },
+    ...(orgPerms.canViewDocuments
+      ? [{ id: "quotes", label: "Quotes" }]
+      : []),
+    ...(orgPerms.canViewInvoices
+      ? [{ id: "invoices", label: "Invoices" }]
+      : []),
     { id: "contacts", label: `Contacts ( ${hiringManagers.length} )` },
-    { id: "docs", label: "Docs" },
+    ...(orgPerms.canViewDocuments
+      ? [{ id: "docs", label: "Docs" }]
+      : []),
     { id: "opportunities", label: "Opportunities" },
   ];
+
+  const getDocumentActionOptions = (doc: any) => {
+    const options: Array<{ label: string; action: () => void }> = [
+      { label: "View", action: () => setSelectedDocument(doc) },
+    ];
+    if (orgPerms.canUpdateDocuments) {
+      options.push({ label: "Edit", action: () => handleEditDocument(doc) });
+    }
+    options.push({ label: "Download", action: () => handleDownloadDocument(doc) });
+    if (orgPerms.canDeleteDocuments) {
+      options.push({ label: "Delete", action: () => handleDeleteDocument(doc.id) });
+    }
+    return options;
+  };
 
   const quickActions = [
     { id: "client-visit", label: "Client Visits" },
@@ -5064,8 +5144,11 @@ export default function OrganizationView() {
     { id: "placements", label: "Placements" },
   ];
 
-  // Handle modify button click - redirect to add page with organization ID
   const handleModifyClick = () => {
+    if (!orgPerms.canUpdate()) {
+      toast.error("You don't have permission to edit this organization.");
+      return;
+    }
     if (organizationId) {
       router.push(`/dashboard/organizations/add?id=${organizationId}`);
     }
@@ -5083,8 +5166,8 @@ export default function OrganizationView() {
         </p>
         <button
           onClick={handleModifyClick}
-          disabled={isArchived}
-          className={`px-4 py-2 rounded ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
+          disabled={isArchived || !orgPerms.canUpdate()}
+          className={`px-4 py-2 rounded ${isArchived || !orgPerms.canUpdate() ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
         >
           Modify Organization
         </button>
@@ -5627,8 +5710,30 @@ export default function OrganizationView() {
       </div>
     );
   }
+
+  if (!orgPerms.isLoading && !orgPerms.canViewRecord(organization)) {
+    return (
+      <div className="bg-white p-6 rounded-lg mt-10 shadow-md">
+        <div className="text-gray-700 mb-2 font-semibold">Access denied</div>
+        <p className="text-gray-600 mb-4">
+          You don&apos;t have permission to view this organization.
+        </p>
+        <button
+          onClick={handleGoBack}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Back to Organizations
+        </button>
+      </div>
+    );
+  }
+
   console.log("Archived_at", organization.archived_at)
   return (
+    <PermissionRouteGuard
+      permission={ORG_PERMISSIONS.RECORD_VIEW}
+      record={organization}
+    >
     <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
       <div className="bg-gray-400 p-2 flex items-center">
@@ -6006,11 +6111,7 @@ export default function OrganizationView() {
                           <td className="p-3">
                             <ActionDropdown
                               label="Actions"
-                              options={[
-                                { label: "View", action: () => setSelectedDocument(doc) },
-                                { label: "Download", action: () => handleDownloadDocument(doc) },
-                                { label: "Delete", action: () => handleDeleteDocument(doc.id) },
-                              ]}
+                              options={getDocumentActionOptions(doc)}
                             />
                           </td>
                           <td className="p-3">
@@ -6424,6 +6525,7 @@ export default function OrganizationView() {
           <div className="bg-white p-4 rounded shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Documents</h2>
+              {orgPerms.canUploadDocuments && (
               <div className="flex gap-2">
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -6438,6 +6540,7 @@ export default function OrganizationView() {
                   Add Text Document
                 </button>
               </div>
+              )}
             </div>
 
             {/* Hidden file input */}
@@ -6451,6 +6554,7 @@ export default function OrganizationView() {
             />
 
             {/* Drag and Drop Zone */}
+            {orgPerms.canUploadDocuments && (
             <div
               onDragEnter={handleDragEnter}
               onDragOver={handleDragOver}
@@ -6489,6 +6593,7 @@ export default function OrganizationView() {
                 </p>
               </div>
             </div>
+            )}
 
             {/* Upload Progress */}
             {Object.keys(uploadProgress).length > 0 && (
@@ -6608,7 +6713,7 @@ export default function OrganizationView() {
             )}
 
             {/* Edit Document Modal (Name + Type only) */}
-            {showEditDocumentModal && editingDocument && (
+            {showEditDocumentModal && editingDocument && orgPerms.canUpdateDocuments && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bg-opacity-50">
                 <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
                   <h3 className="text-lg font-semibold mb-4">Edit Document</h3>
@@ -6716,24 +6821,7 @@ export default function OrganizationView() {
                           <td className="p-3">
                             <ActionDropdown
                               label="Actions"
-                              options={[
-                                {
-                                  label: "View",
-                                  action: () => setSelectedDocument(doc),
-                                },
-                                {
-                                  label: "Edit",
-                                  action: () => handleEditDocument(doc),
-                                },
-                                {
-                                  label: "Download",
-                                  action: () => handleDownloadDocument(doc),
-                                },
-                                {
-                                  label: "Delete",
-                                  action: () => handleDeleteDocument(doc.id),
-                                },
-                              ]}
+                              options={getDocumentActionOptions(doc)}
                             />
                           </td>
                           {documentColumnFields.map((key) => (
@@ -7165,7 +7253,7 @@ export default function OrganizationView() {
       )}
 
       {/* Transfer Modal */}
-      {showTransferModal && (
+      {showTransferModal && orgPerms.canTransferRequest(organization) && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
@@ -7371,7 +7459,7 @@ export default function OrganizationView() {
       </RequestActionModal>
 
       {/* Delete Request Modal */}
-      {showDeleteModal && (
+      {showDeleteModal && orgPerms.canDeleteRequest(organization) && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
@@ -7844,5 +7932,6 @@ export default function OrganizationView() {
         </div>
       )}
     </div>
+    </PermissionRouteGuard>
   );
 }

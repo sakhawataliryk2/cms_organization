@@ -21,6 +21,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalList
 import { CSS } from '@dnd-kit/utilities';
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import { useMultipleAdd } from "@/contexts/MultipleAddContext";
+import { usePermissions } from "@/contexts/PermissionContext";
 // Import icons from react-icons
 import {
   FiHome,
@@ -201,6 +202,7 @@ export default function DashboardNav() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
   const { isMultipleAddMode, setMultipleAddMode, toggleMultipleAddMode } = useMultipleAdd();
+  const { can, isLoading: permissionsLoading } = usePermissions();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     jobs: false,
     placements: false,
@@ -884,58 +886,65 @@ export default function DashboardNav() {
   };
 
 
-  // All navigation items without role-based filtering
+  // Permission-aware navigation items
   const navItems = [
-    { name: "Home", path: "/home", icon: <FiHome size={20} /> },
+    { name: "Home", path: "/home", icon: <FiHome size={20} />, permission: "global.home.view" },
     {
       name: "Organizations",
       path: "/dashboard/organizations",
       icon: <HiOutlineOfficeBuilding size={20} />,
+      permission: "organizations.list.view",
     },
-    { name: "Jobs", path: "/dashboard/jobs", icon: <FiBriefcase size={20} /> },
+    { name: "Jobs", path: "/dashboard/jobs", icon: <FiBriefcase size={20} />, permission: "jobs.list.view" },
     {
       name: "Job Seekers",
       path: "/dashboard/job-seekers",
       icon: <FiUsers size={20} />,
+      permission: "job_seekers.list.view",
     },
-    { name: "Leads", path: "/dashboard/leads", icon: <FiTarget size={20} /> },
+    { name: "Leads", path: "/dashboard/leads", icon: <FiTarget size={20} />, permission: "leads.list.view" },
     {
       name: "Hiring Managers",
       path: "/dashboard/hiring-managers",
       icon: <FiUserCheck size={20} />,
+      permission: "hiring_managers.list.view",
     },
     {
       name: "Planner",
       path: "/dashboard/planner",
       icon: <FiCalendar size={20} />,
+      permission: "planner.appointments.list.view",
     },
     {
       name: "Tasks",
       path: "/dashboard/tasks",
       icon: <FiCheckSquare size={20} />,
+      permission: "tasks.list.view",
     },
     {
       name: "Goals & Quotas",
       path: "/dashboard/goals",
       icon: <FiBarChart2 size={20} />,
+      permission: "global.goals.view",
     },
     {
       name: "Placements",
       path: "/dashboard/placements",
       icon: <FiDollarSign size={20} />,
+      permission: "placements.list.view",
     },
     {
       name: "Tearsheets",
       path: "/dashboard/tearsheets",
       icon: <FiFile size={20} />,
+      permission: "tearsheets.list.view",
     },
     {
       name: "Admin Center",
       path: "/dashboard/admin",
       icon: <FiSettings size={20} />,
+      permission: "global.admin_center.view",
     },
-    // { name: 'Profile', path: '/dashboard/profile', icon: <FaRegUserCircle size={20} /> },
-    // { name: 'API', path: '/dashboard/api', icon: <FiGrid size={20} /> },
   ];
 
   const multipleAddNavItems = [
@@ -988,9 +997,9 @@ export default function DashboardNav() {
     },
   ];
 
-  // Don't filter navigation items based on search query - always show all items
-  // The search query is only for the global search functionality, not for filtering sidebar
-  const filteredNavItems = navItems;
+  const filteredNavItems = permissionsLoading
+    ? navItems
+    : navItems.filter((item) => !item.permission || can(item.permission));
 
   const isNavItemActive = (itemPath: string) => {
     if (pathname === itemPath) return true;

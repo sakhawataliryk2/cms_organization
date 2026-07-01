@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { useParams } from "next/navigation";
 import { getCookie } from "cookies-next";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 export default function ApproveTransferPage() {
   const params = useParams();
@@ -51,6 +53,7 @@ export default function ApproveTransferPage() {
   }, [transferId]);
 
   return (
+    <PermissionRouteGuard permission={ORG_PERMISSIONS.TRANSFER_APPROVE}>
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
         {status === "loading" && (
@@ -117,5 +120,6 @@ export default function ApproveTransferPage() {
         )}
       </div>
     </div>
+    </PermissionRouteGuard>
   );
 }

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { useParams } from "next/navigation";
 import { getCookie } from "cookies-next";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 export default function DenyTransferPage() {
   const params = useParams();
@@ -58,6 +60,7 @@ export default function DenyTransferPage() {
   };
 
   return (
+    <PermissionRouteGuard permission={ORG_PERMISSIONS.TRANSFER_DENY}>
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
         {status === "form" && (
@@ -163,5 +166,6 @@ export default function DenyTransferPage() {
         )}
       </div>
     </div>
+    </PermissionRouteGuard>
   );
 }
