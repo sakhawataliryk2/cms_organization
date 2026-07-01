@@ -7,6 +7,7 @@ import DashboardNav from '@/components/DashboardNav';
 import { AuthFetchInterceptor } from '@/components/AuthFetchInterceptor';
 import { AnalyticsProvider } from '@/hooks/useAnalytics';
 import { MultipleAddProvider } from '@/contexts/MultipleAddContext';
+import { PermissionProvider } from '@/contexts/PermissionContext';
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -34,23 +35,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
 
     return (
-        <AnalyticsProvider>
-            <MultipleAddProvider>
-                <div className="min-h-screen bg-gray-100">
-                    {/* Intercepts 401 responses and redirects to login when cookies are cleared */}
-                    <AuthFetchInterceptor />
-                    {/* DashboardNav includes the side nav and top bar */}
-                    <DashboardNav />
+        <PermissionProvider>
+            <AnalyticsProvider>
+                <MultipleAddProvider>
+                    <div className="min-h-screen bg-gray-100">
+                        {/* Intercepts 401 responses and redirects to login when cookies are cleared */}
+                        <AuthFetchInterceptor />
+                        {/* DashboardNav includes the side nav and top bar */}
+                        <DashboardNav />
 
-                    {/* Main content - full width on mobile/tablet, margin for sidebar on desktop */}
-                    <div
-                        className="ml-0 md:ml-60 p-3 sm:p-4 md:p-6 min-w-0"
-                        style={{ paddingTop: "var(--dashboard-top-offset, 48px)" }}
-                    >
-                        {children}
+                        {/* Main content - full width on mobile/tablet, margin for sidebar on desktop */}
+                        <div
+                            className="ml-0 md:ml-60 p-3 sm:p-4 md:p-6 min-w-0"
+                            style={{ paddingTop: "var(--dashboard-top-offset, 48px)" }}
+                        >
+                            {children}
+                        </div>
                     </div>
-                </div>
-            </MultipleAddProvider>
-        </AnalyticsProvider>
+                </MultipleAddProvider>
+            </AnalyticsProvider>
+        </PermissionProvider>
     );
 }

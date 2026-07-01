@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { useParams } from "next/navigation";
 import { getCookie } from "cookies-next";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
 export default function ApproveDeletePage() {
   const params = useParams();
@@ -93,6 +95,7 @@ export default function ApproveDeletePage() {
   const dependencies = deleteRequest?.dependencies_summary || {};
 
   return (
+    <PermissionRouteGuard permission={ORG_PERMISSIONS.DELETE_APPROVE}>
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden">
 
@@ -215,5 +218,6 @@ export default function ApproveDeletePage() {
         </div>
       </div>
     </div>
+    </PermissionRouteGuard>
   );
 }

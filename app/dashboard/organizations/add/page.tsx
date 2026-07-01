@@ -13,6 +13,8 @@ import CustomFieldRenderer, {
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
 import { normalizeDateInputToIso } from "@/lib/dateNormalize";
+import PermissionRouteGuard from "@/components/PermissionRouteGuard";
+import { ORG_PERMISSIONS, OrgRecordLike } from "@/lib/organizationPermissions";
 
 
 interface CustomFieldDefinition {
@@ -117,6 +119,7 @@ export default function AddOrganization() {
   const [isLoading, setIsLoading] = useState(!!organizationId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
+  const [orgRecord, setOrgRecord] = useState<OrgRecordLike | null>(null);
   const [phoneDupMatches, setPhoneDupMatches] = useState<OrgDupMatch[]>([]);
   const [websiteDupMatches, setWebsiteDupMatches] = useState<OrgDupMatch[]>([]);
   const [hasConfirmedPhoneDupSave, setHasConfirmedPhoneDupSave] = useState(false);
@@ -257,6 +260,7 @@ export default function AddOrganization() {
         const data = await response.json();
         console.log("API Response:", data); // Check if backend ne bheja ya nahi
         const org = data.organization;
+        setOrgRecord({ created_by: org.created_by ?? null });
 
         console.log("Received organization data:", org);
 
@@ -1441,6 +1445,14 @@ export default function AddOrganization() {
   }
 
   return (
+    <PermissionRouteGuard
+      permission={
+        isEditMode
+          ? ORG_PERMISSIONS.RECORD_UPDATE
+          : ORG_PERMISSIONS.RECORD_CREATE
+      }
+      record={isEditMode ? orgRecord : undefined}
+    >
     <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         {/* Header with X button */}
@@ -2263,5 +2275,6 @@ export default function AddOrganization() {
         </form>
       </div>
     </div>
+    </PermissionRouteGuard>
   );
 }
