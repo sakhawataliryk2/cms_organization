@@ -426,6 +426,24 @@ const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
 const MIN_COLUMN_WIDTH = 60;
 const MAX_COLUMN_WIDTH = 500;
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function widthMapsEqual(
+  a: Record<string, number> | undefined,
+  b: Record<string, number>,
+): boolean {
+  const aMap = a ?? {};
+  const aKeys = Object.keys(aMap);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return bKeys.every((k) => aMap[k] === b[k]);
+}
+
+const EMPTY_COLUMN_LAYOUT: Record<string, string[]> = {};
+const EMPTY_COLUMN_WIDTHS: Record<string, Record<string, number>> = {};
+
 function resolveColumnLayout(
   layoutConfig: Record<string, string[]> | undefined,
   viewKey: string,
@@ -796,120 +814,126 @@ function SortableHeaderCell({
   );
 }
 
-export default function TbiPage() {
-  const rowLabels = [
-    "Organization",
-    "Hiring Manager",
-    "Job Seeker",
-    "Placements",
-    "TimeSheets",
-    "Exports",
-    "Invoices",
-  ];
+const TBI_ROW_LABELS = [
+  "Organization",
+  "Hiring Manager",
+  "Job Seeker",
+  "Placements",
+  "TimeSheets",
+  "Exports",
+  "Invoices",
+] as const;
 
-  const columnHeadersMap: Record<string, string[]> = {
-    Organization: ["Name", "Oasis Key", "Organization ID", "State"],
-    "Hiring Manager": [
-      "Name",
-      "Organization",
-      "Email",
-      "Organization",
-      "Status",
-      "ID Number",
-    ],
-    "Job Seeker": [
-      "Name",
-      "Sent",
-      "Submitted",
-      "Approved",
-      "ID Number",
-      "Payroll Type",
-      "State",
-      "Status",
-    ],
-    Placements: [
-      "Timesheet week start",
-      "Job Seeker",
-      "Organization",
-      "Status of Placement",
-      "Worker Comp Code",
-      "Placement ID",
-      "Start Date",
-      "End Date",
-      "Job Title",
-      "Timesheet Hour entry",
-      "State",
-      "Pay Rate",
-      "Bill Rate",
-      "Primary Approver",
-      "Job Seeker Email",
-    ],
-    TimeSheets: [
-      "Name",
-      "JobSeeker ID",
-      "Approved",
-      "Submitted",
-      "Status",
-      "Payroll Cycle",
-      "Phone Number",
-      "Email",
-      "Week Ending",
-      "Hours",
-    ],
-    Exports: [
-      "Documents",
-      "ID Number",
-      "Date Exported",
-      "Report Name",
-      "Status",
-    ],
-    Invoices: [
-      "Invoice #",
-      "Organization",
-      "Amount",
-      "Due Date",
-      "Status",
-      "Paid Date",
-      "Notes",
-      "Invoice Type",
-    ],
-  };
-
-  const defaultColumns = [
-    "Job Code",
-    "Regular Hours",
-    "Paid Time Off",
-    "On Call",
-    "Expense",
+const TBI_COLUMN_HEADERS_MAP: Record<string, string[]> = {
+  Organization: ["Name", "Oasis Key", "Organization ID", "State"],
+  "Hiring Manager": [
+    "Name",
     "Organization",
-    "Personal ID",
+    "Email",
+    "Organization",
     "Status",
-    "FTE",
-    "TIME",
-    "Type",
-    "Total",
-    "Tuesday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-    "Monday",
-    "Time Off",
-    "Vacation",
-    "Sick Time",
-  ];
+    "ID Number",
+  ],
+  "Job Seeker": [
+    "Name",
+    "Sent",
+    "Submitted",
+    "Approved",
+    "ID Number",
+    "Payroll Type",
+    "State",
+    "Status",
+  ],
+  Placements: [
+    "Timesheet week start",
+    "Job Seeker",
+    "Organization",
+    "Status of Placement",
+    "Worker Comp Code",
+    "Placement ID",
+    "Start Date",
+    "End Date",
+    "Job Title",
+    "Timesheet Hour entry",
+    "State",
+    "Pay Rate",
+    "Bill Rate",
+    "Primary Approver",
+    "Job Seeker Email",
+  ],
+  TimeSheets: [
+    "Name",
+    "JobSeeker ID",
+    "Approved",
+    "Submitted",
+    "Status",
+    "Payroll Cycle",
+    "Phone Number",
+    "Email",
+    "Week Ending",
+    "Hours",
+  ],
+  Exports: [
+    "Documents",
+    "ID Number",
+    "Date Exported",
+    "Report Name",
+    "Status",
+  ],
+  Invoices: [
+    "Invoice #",
+    "Organization",
+    "Amount",
+    "Due Date",
+    "Status",
+    "Paid Date",
+    "Notes",
+    "Invoice Type",
+  ],
+};
 
-  const { value: columnLayoutConfig, setValue: setColumnLayoutConfig } =
-    useUserViewConfig({
-      entityType: VIEW_ENTITY_TYPES.tbi,
-      key: "tbi_column_layout",
-      defaultValue: {} as Record<string, string[]>,
-    });
-  const { value: columnWidthsConfig, setValue: setColumnWidthsConfig } =
-    useUserViewConfig({
-      entityType: VIEW_ENTITY_TYPES.tbi,
-      key: "tbi_column_widths",
-      defaultValue: {} as Record<string, Record<string, number>>,
-    });
+const TBI_DEFAULT_COLUMNS = [
+  "Job Code",
+  "Regular Hours",
+  "Paid Time Off",
+  "On Call",
+  "Expense",
+  "Organization",
+  "Personal ID",
+  "Status",
+  "FTE",
+  "TIME",
+  "Type",
+  "Total",
+  "Tuesday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+  "Monday",
+  "Time Off",
+  "Vacation",
+  "Sick Time",
+];
+
+export default function TbiPage() {
+  const {
+    value: columnLayoutConfig,
+    setValue: setColumnLayoutConfig,
+    isLoading: columnLayoutLoading,
+  } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tbi,
+    key: "tbi_column_layout",
+    defaultValue: EMPTY_COLUMN_LAYOUT,
+  });
+  const {
+    value: columnWidthsConfig,
+    setValue: setColumnWidthsConfig,
+    isLoading: columnWidthsLoading,
+  } = useUserViewConfig({
+    entityType: VIEW_ENTITY_TYPES.tbi,
+    key: "tbi_column_widths",
+    defaultValue: EMPTY_COLUMN_WIDTHS,
+  });
   const columnLayoutConfigRef = useRef(columnLayoutConfig);
   columnLayoutConfigRef.current = columnLayoutConfig;
   const columnWidthsConfigRef = useRef(columnWidthsConfig);
@@ -927,39 +951,52 @@ export default function TbiPage() {
   const [columnFilters, setColumnFilters] = useState<
     Record<string, ColumnFilterState>
   >({});
-  const getCurrentColumns = () => {
-    if (selectedRow && columnHeadersMap[selectedRow])
-      return columnHeadersMap[selectedRow];
-    return defaultColumns;
-  };
-
-  const schemaColumns = getCurrentColumns();
+  const schemaColumns = useMemo(
+    () =>
+      selectedRow && TBI_COLUMN_HEADERS_MAP[selectedRow]
+        ? TBI_COLUMN_HEADERS_MAP[selectedRow]
+        : TBI_DEFAULT_COLUMNS,
+    [selectedRow],
+  );
   const viewKey = selectedRow ?? "default";
+  const prevViewKeyRef = useRef(viewKey);
   const [columnOrder, setColumnOrder] = useState<string[]>(() => [
-    ...defaultColumns,
+    ...TBI_DEFAULT_COLUMNS,
   ]);
+
+  const persistColumnLayoutForView = useCallback(
+    (vKey: string, visible: string[]) => {
+      if (visible.length === 0) return;
+      const saved = columnLayoutConfigRef.current[vKey];
+      if (saved && arraysEqual(saved, visible)) return;
+      setColumnLayoutConfig({
+        ...columnLayoutConfigRef.current,
+        [vKey]: visible,
+      });
+    },
+    [setColumnLayoutConfig],
+  );
 
   // Sync column order when view (sidebar) changes: load from saved config or use schema default
   useEffect(() => {
-    setColumnOrder(
-      resolveColumnLayout(columnLayoutConfig, viewKey, schemaColumns),
-    );
-    // Reset filters and sorts when switching views
-    setColumnSorts({});
-    setColumnFilters({});
-    setSelectedRows(new Set());
-  }, [viewKey, schemaColumns, columnLayoutConfig]);
+    if (viewKey === "TimeSheets" || columnLayoutLoading) return;
 
-  // Persist column layout when user changes visibility/order
-  useEffect(() => {
-    const visible = columnOrder.filter((h) => schemaColumns.includes(h));
-    if (visible.length > 0) {
-      setColumnLayoutConfig({
-        ...columnLayoutConfigRef.current,
-        [viewKey]: visible,
-      });
+    const viewChanged = prevViewKeyRef.current !== viewKey;
+    prevViewKeyRef.current = viewKey;
+
+    const resolved = resolveColumnLayout(
+      columnLayoutConfigRef.current,
+      viewKey,
+      schemaColumns,
+    );
+    setColumnOrder((prev) => (arraysEqual(prev, resolved) ? prev : resolved));
+
+    if (viewChanged) {
+      setColumnSorts({});
+      setColumnFilters({});
+      setSelectedRows(new Set());
     }
-  }, [columnOrder, viewKey, schemaColumns, setColumnLayoutConfig]);
+  }, [viewKey, schemaColumns, columnLayoutLoading]);
 
   // Column widths per view (resizable; persisted via useUserViewConfig)
   const [columnWidths, setColumnWidths] = useState<
@@ -989,14 +1026,18 @@ export default function TbiPage() {
 
   // Load column widths when view changes
   useEffect(() => {
+    if (columnWidthsLoading) return;
     const vKey = selectedRow === "TimeSheets" ? "TimeSheets" : viewKey;
     const cols =
       vKey === "TimeSheets"
         ? [...TIMESHEETS_TABLE_COLUMNS_LIST]
-        : (columnHeadersMap[vKey] ?? defaultColumns);
-    const loaded = resolveColumnWidths(columnWidthsConfig, vKey, cols);
-    setColumnWidths((prev) => ({ ...prev, [vKey]: loaded }));
-  }, [viewKey, selectedRow, columnWidthsConfig]);
+        : (TBI_COLUMN_HEADERS_MAP[vKey] ?? TBI_DEFAULT_COLUMNS);
+    const loaded = resolveColumnWidths(columnWidthsConfigRef.current, vKey, cols);
+    setColumnWidths((prev) => {
+      if (widthMapsEqual(prev[vKey], loaded)) return prev;
+      return { ...prev, [vKey]: loaded };
+    });
+  }, [viewKey, selectedRow, columnWidthsLoading]);
 
   // Visible columns: only those in columnOrder that exist in current schema (keeps order)
   const columnHeaders = columnOrder.filter((h) => schemaColumns.includes(h));
@@ -1007,14 +1048,20 @@ export default function TbiPage() {
       setColumnOrder((prev) => {
         const inOrder = prev.filter((h) => schemaColumns.includes(h));
         const isVisible = inOrder.includes(header);
+        let next: string[];
         if (isVisible) {
           if (inOrder.length <= 1) return prev;
-          return inOrder.filter((h) => h !== header);
+          next = inOrder.filter((h) => h !== header);
+        } else {
+          next = [...inOrder, header];
         }
-        return [...inOrder, header];
+        if (viewKey !== "TimeSheets") {
+          persistColumnLayoutForView(viewKey, next);
+        }
+        return next;
       });
     },
-    [schemaColumns],
+    [schemaColumns, viewKey, persistColumnLayoutForView],
   );
 
   const [tbiOrganizations, setTbiOrganizations] = useState<
@@ -1115,7 +1162,9 @@ export default function TbiPage() {
   // Load onboarding summaries for Job Seeker rows
   useEffect(() => {
     if (selectedRow !== "Job Seeker") {
-      setJobSeekerOnboardingSummary({});
+      setJobSeekerOnboardingSummary((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
       return;
     }
     const ids = Array.from(
@@ -1126,7 +1175,9 @@ export default function TbiPage() {
       ),
     );
     if (ids.length === 0) {
-      setJobSeekerOnboardingSummary({});
+      setJobSeekerOnboardingSummary((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
       return;
     }
 
@@ -1326,29 +1377,31 @@ export default function TbiPage() {
     () => [...TIMESHEETS_TABLE_COLUMNS_LIST],
   );
 
+  const prevSelectedRowRef = useRef(selectedRow);
+
   useEffect(() => {
-    if (selectedRow === "TimeSheets") {
-      setTimesheetsColumnOrder(
-        resolveColumnLayout(
-          columnLayoutConfig,
-          "TimeSheets",
-          [...TIMESHEETS_TABLE_COLUMNS_LIST]
-        )
-      );
-      // Reset filters and sorts when switching to TimeSheets
+    if (columnLayoutLoading) return;
+
+    const justSwitchedToTimeSheets =
+      selectedRow === "TimeSheets" && prevSelectedRowRef.current !== "TimeSheets";
+    prevSelectedRowRef.current = selectedRow;
+
+    if (selectedRow !== "TimeSheets") return;
+
+    const resolved = resolveColumnLayout(
+      columnLayoutConfigRef.current,
+      "TimeSheets",
+      [...TIMESHEETS_TABLE_COLUMNS_LIST],
+    );
+    setTimesheetsColumnOrder((prev) =>
+      arraysEqual(prev, resolved) ? prev : resolved,
+    );
+
+    if (justSwitchedToTimeSheets) {
       setTimesheetsColumnSorts({});
       setTimesheetsColumnFilters({});
     }
-  }, [selectedRow, columnLayoutConfig]);
-
-  useEffect(() => {
-    if (timesheetsColumnOrder.length > 0) {
-      setColumnLayoutConfig({
-        ...columnLayoutConfigRef.current,
-        TimeSheets: timesheetsColumnOrder,
-      });
-    }
-  }, [timesheetsColumnOrder, setColumnLayoutConfig]);
+  }, [selectedRow, columnLayoutLoading]);
 
   const timesheetsColumnIds = useMemo(
     () => timesheetsColumnOrder.map((_, i) => `ts-col-${i}`),
@@ -1364,9 +1417,13 @@ export default function TbiPage() {
       const oldIndex = timesheetsColumnIds.indexOf(activeStr);
       const newIndex = timesheetsColumnIds.indexOf(overStr);
       if (oldIndex === -1 || newIndex === -1) return;
-      setTimesheetsColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
+      setTimesheetsColumnOrder((prev) => {
+        const next = arrayMove(prev, oldIndex, newIndex);
+        persistColumnLayoutForView("TimeSheets", next);
+        return next;
+      });
     },
-    [timesheetsColumnIds],
+    [timesheetsColumnIds, persistColumnLayoutForView],
   );
 
   const openTimesheetHistory = useCallback((row: TimesheetRow) => {
@@ -1403,13 +1460,15 @@ export default function TbiPage() {
 
   useEffect(() => {
     if (selectedRow !== "Organization") {
-      setTbiOrganizations([]);
+      setTbiOrganizations((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
     // Use cached data if available
     if (tbiOrganizationsCache) {
-      setTbiOrganizations(tbiOrganizationsCache);
+      setTbiOrganizations((prev) =>
+        prev === tbiOrganizationsCache ? prev : tbiOrganizationsCache,
+      );
       return;
     }
 
@@ -1443,7 +1502,7 @@ export default function TbiPage() {
 
   useEffect(() => {
     if (!isPlacementDrivenView) {
-      setTimesheetsPlacements([]);
+      setTimesheetsPlacements((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     let cancelled = false;
@@ -1556,10 +1615,13 @@ export default function TbiPage() {
         const oldIndex = prev.indexOf(activeHeader);
         const newIndex = prev.indexOf(overHeader);
         if (oldIndex === -1 || newIndex === -1) return prev;
-        return arrayMove(prev, oldIndex, newIndex);
+        const next = arrayMove(prev, oldIndex, newIndex);
+        const visible = next.filter((h) => schemaColumns.includes(h));
+        persistColumnLayoutForView(viewKey, visible);
+        return next;
       });
     },
-    [columnIds, columnHeaders],
+    [columnIds, columnHeaders, schemaColumns, viewKey, persistColumnLayoutForView],
   );
 
   const handleRowClick = (rowLabel: string) => setSelectedRow(rowLabel);
@@ -1879,7 +1941,7 @@ export default function TbiPage() {
           style={{ width: ROW_LABEL_WIDTH, minWidth: ROW_LABEL_WIDTH }}
         >
           <div className="flex-1 min-h-0 flex flex-col">
-            {rowLabels.map((rowLabel) => {
+            {TBI_ROW_LABELS.map((rowLabel) => {
               const isSelected = selectedRow === rowLabel;
               return (
                 <button
