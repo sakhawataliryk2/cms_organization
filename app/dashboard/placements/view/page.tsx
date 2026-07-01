@@ -9,6 +9,7 @@ import { getCookie } from "cookies-next";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
+import BenefitPackagePanel from "@/components/BenefitPackagePanel";
 import LoadingScreen from "@/components/LoadingScreen";
 import { FiBriefcase, FiLock, FiUnlock, FiSearch } from "react-icons/fi";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
@@ -4760,6 +4761,11 @@ export default function PlacementView() {
           {/* Regular summary (not pinned) */}
           {!isPinned && (
             <div id="printable-summary" className="p-4">
+              {placementId ? (
+                <div className="mb-4 max-w-md">
+                  <BenefitPackagePanel placementId={placementId} />
+                </div>
+              ) : null}
               <DndContext
                 id="regular-summary-dnd"
                 sensors={sensors}
