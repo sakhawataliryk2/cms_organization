@@ -46,6 +46,7 @@ import DocumentViewer from "@/components/DocumentViewer";
 import StyledReactSelect, { type StyledSelectOption } from "@/components/StyledReactSelect";
 import { useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import ModuleListGuard from "@/components/ModuleListGuard";
 
 
 interface Appointment {
@@ -2495,6 +2496,7 @@ const Planners = () => {
   };
 
   return (
+    <ModuleListGuard module="planner">
     <>
       <style jsx global>{`
         @media print {
@@ -3744,6 +3746,7 @@ const Planners = () => {
         </div>
       )}
     </>
+    </ModuleListGuard>
   );
 };
 

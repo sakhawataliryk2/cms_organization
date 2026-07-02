@@ -24,6 +24,7 @@ import { IoDocumentOutline } from "react-icons/io5";
 import { TfiUser } from "react-icons/tfi";
 import { FaRegArrowAltCircleRight } from "react-icons/fa";
 import { toast } from "sonner";
+import ModuleListGuard from "@/components/ModuleListGuard";
 
 interface AdminModule {
     id: string;
@@ -693,6 +694,7 @@ export default function AdminCenter() {
     };
 
     return (
+        <ModuleListGuard module="admin">
         <div className="bg-gray-200 min-h-screen p-8">
             {/* Header with Upload Button */}
             <div className="max-w-5xl mx-auto mb-8 flex justify-between items-center">
@@ -1076,5 +1078,6 @@ export default function AdminCenter() {
                 </div>
             )}
         </div>
+        </ModuleListGuard>
     );
 }

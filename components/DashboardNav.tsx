@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "nextjs-toploader/app";
@@ -22,6 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 import { useMultipleAdd } from "@/contexts/MultipleAddContext";
 import { usePermissions } from "@/contexts/PermissionContext";
+import { NAV_ROUTE_CONFIG } from "@/lib/permissions/navConfig";
 // Import icons from react-icons
 import {
   FiHome,
@@ -886,66 +887,29 @@ export default function DashboardNav() {
   };
 
 
-  // Permission-aware navigation items
-  const navItems = [
-    { name: "Home", path: "/home", icon: <FiHome size={20} />, permission: "global.home.view" },
-    {
-      name: "Organizations",
-      path: "/dashboard/organizations",
-      icon: <HiOutlineOfficeBuilding size={20} />,
-      permission: "organizations.list.view",
-    },
-    { name: "Jobs", path: "/dashboard/jobs", icon: <FiBriefcase size={20} />, permission: "jobs.list.view" },
-    {
-      name: "Job Seekers",
-      path: "/dashboard/job-seekers",
-      icon: <FiUsers size={20} />,
-      permission: "job_seekers.list.view",
-    },
-    { name: "Leads", path: "/dashboard/leads", icon: <FiTarget size={20} />, permission: "leads.list.view" },
-    {
-      name: "Hiring Managers",
-      path: "/dashboard/hiring-managers",
-      icon: <FiUserCheck size={20} />,
-      permission: "hiring_managers.list.view",
-    },
-    {
-      name: "Planner",
-      path: "/dashboard/planner",
-      icon: <FiCalendar size={20} />,
-      permission: "planner.appointments.list.view",
-    },
-    {
-      name: "Tasks",
-      path: "/dashboard/tasks",
-      icon: <FiCheckSquare size={20} />,
-      permission: "tasks.list.view",
-    },
-    {
-      name: "Goals & Quotas",
-      path: "/dashboard/goals",
-      icon: <FiBarChart2 size={20} />,
-      permission: "global.goals.view",
-    },
-    {
-      name: "Placements",
-      path: "/dashboard/placements",
-      icon: <FiDollarSign size={20} />,
-      permission: "placements.list.view",
-    },
-    {
-      name: "Tearsheets",
-      path: "/dashboard/tearsheets",
-      icon: <FiFile size={20} />,
-      permission: "tearsheets.list.view",
-    },
-    {
-      name: "Admin Center",
-      path: "/dashboard/admin",
-      icon: <FiSettings size={20} />,
-      permission: "global.admin_center.view",
-    },
-  ];
+  const NAV_ICONS: Record<string, React.ReactNode> = {
+    "/home": <FiHome size={20} />,
+    "/dashboard/organizations": <HiOutlineOfficeBuilding size={20} />,
+    "/dashboard/jobs": <FiBriefcase size={20} />,
+    "/dashboard/job-seekers": <FiUsers size={20} />,
+    "/dashboard/leads": <FiTarget size={20} />,
+    "/dashboard/hiring-managers": <FiUserCheck size={20} />,
+    "/dashboard/planner": <FiCalendar size={20} />,
+    "/dashboard/tasks": <FiCheckSquare size={20} />,
+    "/dashboard/goals": <FiBarChart2 size={20} />,
+    "/dashboard/placements": <FiDollarSign size={20} />,
+    "/dashboard/tearsheets": <FiFile size={20} />,
+    "/dashboard/admin": <FiSettings size={20} />,
+  };
+
+  const navItems = useMemo(
+    () =>
+      NAV_ROUTE_CONFIG.map((route) => ({
+        ...route,
+        icon: NAV_ICONS[route.path],
+      })),
+    []
+  );
 
   const multipleAddNavItems = [
     {
@@ -997,9 +961,15 @@ export default function DashboardNav() {
     },
   ];
 
-  const filteredNavItems = permissionsLoading
-    ? navItems
-    : navItems.filter((item) => !item.permission || can(item.permission));
+  const filteredNavItems = useMemo(() => {
+    if (permissionsLoading) return [];
+    return navItems.filter((item) => !item.permission || can(item.permission));
+  }, [permissionsLoading, navItems, can]);
+
+  const navSkeletonItems = useMemo(
+    () => Array.from({ length: 8 }, (_, index) => index),
+    []
+  );
 
   const isNavItemActive = (itemPath: string) => {
     if (pathname === itemPath) return true;
@@ -1644,22 +1614,31 @@ export default function DashboardNav() {
         {/* Navigation links - always show all items, not filtered by search */}
         <div className="flex-1 min-h-0 overflow-auto">
           {!isMultipleAddMode ? (
-            filteredNavItems.map((item) => (
-              <Link
-                key={item.path}
-                href={item.path}
-                onClick={() => setIsSidebarOpen(false)}
-                className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-slate-700"
-                  }`}
-              >
-                <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
-                  {item.icon}
+            permissionsLoading ? (
+              navSkeletonItems.map((index) => (
+                <div key={index} className="flex items-center py-2 px-4">
+                  <div className="w-6 h-6 mr-3 shrink-0 rounded bg-slate-700 animate-pulse" />
+                  <div className="h-4 flex-1 rounded bg-slate-700/80 animate-pulse" />
                 </div>
-                {item.name}
-              </Link>
-            ))
+              ))
+            ) : (
+              filteredNavItems.map((item) => (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  onClick={() => setIsSidebarOpen(false)}
+                  className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-300 hover:bg-slate-700"
+                    }`}
+                >
+                  <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
+                    {item.icon}
+                  </div>
+                  {item.name}
+                </Link>
+              ))
+            )
           ) : (
             <>
               <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">

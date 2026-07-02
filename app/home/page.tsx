@@ -4,12 +4,12 @@ import { Suspense } from "react";
 import DashboardNav from "@/components/DashboardNav";
 import Link from "next/link";
 import { FiSettings } from "react-icons/fi";
-import { PermissionProvider } from "@/contexts/PermissionContext";
+import PermissionLandingRedirect from "@/components/PermissionLandingRedirect";
 
 export default function HomePage() {
   return (
-    <PermissionProvider>
       <div className="flex">
+        <PermissionLandingRedirect />
         <Suspense fallback={null}>
           <DashboardNav />
         </Suspense>
@@ -31,6 +31,5 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-    </PermissionProvider>
   );
 }

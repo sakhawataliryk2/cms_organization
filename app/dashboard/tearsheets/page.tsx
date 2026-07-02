@@ -27,6 +27,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import ModuleListGuard from "@/components/ModuleListGuard";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import {
   buildPinnedKey,
@@ -826,6 +827,7 @@ export default function TearsheetList() {
   }
 
   return (
+    <ModuleListGuard module="tearsheets">
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1422,5 +1424,6 @@ export default function TearsheetList() {
         }
       `}</style>
     </div>
+    </ModuleListGuard>
   );
 }

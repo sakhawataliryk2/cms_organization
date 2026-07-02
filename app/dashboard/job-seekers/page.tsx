@@ -26,6 +26,7 @@ import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 import BulkNoteModal from "@/components/BulkNoteModal";
+import ModuleListGuard from "@/components/ModuleListGuard";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
@@ -675,6 +676,7 @@ export default function JobSeekerList() {
   };
 
   return (
+    <ModuleListGuard module="job_seekers">
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1409,5 +1411,6 @@ export default function JobSeekerList() {
         selectedCount={selectedJobSeekers.length}
       />
     </div>
+    </ModuleListGuard>
   );
 }

@@ -20,6 +20,7 @@ import SortableColumnHeader, {
 } from "@/components/SortableColumnHeader";
 import { FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import ModuleListGuard from "@/components/ModuleListGuard";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import BulkActionsButton from "@/components/BulkActionsButton";
@@ -750,6 +751,7 @@ export default function TaskList() {
 
 
   return (
+    <ModuleListGuard module="tasks">
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1536,5 +1538,6 @@ export default function TaskList() {
         selectedCount={selectedTasks.length}
       />
     </div>
+    </ModuleListGuard>
   );
 }

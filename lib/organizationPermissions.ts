@@ -23,13 +23,9 @@ export const ORG_PERMISSIONS = {
 export type OrgRecordLike = {
   created_by?: number | string | null;
   createdBy?: number | string | null;
+  assigned_to?: number | string | null;
+  assignedTo?: number | string | null;
 };
 
-export function toOrgRecord(
-  org: OrgRecordLike | null | undefined
-): { created_by: number | string } | undefined {
-  if (!org) return undefined;
-  const createdBy = org.created_by ?? org.createdBy;
-  if (createdBy == null || createdBy === "") return undefined;
-  return { created_by: createdBy };
-}
+export { toScopedRecord as toOrgRecord } from "@/lib/permissions/types";
+export type { ScopedRecordLike } from "@/lib/permissions/types";

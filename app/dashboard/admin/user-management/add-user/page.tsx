@@ -5,6 +5,9 @@ import { useRouter } from 'nextjs-toploader/app';
 import { RefreshCw, X, Pencil } from 'lucide-react';
 import Tooltip from '@/components/Tooltip';
 import { isValidUSPhoneNumber } from '@/app/utils/phoneValidation';
+import PermissionMatrix from '@/components/PermissionMatrix';
+import type { PermissionSelection } from '@/lib/permissions/types';
+import ModuleListGuard from '@/components/ModuleListGuard';
 
 interface User {
     id: string;
@@ -408,6 +411,7 @@ export default function UserManagement() {
     ];
 
     return (
+        <ModuleListGuard module="users">
         <div className="bg-gray-100 min-h-screen">
             {/* Header area */}
             <div className="bg-white border-b border-gray-300 flex items-center justify-between p-4">
@@ -617,6 +621,7 @@ export default function UserManagement() {
                 />
             )}
         </div>
+        </ModuleListGuard>
     );
 }
 
@@ -661,6 +666,7 @@ function AddUserModal({
     const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [selectedPermissions, setSelectedPermissions] = useState<PermissionSelection[]>([]);
     const emailDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
     const phoneDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
     const zoomDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
@@ -986,7 +992,8 @@ function AddUserModal({
                 phone2: phone2Digits || null,
                 ...(zoomExtDigits ? { zoomExtensionNumber: zoomExtDigits } : {}),
                 title: formData.title,
-                isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType)
+                isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType),
+                permissions: selectedPermissions.filter((entry) => entry.granted),
             };
             // No manual password; backend will auto-generate a strong temporary password.
 
@@ -1370,6 +1377,15 @@ function AddUserModal({
                                 </select>
                             </div>
 
+                            <div className="col-span-2">
+                                <PermissionMatrix
+                                    key={formData.userType}
+                                    roleCode={formData.userType}
+                                    value={selectedPermissions}
+                                    onChange={setSelectedPermissions}
+                                />
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     User ID
@@ -1467,6 +1483,7 @@ function EditUserModal({
     const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
     const [zoomExtStatus, setZoomExtStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [selectedPermissions, setSelectedPermissions] = useState<PermissionSelection[]>([]);
     const emailDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
     const phoneDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
     const zoomDupResponseCache = useRef<Map<string, DuplicateMatch[]>>(new Map());
@@ -1767,6 +1784,7 @@ function EditUserModal({
                 zoomExtensionNumber: zoomExtDigits || null,
                 role: formData.userType,
                 status: formData.statusActive,
+                permissions: selectedPermissions.filter((entry) => entry.granted),
             };
 
             const response = await fetch(`/api/users/${user.id}`, {
@@ -2075,6 +2093,16 @@ function EditUserModal({
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div className="col-span-2">
+                                <PermissionMatrix
+                                    key={`${user.id}-${formData.userType}`}
+                                    roleCode={formData.userType}
+                                    userId={user.id}
+                                    value={selectedPermissions}
+                                    onChange={setSelectedPermissions}
+                                />
                             </div>
 
                             <div className="flex items-center gap-2 pt-6">
