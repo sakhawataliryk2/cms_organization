@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+const BACKEND_FETCH_TIMEOUT_MS = 20_000;
+
+function isBackendUnavailableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  const message = error.message.toLowerCase();
+  if (
+    message.includes("econnrefused") ||
+    message.includes("fetch failed") ||
+    message.includes("network")
+  ) {
+    return true;
+  }
+
+  const cause = error.cause as { code?: string } | undefined;
+  return cause?.code === "ECONNREFUSED" || cause?.code === "ENOTFOUND";
+}
+
 export async function GET(_request: NextRequest) {
   try {
     const cookieStore = await cookies();
@@ -15,7 +33,10 @@ export async function GET(_request: NextRequest) {
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      BACKEND_FETCH_TIMEOUT_MS
+    );
 
     let response: Response;
     try {
@@ -28,11 +49,33 @@ export async function GET(_request: NextRequest) {
         cache: "no-store",
         signal: controller.signal,
       });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Permission service timeout",
+          },
+          { status: 504 }
+        );
+      }
+
+      if (isBackendUnavailableError(error)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Permission service unavailable",
+          },
+          { status: 503 }
+        );
+      }
+
+      throw error;
     } finally {
       clearTimeout(timeoutId);
     }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       return NextResponse.json(
