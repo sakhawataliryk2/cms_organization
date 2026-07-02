@@ -20,6 +20,7 @@ import SortableColumnHeader, {
 } from "@/components/SortableColumnHeader";
 import { FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import ModuleListGuard from "@/components/ModuleListGuard";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import BulkActionsButton from "@/components/BulkActionsButton";
@@ -866,6 +867,7 @@ export default function PlacementList() {
 
 
   return (
+    <ModuleListGuard module="placements">
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1702,5 +1704,6 @@ export default function PlacementList() {
         selectedCount={selectedPlacements.length}
       />
     </div>
+    </ModuleListGuard>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'nextjs-toploader/app';
 import { ArrowLeft } from 'lucide-react';
+import ModuleListGuard from '@/components/ModuleListGuard';
 
 export default function UserManagement() {
     const router = useRouter();
@@ -79,6 +80,7 @@ export default function UserManagement() {
     };
 
     return (
+        <ModuleListGuard module="users">
         <div className="bg-gray-200 min-h-screen p-8">
             <div className="max-w-5xl mx-auto">
                 <div className="flex justify-between items-center mb-8">
@@ -113,5 +115,6 @@ export default function UserManagement() {
                 </div>
             </div>
         </div>
+        </ModuleListGuard>
     );
 }

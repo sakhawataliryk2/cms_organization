@@ -2,11 +2,11 @@
 
 import { ReactNode } from "react";
 import { usePermissions } from "@/contexts/PermissionContext";
-import { OrgRecordLike, toOrgRecord } from "@/lib/organizationPermissions";
+import { ScopedRecordLike, toScopedRecord } from "@/lib/permissions/types";
 
 interface PermissionGateProps {
   permission: string;
-  record?: OrgRecordLike | null;
+  record?: ScopedRecordLike | null;
   fallback?: ReactNode;
   hideWhileLoading?: boolean;
   children: ReactNode;
@@ -20,7 +20,7 @@ export default function PermissionGate({
   children,
 }: PermissionGateProps) {
   const { can, isLoading } = usePermissions();
-  const scopedRecord = toOrgRecord(record ?? undefined);
+  const scopedRecord = toScopedRecord(record ?? undefined);
 
   if (isLoading && hideWhileLoading) {
     return <>{fallback}</>;

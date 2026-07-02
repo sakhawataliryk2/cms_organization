@@ -27,6 +27,7 @@ import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 import BulkNoteModal from "@/components/BulkNoteModal";
+import ModuleListGuard from "@/components/ModuleListGuard";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
@@ -811,6 +812,7 @@ export default function LeadList() {
   };
 
   return (
+    <ModuleListGuard module="leads">
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: search/filters on top, then actions */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
@@ -1676,5 +1678,6 @@ export default function LeadList() {
         selectedCount={selectedLeads.length}
       />
     </div>
+    </ModuleListGuard>
   );
 }

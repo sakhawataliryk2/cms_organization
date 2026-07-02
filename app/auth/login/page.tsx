@@ -10,6 +10,7 @@ import {
 import { useRouter } from "nextjs-toploader/app";
 import Link from "next/link";
 import { setCookie } from "cookies-next";
+import { clearPermissionCache } from "@/lib/permissions/permissionStorage";
 import assets from "@/app/assets/assets";
 
 
@@ -33,6 +34,8 @@ export default function Login() {
     if (!data?.token) {
       throw new Error("No authentication token received from server");
     }
+
+    clearPermissionCache();
 
     setCookie("token", data.token, {
       maxAge: 60 * 60 * 24 * 7,

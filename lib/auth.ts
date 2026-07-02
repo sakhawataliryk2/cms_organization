@@ -3,6 +3,7 @@ import { jwtVerify } from 'jose';
 import { useEffect } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
 import { usePathname } from 'next/navigation';
+import { clearPermissionCache } from '@/lib/permissions/permissionStorage';
 
 export interface UserData {
     id: string;
@@ -31,6 +32,7 @@ export const isAuthenticated = (): boolean => {
 export const logout = (redirectUrl?: string) => {
     deleteCookie('token');
     deleteCookie('user');
+    clearPermissionCache();
 
     if (typeof window !== 'undefined') {
         const loginUrl = redirectUrl

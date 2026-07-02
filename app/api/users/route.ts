@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
         const body = await request.json();
 
-        const response = await fetch(`${process.env.API_BASE_URL || 'http://localhost:8080'}/api/auth/signup`, {
+        const response = await fetch(`${process.env.API_BASE_URL || 'http://localhost:8080'}/api/users`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

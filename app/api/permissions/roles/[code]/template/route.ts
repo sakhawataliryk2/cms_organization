@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-export async function GET(_request: NextRequest) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
   try {
+    const { code } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
 
@@ -14,39 +18,29 @@ export async function GET(_request: NextRequest) {
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiUrl}/api/users/me/permissions`, {
+    const response = await fetch(
+      `${apiUrl}/api/permissions/roles/${encodeURIComponent(code)}/template`,
+      {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         cache: "no-store",
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+      }
+    );
 
     const data = await response.json();
-
     if (!response.ok) {
       return NextResponse.json(
-        {
-          success: false,
-          message: data.message || "Failed to fetch permissions",
-        },
+        { success: false, message: data.message || "Request failed" },
         { status: response.status }
       );
     }
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Error fetching user permissions:", error);
+    console.error("Error fetching role template:", error);
     return NextResponse.json(
       { success: false, message: "Internal server error" },
       { status: 500 }
