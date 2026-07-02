@@ -1190,6 +1190,8 @@ export default function CustomFieldRenderer({
       const [currentMonth, setCurrentMonth] = React.useState(new Date());
       const calendarRef = React.useRef<HTMLDivElement>(null);
 
+      const userIsEditingRef = React.useRef(false);
+
       // Parse current value to Date object (avoid `new Date("1/6/69")` → invalid → today)
       const getCurrentDate = React.useMemo(() => {
         if (!value || value === "") {
@@ -1206,9 +1208,11 @@ export default function CustomFieldRenderer({
         }
       }, [value]);
 
-      // One-shot: coerce imported / legacy M/D/YY strings to ISO in form state
+      // Coerce imported / legacy M/D/YY strings to ISO in form state only on initial load
+      // (skipped while user is actively editing to avoid restoring expanded 2-digit years)
       React.useEffect(() => {
         if (readOnly || isDisabledByDependency) return;
+        if (userIsEditingRef.current) return;
         const v = String(value ?? "").trim();
         if (!v) return;
         if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
@@ -1240,7 +1244,13 @@ export default function CustomFieldRenderer({
           const year = today.getFullYear();
           return `${month}/${day}/${year}`;
         }
-        return formatDateToMMDDYYYY(String(value));
+        const str = String(value);
+        // Already in mm/dd/yyyy or mm/dd/yy display format — use as-is
+        // to avoid re-parsing 2-digit years while the user is editing
+        if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(str)) {
+          return str;
+        }
+        return formatDateToMMDDYYYY(str);
       }, [value, formatDateToMMDDYYYY, isDateAddedLabel]);
 
       // Handle date selection from calendar
@@ -1257,6 +1267,7 @@ export default function CustomFieldRenderer({
       // Handle manual input with mm/dd/yyyy formatting
       const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (readOnly || isDisabledByDependency) return;
+        userIsEditingRef.current = true;
         let inputValue = e.target.value;
         const digitsOnly = inputValue.replace(/\D/g, "");
 
@@ -1274,8 +1285,6 @@ export default function CustomFieldRenderer({
         if (formatted.length > 10) {
           formatted = formatted.substring(0, 10);
         }
-
-        e.target.value = formatted;
 
         if (formatted.length === 10 && /^\d{2}\/\d{2}\/\d{4}$/.test(formatted)) {
           const [month, day, year] = formatted.split("/");
@@ -1329,6 +1338,23 @@ export default function CustomFieldRenderer({
           return newDate;
         });
       };
+
+      const [showYearSelect, setShowYearSelect] = React.useState(false);
+      const yearSelectRef = React.useRef<HTMLDivElement>(null);
+
+      React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+          if (yearSelectRef.current && !yearSelectRef.current.contains(event.target as Node)) {
+            setShowYearSelect(false);
+          }
+        };
+        if (showYearSelect) {
+          document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+        };
+      }, [showYearSelect]);
 
       const goToToday = () => {
         const today = new Date();
@@ -1385,14 +1411,15 @@ export default function CustomFieldRenderer({
               disabled={readOnly || isDisabledByDependency}
               onBlur={(e) => {
                 if (readOnly || isDisabledByDependency) return;
+                userIsEditingRef.current = false;
                 const inputValue = e.target.value.trim();
-                if (inputValue && inputValue.length === 10) {
-                  const [month, day, year] = inputValue.split("/");
-                  const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                  const date = new Date(dateStr);
-                  if (!isNaN(date.getTime())) {
-                    onChange(field.field_name, dateStr);
-                  }
+                if (!inputValue) {
+                  onChange(field.field_name, "");
+                  return;
+                }
+                const iso = normalizeDateInputToIso(inputValue);
+                if (iso) {
+                  onChange(field.field_name, iso);
                 }
               }}
             />
@@ -1424,10 +1451,56 @@ export default function CustomFieldRenderer({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <span className="font-semibold text-lg">
-                    {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                    {monthNames[currentMonth.getMonth()]}
                   </span>
+                  <div className="relative" ref={yearSelectRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowYearSelect(!showYearSelect)}
+                      className="font-semibold text-lg hover:bg-gray-100 rounded px-1.5 py-0.5"
+                      title="Select year"
+                    >
+                      {currentMonth.getFullYear()}
+                      <svg className="w-3.5 h-3.5 inline ml-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showYearSelect && (
+                      <div
+                        ref={(el) => {
+                          if (el) {
+                            const btn = el.querySelector('[data-current-year="true"]');
+                            if (btn) btn.scrollIntoView({ block: "center" });
+                          }
+                        }}
+                        className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-2 w-32 max-h-48 overflow-y-auto z-10"
+                      >
+                        {Array.from({ length: 101 }, (_, i) => {
+                          const year = currentMonth.getFullYear() - 50 + i;
+                          return (
+                            <button
+                              key={year}
+                              type="button"
+                              onClick={() => {
+                                const newDate = new Date(currentMonth);
+                                newDate.setFullYear(year);
+                                setCurrentMonth(newDate);
+                                setShowYearSelect(false);
+                              }}
+                              data-current-year={year === currentMonth.getFullYear() ? "true" : undefined}
+                              className={`block w-full text-left px-3 py-1 text-sm rounded hover:bg-gray-100 ${
+                                year === currentMonth.getFullYear() ? "bg-blue-100 font-semibold" : ""
+                              }`}
+                            >
+                              {year}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => navigateMonth("next")}

@@ -962,15 +962,10 @@ export default function DashboardNav() {
   ];
 
   const filteredNavItems = useMemo(() => {
-    if (permissionsLoading) return [];
+    if (permissionsLoading) return navItems;
     if (isSuper) return navItems;
     return navItems.filter((item) => !item.permission || can(item.permission));
   }, [permissionsLoading, isSuper, navItems, can]);
-
-  const navSkeletonItems = useMemo(
-    () => Array.from({ length: 8 }, (_, index) => index),
-    []
-  );
 
   const isNavItemActive = (itemPath: string) => {
     if (pathname === itemPath) return true;
@@ -1615,31 +1610,22 @@ export default function DashboardNav() {
         {/* Navigation links - always show all items, not filtered by search */}
         <div className="flex-1 min-h-0 overflow-auto">
           {!isMultipleAddMode ? (
-            permissionsLoading ? (
-              navSkeletonItems.map((index) => (
-                <div key={index} className="flex items-center py-2 px-4">
-                  <div className="w-6 h-6 mr-3 shrink-0 rounded bg-slate-700 animate-pulse" />
-                  <div className="h-4 flex-1 rounded bg-slate-700/80 animate-pulse" />
+            filteredNavItems.map((item) => (
+              <Link
+                key={item.path}
+                href={item.path}
+                onClick={() => setIsSidebarOpen(false)}
+                className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-slate-700"
+                  }`}
+              >
+                <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
+                  {item.icon}
                 </div>
-              ))
-            ) : (
-              filteredNavItems.map((item) => (
-                <Link
-                  key={item.path}
-                  href={item.path}
-                  onClick={() => setIsSidebarOpen(false)}
-                  className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-300 hover:bg-slate-700"
-                    }`}
-                >
-                  <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
-                    {item.icon}
-                  </div>
-                  {item.name}
-                </Link>
-              ))
-            )
+                {item.name}
+              </Link>
+            ))
           ) : (
             <>
               <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
