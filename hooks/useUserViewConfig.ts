@@ -62,6 +62,24 @@ function notifyListeners(entityType: ViewEntityType) {
   state.listeners.forEach((fn) => fn());
 }
 
+function configValuesEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => value === b[index]);
+  }
+  if (
+    a &&
+    b &&
+    typeof a === "object" &&
+    typeof b === "object" &&
+    !Array.isArray(a) &&
+    !Array.isArray(b)
+  ) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  return false;
+}
+
 function getToken(): string | undefined {
   if (typeof document === "undefined") return undefined;
   return document.cookie
@@ -258,6 +276,10 @@ export function useUserViewConfig<T extends ConfigKey>({
               ) => NonNullable<ViewConfig[T]>
             )(prevValue)
           : value;
+
+      if (configValuesEqual(resolvedValue, prevValue)) {
+        return;
+      }
 
       const nextConfig = mergeCache(entityType, { [key]: resolvedValue });
       state.config = nextConfig;

@@ -698,14 +698,24 @@ export default function JobList() {
     }
 
     const defaultColumns = getRequiredAdminColumnKeys();
+    const nextColumns =
+      defaultColumns.length > 0 ? defaultColumns : catalogKeys;
+
     if (columnFields.length === 0) {
-      setColumnFields(defaultColumns.length > 0 ? defaultColumns : catalogKeys);
+      if (nextColumns.length > 0) {
+        setColumnFields(nextColumns);
+      }
       return;
     }
+
     const isOnlyRecordNumber =
       columnFields.length === 1 && columnFields[0] === "record_number";
-    if (isOnlyRecordNumber && catalogKeys.length > 1) {
-      setColumnFields(defaultColumns.length > 0 ? defaultColumns : catalogKeys);
+    if (
+      isOnlyRecordNumber &&
+      catalogKeys.length > 1 &&
+      JSON.stringify(nextColumns) !== JSON.stringify(columnFields)
+    ) {
+      setColumnFields(nextColumns);
     }
   }, [columnCatalogKeys, columnFields, setColumnFields, columnsCatalog, getRequiredAdminColumnKeys]);
 

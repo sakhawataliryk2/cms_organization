@@ -203,7 +203,7 @@ export default function DashboardNav() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
   const { isMultipleAddMode, setMultipleAddMode, toggleMultipleAddMode } = useMultipleAdd();
-  const { can, isLoading: permissionsLoading } = usePermissions();
+  const { can, isSuper, isLoading: permissionsLoading } = usePermissions();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     jobs: false,
     placements: false,
@@ -963,8 +963,9 @@ export default function DashboardNav() {
 
   const filteredNavItems = useMemo(() => {
     if (permissionsLoading) return [];
+    if (isSuper) return navItems;
     return navItems.filter((item) => !item.permission || can(item.permission));
-  }, [permissionsLoading, navItems, can]);
+  }, [permissionsLoading, isSuper, navItems, can]);
 
   const navSkeletonItems = useMemo(
     () => Array.from({ length: 8 }, (_, index) => index),
