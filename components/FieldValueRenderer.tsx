@@ -133,6 +133,26 @@ function formatToMMDDYYYY(value: string): string {
   return `${month}/${day}/${year}`;
 }
 
+function formatToMMDDYYYYHHMM(value: string): string {
+  if (!value) return value;
+
+  const date = new Date(value);
+
+  if (isNaN(date.getTime())) return value;
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+
+  return `${month}/${day}/${year} ${hours}:${minutes} ${ampm}`;
+}
+
 /** Returns relative string: "X days ago" or "In X days", or null if invalid */
 function getRelativeDateString(dateStr: string): string | null {
   const date = new Date(dateStr);
@@ -721,9 +741,9 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Date: plain text + optional relative
-  if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
-    const formattedDate = formatToMMDDYYYY(raw);
+  // Date / Datetime: plain text + optional relative
+  if (fieldType === "date" || fieldType === "datetime" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
+    const formattedDate = fieldType === "datetime" ? formatToMMDDYYYYHHMM(raw) : formatToMMDDYYYY(raw);
     const relative = showRelativeDate ? getRelativeDateString(raw) : null;
     return (
       <span
