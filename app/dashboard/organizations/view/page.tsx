@@ -55,6 +55,7 @@ import {
   FiArrowDown,
   FiFilter,
   FiSearch,
+  FiPhone,
 } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
@@ -68,6 +69,7 @@ import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFil
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
@@ -109,6 +111,26 @@ const ORG_PANEL_TITLES: Record<string, string> = {
 const CLIENT_VISIT_FILTER_KEY = "Client Visits";
 const HIRING_MANAGER_CUSTOM_FIELD_ENTITY = "hiring-managers";
 const JOBS_CUSTOM_FIELD_ENTITY = "jobs";
+const ORGANIZATION_CUSTOM_FIELD_ENTITY = "organizations";
+
+// Zoom Phone integration — Field_6 is the primary phone field for Organizations
+const ORG_PHONE_FIELD_IDENTIFIERS = ["field_6"];
+
+const normalizeFieldIdentifier = (identifier: unknown) => {
+  if (identifier === undefined || identifier === null) return "";
+  return String(identifier).trim().toLowerCase().replace(/^custom:/, "");
+};
+
+const isOrgPhoneField = (...identifiers: unknown[]) => {
+  const normalized = identifiers.map(normalizeFieldIdentifier).filter(Boolean);
+  return ORG_PHONE_FIELD_IDENTIFIERS.some((id) => normalized.includes(id));
+};
+
+const shouldShowOrgPhoneCallButton = (value: string, ...identifiers: unknown[]) =>
+  isOrgPhoneField(...identifiers) &&
+  !!value &&
+  value !== "-" &&
+  value !== "No phone provided";
 
 const ORG_DEFAULT_SUMMARY_LAYOUT = {
   left: ["contactInfo", "about"],
@@ -857,6 +879,13 @@ export default function OrganizationView() {
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
+  // Zoom Phone click-to-call (Call dropdown + phone field buttons)
+  const [showCallDropdown, setShowCallDropdown] = useState(false);
+  const callDropdownRef = useRef<HTMLDivElement>(null);
+  const [quickCallPhones, setQuickCallPhones] = useState<
+    Array<{ fieldName: string; label: string; value: string }>
+  >([]);
+
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const ABOUT_ORGANIZATION_FIELD_NAME = "Field_17";
@@ -1265,6 +1294,111 @@ export default function OrganizationView() {
 
     fetchActionFields();
   }, []);
+
+  // Resolve quick-call phone field (Field_6) whenever organization or fields load
+  useEffect(() => {
+    if (!organization) return;
+    let cancelled = false;
+    (async () => {
+      const cf = (organization as any).customFields || (organization as any).custom_fields || {};
+      const entries = await Promise.all(
+        ORG_PHONE_FIELD_IDENTIFIERS.map(async (id) => {
+          const fieldName = id.replace(/^field_/, "Field_");
+          const label = await getCustomFieldLabel(ORGANIZATION_CUSTOM_FIELD_ENTITY, fieldName);
+          if (!label) return null;
+          const value = cf[label] ?? cf[fieldName];
+          if (!value || String(value).trim() === "" || String(value).trim() === "-") return null;
+          return { fieldName, label, value: String(value).trim() };
+        })
+      );
+      if (cancelled) return;
+      setQuickCallPhones(
+        entries.filter(Boolean) as Array<{ fieldName: string; label: string; value: string }>
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [organization]);
+
+  // Close the Call dropdown when clicking outside
+  useEffect(() => {
+    if (!showCallDropdown) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (callDropdownRef.current && !callDropdownRef.current.contains(event.target as Node)) {
+        setShowCallDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showCallDropdown]);
+
+  // Start a Zoom Phone click-to-call for this organization
+  const handleStartZoomCall = async (phoneNumber?: string, fieldName?: string) => {
+    if (!organizationId || !organization) {
+      toast.error("Organization not loaded");
+      return;
+    }
+
+    const rawNumber =
+      phoneNumber && phoneNumber !== "-" && phoneNumber !== "No phone provided"
+        ? phoneNumber
+        : quickCallPhones[0]?.value;
+
+    if (!rawNumber || rawNumber === "No phone provided") {
+      toast.error("No phone number available for this organization");
+      return;
+    }
+
+    // Normalize the phone number for Zoom Phone (E.164-like where possible)
+    const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+    let normalizedNumber = digitsOnly;
+    if (digitsOnly.length === 10) {
+      normalizedNumber = `+1${digitsOnly}`;
+    } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
+      normalizedNumber = `+${digitsOnly}`;
+    }
+
+    if (!normalizedNumber) {
+      toast.error("Phone number format is invalid for Zoom Phone");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/organizations/calls/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          phoneNumber: normalizedNumber,
+          fieldName: fieldName || null,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data?.message ||
+          (response.status === 401
+            ? "Session expired. Please sign in again."
+            : "Failed to start Zoom call");
+        toast.error(message);
+        return;
+      }
+
+      const dialUrl = data?.dialUrl;
+      if (dialUrl && typeof window !== "undefined") {
+        window.location.href = dialUrl;
+        toast.success("Opening Zoom Phone...");
+      } else {
+        toast.error("No dial URL received. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error starting Zoom Phone call:", error);
+      toast.error("Unable to start Zoom call. Please try again.");
+    }
+  };
 
   // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
@@ -3362,6 +3496,11 @@ export default function OrganizationView() {
                   lookupType: catalogEntry?.lookupType,
                   multiSelectLookupType: catalogEntry?.multiSelectLookupType,
                 };
+                const showPhoneActions = shouldShowOrgPhoneCallButton(
+                  value,
+                  fieldInfo.name,
+                  row.key
+                );
                 return (
                   <div
                     key={row.key}
@@ -3370,25 +3509,8 @@ export default function OrganizationView() {
                     <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
                       {row.label}:
                     </div>
-                    <div className="flex-1 p-2">
-                      {/* {row.isStatus ? (
-                        <select
-                          value={value && statusFieldOptions.includes(value) ? value : (statusFieldOptions[0] || "")}
-                          onChange={(e) => handleStatusChange(e.target.value)}
-                          disabled={isSavingStatus}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                        >
-                          {statusFieldOptions.length === 0 ? (
-                            <option value="">Loading...</option>
-                          ) : (
-                            statusFieldOptions.map((option: string) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                      ) : ( */}
+                    <div className="flex-1 p-2 flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
                         <FieldValueRenderer
                           value={value}
                           fieldInfo={fieldInfo}
@@ -3398,7 +3520,20 @@ export default function OrganizationView() {
                           entityType="organizations"
                           recordId={organization.id}
                         />
-                      {/* )} */}
+                      </div>
+                      {showPhoneActions && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartZoomCall(value, fieldInfo.name)}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                            title="Call via Zoom Phone"
+                          >
+                            <FiPhone className="mr-1 h-3 w-3" />
+                            Call
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -3501,11 +3636,15 @@ export default function OrganizationView() {
                             References: {note.additional_references}
                           </div>
                         )}
-                        <p className="text-sm text-gray-700">
-                          {note.text.length > 100
-                            ? `${note.text.substring(0, 100)}...`
-                            : note.text}
-                        </p>
+                        {getZoomPhoneNoteKind(note.text) ? (
+                          <ZoomPhoneNoteBody text={note.text} compact />
+                        ) : (
+                          <p className="text-sm text-gray-700">
+                            {note.text.length > 100
+                              ? `${note.text.substring(0, 100)}...`
+                              : note.text}
+                          </p>
+                        )}
                       </div>
                     );
                   })}
@@ -5378,8 +5517,23 @@ export default function OrganizationView() {
                 (note as any).about_references || (note as any).aboutReferences
               );
 
+              // Zoom Phone call / SMS note styling
+              const zoomKind = getZoomPhoneNoteKind(note.text);
+              const zoomAccentClass =
+                zoomKind === "call"
+                  ? "border-l-4 border-l-indigo-400"
+                  : zoomKind === "sms"
+                    ? "border-l-4 border-l-teal-500"
+                    : "";
+              const zoomActionBadge =
+                /zoom\s*call/i.test(String(actionLabel))
+                  ? "bg-indigo-100 text-indigo-900 border border-indigo-200/80"
+                  : /zoom\s*sms/i.test(String(actionLabel))
+                    ? "bg-teal-100 text-teal-900 border border-teal-200/80"
+                    : "bg-blue-100 text-blue-800";
+
               return (
-                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                <div id={`note-${note.id}`} key={note.id} className={`p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors ${zoomAccentClass}`}>
                   {/* Note Header: Metadata Section */}
                   <div className="border-b border-gray-200 pb-3 mb-3">
                     <div className="flex justify-between items-start">
@@ -5390,7 +5544,7 @@ export default function OrganizationView() {
                             {note.created_by_name || "Unknown User"}
                           </span>
                           {actionLabel && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${zoomActionBadge}`}>
                               {actionLabel}
                             </span>
                           )}
@@ -5495,9 +5649,7 @@ export default function OrganizationView() {
 
                   {/* Note Content */}
                   <div className="mt-2">
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                      {note.text}
-                    </p>
+                    <ZoomPhoneNoteBody text={note.text} />
                   </div>
                 </div>
               );
@@ -5785,6 +5937,41 @@ export default function OrganizationView() {
 
           {/* RIGHT: actions */}
           <div className="flex items-center space-x-2 shrink-0">
+            {/* Call dropdown */}
+            <div className="relative" ref={callDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setShowCallDropdown((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm"
+                title="Call organization"
+              >
+                <FiPhone size={16} />
+                Call
+              </button>
+              {showCallDropdown && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[220px]">
+                  {quickCallPhones.length === 0 ? (
+                    <div className="px-4 py-3 text-xs text-gray-500">No phone numbers available</div>
+                  ) : (
+                    quickCallPhones.map(({ fieldName, label, value }) => (
+                      <button
+                        key={fieldName}
+                        type="button"
+                        className="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-b-0 cursor-pointer"
+                        onClick={() => {
+                          setShowCallDropdown(false);
+                          handleStartZoomCall(value, fieldName);
+                        }}
+                      >
+                        <span className="text-gray-500 font-medium">{label}</span>
+                        <span className="text-gray-800 font-semibold mt-0.5">{value}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => setShowHeaderFieldModal(true)}
               className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
