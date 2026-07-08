@@ -1,8 +1,3 @@
-/**
- * List of valid NANP (North American Numbering Plan) Area Codes (NPA).
- * Includes US, Canada, and Caribbean nations sharing +1.
- * Sourced from recent NANP data (2025).
- */
 export const US_AREA_CODES: string[] = [
     "201", "202", "203", "204", "205", "206", "207", "208", "209", "210",
     "212", "213", "214", "215", "216", "217", "218", "219", "220", "223",
