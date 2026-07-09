@@ -28,7 +28,7 @@ export default function PanelWithHeader({
     return (
         <div className={`bg-white p-4 rounded shadow relative ${className}`}>
             <div className="flex justify-between border-b border-gray-300 pb-2 mb-2">
-                <h2 className="font-semibold">{title}</h2>
+                <h2 className="font-semibold ml-0 transition-all duration-200 ease-out group-hover:ml-8">{title}</h2>
                 <div className="flex space-x-1">
                     {title !== "Recent Notes" && (
                         onEdit && (
