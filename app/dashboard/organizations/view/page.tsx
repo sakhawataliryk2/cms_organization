@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import { useSearchParams } from "next/navigation";
@@ -137,6 +137,9 @@ const ORG_DEFAULT_SUMMARY_LAYOUT = {
   right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
 };
 
+const ORG_DEFAULT_PANEL_FIELDS: Record<string, string[] | Record<string, string[]>> = {};
+const ORG_DEFAULT_CLIENT_VISITS_ACK: Record<string, boolean> = {};
+
 const REQUIRED_HM_CONTACT_FIELD_NAMES = [
   "Field_1",
   "Field_4",
@@ -187,15 +190,18 @@ function SortablePanel({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
   };
 
   return (
     <div ref={setNodeRef} style={style} className="relative group">
       <button
+        type="button"
         {...attributes}
         {...listeners}
-        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity touch-none"
         title="Drag to reorder"
+        aria-label="Drag to reorder"
       >
         <TbGripVertical className="no-print w-5 h-5 text-gray-600" />
       </button>
@@ -784,7 +790,7 @@ export default function OrganizationView() {
   const { value: clientVisitsAck, setValue: setClientVisitsAck } = useUserViewConfig({
     entityType: VIEW_ENTITY_TYPES.organizationsDetail,
     key: "client_visits_ack",
-    defaultValue: {} as Record<string, boolean>,
+    defaultValue: ORG_DEFAULT_CLIENT_VISITS_ACK,
   });
   const isClientVisitsAcknowledged =
     organizationId ? clientVisitsAck[organizationId] === true : false;
@@ -820,11 +826,7 @@ export default function OrganizationView() {
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
 
-  // Panel order state for drag-and-drop
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>(ORG_DEFAULT_SUMMARY_LAYOUT);
+  // Panel order for drag-and-drop (single source of truth — avoids columns↔config sync loops)
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
@@ -833,38 +835,41 @@ export default function OrganizationView() {
       key: "summary_layout",
       defaultValue: ORG_DEFAULT_SUMMARY_LAYOUT,
     });
+  const columns =
+    summaryLayoutConfig?.left &&
+    Array.isArray(summaryLayoutConfig.left) &&
+    summaryLayoutConfig?.right &&
+    Array.isArray(summaryLayoutConfig.right)
+      ? summaryLayoutConfig
+      : ORG_DEFAULT_SUMMARY_LAYOUT;
+  const setColumns = setSummaryLayoutConfig;
+
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
     useUserViewConfig({
       entityType: VIEW_ENTITY_TYPES.organizationsDetail,
       key: "panel_fields",
-      defaultValue: {} as Record<string, string[] | Record<string, string[]>>,
+      defaultValue: ORG_DEFAULT_PANEL_FIELDS,
     });
   const panelFieldsConfigRef = useRef(panelFieldsConfig);
   panelFieldsConfigRef.current = panelFieldsConfig;
-  const summaryLayoutConfigRef = useRef(summaryLayoutConfig);
-  summaryLayoutConfigRef.current = summaryLayoutConfig;
 
-  useEffect(() => {
-    if (
-      summaryLayoutConfig?.left &&
-      Array.isArray(summaryLayoutConfig.left) &&
-      summaryLayoutConfig?.right &&
-      Array.isArray(summaryLayoutConfig.right)
-    ) {
-      setColumns(summaryLayoutConfig);
-    }
-  }, [summaryLayoutConfig]);
+  const panelSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-  const prevSummaryLayoutRef = useRef<string>("");
-
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    const prevConfigString = JSON.stringify(summaryLayoutConfigRef.current);
-    if (prevSummaryLayoutRef.current !== colsString && colsString !== prevConfigString) {
-      setSummaryLayoutConfig(columns);
-      prevSummaryLayoutRef.current = colsString;
-    }
-  }, [columns, setSummaryLayoutConfig]);
+  const panelMeasuringConfig = useMemo(
+    () => ({
+      droppable: {
+        strategy: MeasuringStrategy.Always,
+      },
+    }),
+    []
+  );
 
   // Editable "About" text state
   const [aboutText, setAboutText] = useState("");
@@ -3351,76 +3356,71 @@ export default function OrganizationView() {
     router.push("/dashboard/organizations");
   };
 
-  const findContainer = (id: string) => {
-    if (id === "left" || id === "right") {
-      return id;
-    }
+  const handlePanelDragStart = useCallback((event: any) => {
+    setActiveId(String(event.active.id));
+  }, []);
 
-    if (columns.left.includes(id)) return "left";
-    if (columns.right.includes(id)) return "right";
-
-    return undefined;
-  };
-
-  const handlePanelDragStart = (event: any) => {
-    setActiveId(event.active.id);
-  }
-
-  const handlePanelDragCancel = () => {
+  const handlePanelDragCancel = useCallback(() => {
     setActiveId(null);
-  };
+  }, []);
 
-  const handlePanelDragOver = (event: DragOverEvent) => {
-    return;
-  };
+  const handlePanelDragOver = useCallback((_event: DragOverEvent) => {
+    // Reorder only on drag end to avoid layout thrashing / update loops mid-drag
+  }, []);
 
-  const handlePanelDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
+  const handlePanelDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
 
-    if (!over) {
-      setActiveId(null);
-      return;
-    }
-
-    const activeId = String(active.id);
-    const overId = String(over.id);
-
-    setColumns((prev) => {
-      const findContainerInState = (id: string) => {
-        if (id === "left" || id === "right") return id as "left" | "right";
-        if (prev.left.includes(id)) return "left";
-        if (prev.right.includes(id)) return "right";
-        return undefined;
-      };
-
-      const source = findContainerInState(activeId);
-      const target = findContainerInState(overId);
-
-      if (!source || !target) return prev;
-
-      if (source === target) {
-        if (overId === source) return prev;
-        const oldIndex = prev[source].indexOf(activeId);
-        const newIndex = prev[source].indexOf(overId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
-        return {
-          ...prev,
-          [source]: arrayMove(prev[source], oldIndex, newIndex),
-        };
+      if (!over) {
+        setActiveId(null);
+        return;
       }
 
-      const sourceItems = prev[source].filter((id) => id !== activeId);
-      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+      const draggedId = String(active.id);
+      const overId = String(over.id);
 
-      return {
-        ...prev,
-        [source]: sourceItems,
-        [target]: targetItems,
-      };
-    });
+      setColumns((prev) => {
+        const findContainerInState = (id: string) => {
+          if (id === "left" || id === "right") return id as "left" | "right";
+          if (prev.left.includes(id)) return "left";
+          if (prev.right.includes(id)) return "right";
+          return undefined;
+        };
 
-    setActiveId(null);
-  };
+        const source = findContainerInState(draggedId);
+        const target = findContainerInState(overId);
+
+        if (!source || !target) return prev;
+
+        if (source === target) {
+          if (overId === source) return prev;
+          const oldIndex = prev[source].indexOf(draggedId);
+          const newIndex = prev[source].indexOf(overId);
+          if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+          return {
+            ...prev,
+            [source]: arrayMove(prev[source], oldIndex, newIndex),
+          };
+        }
+
+        const sourceItems = prev[source].filter((id) => id !== draggedId);
+        const targetItems = [
+          draggedId,
+          ...prev[target].filter((id) => id !== draggedId),
+        ];
+
+        return {
+          ...prev,
+          [source]: sourceItems,
+          [target]: targetItems,
+        };
+      });
+
+      setActiveId(null);
+    },
+    [setColumns]
+  );
 
   const renderPanelPreview = (panelId: string) => {
     const title = ORG_PANEL_TITLES[panelId] ?? panelId;
@@ -6227,8 +6227,12 @@ export default function OrganizationView() {
           <div className="relative">
             {!isPinned && (
               <div id="printable-summary" className="overflow-hidden">
-                <DndContext modifiers={[restrictToWindowEdges]}
-                  collisionDetection={closestCenter}
+                <DndContext
+                  id="org-summary-dnd"
+                  sensors={panelSensors}
+                  modifiers={[restrictToWindowEdges]}
+                  collisionDetection={closestCorners}
+                  measuring={panelMeasuringConfig}
                   onDragStart={handlePanelDragStart}
                   onDragOver={handlePanelDragOver}
                   onDragEnd={handlePanelDragEnd}
