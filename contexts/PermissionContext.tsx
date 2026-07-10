@@ -7,10 +7,12 @@ import React, {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from "react";
-import { getUser } from "@/lib/auth";
+import { usePathname } from "next/navigation";
+import { getUser, isAuthenticated } from "@/lib/auth";
 import {
   readPermissionCache,
   writePermissionCache,
@@ -86,6 +88,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   );
   const [isSuper, setIsSuper] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const pathname = usePathname();
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const userId = getUser()?.id;
@@ -94,17 +98,25 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       setPermissions(cached.permissions);
       setIsSuper(resolveIsSuper(cached.isSuper));
       setIsLoading(false);
+      lastFetchedUserIdRef.current = userId ? String(userId) : null;
       return;
     }
 
     if (inferIsSuperFromUser()) {
       setIsSuper(true);
       setIsLoading(false);
+      if (userId) {
+        lastFetchedUserIdRef.current = String(userId);
+      }
     }
   }, []);
 
   const refreshPermissions = useCallback(async () => {
     const userId = getUser()?.id;
+    if (!userId || !isAuthenticated()) {
+      return;
+    }
+
     const cached = readPermissionCache(userId);
 
     if (!cached && !inferIsSuperFromUser()) {
@@ -131,9 +143,30 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
+  // Fetch when the user becomes authenticated (e.g. client-side login navigation).
+  // Without this, permissions are fetched on the login page before cookies exist,
+  // leaving the sidebar empty until a full page refresh.
   useEffect(() => {
-    refreshPermissions();
-  }, [refreshPermissions]);
+    const userId = getUser()?.id ? String(getUser()!.id) : null;
+    const authenticated = isAuthenticated();
+
+    if (!authenticated || !userId) {
+      lastFetchedUserIdRef.current = null;
+      if (!authenticated) {
+        setPermissions({});
+        setIsSuper(false);
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (lastFetchedUserIdRef.current === userId) {
+      return;
+    }
+
+    lastFetchedUserIdRef.current = userId;
+    void refreshPermissions();
+  }, [pathname, refreshPermissions]);
 
   const getScope = useCallback(
     (code: string): PermissionScope | null => {
