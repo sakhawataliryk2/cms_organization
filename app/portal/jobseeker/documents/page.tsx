@@ -139,7 +139,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, {
   const fieldsByPage = useMemo(() => {
     const map: Record<number, MappedField[]> = {};
     for (const f of doc.mapped_fields || []) {
-      const pn = f.page_number || 1;
+      const pn = f.page_number || (f as any).page || 1;
       (map[pn] = map[pn] || []).push(f);
     }
     return map;
