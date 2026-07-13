@@ -16,6 +16,12 @@ type AvailableField = {
   field_name: string;
   field_label: string;
   is_hidden?: boolean;
+  field_type?: string;
+};
+
+type MappedFieldConfig = {
+  concat_field_names?: string[];
+  separator?: string;
 };
 
 type MappedField = {
@@ -32,7 +38,38 @@ type MappedField = {
   page: number;
   w: number;
   h: number;
+  config?: MappedFieldConfig;
 };
+
+const SYSTEM_FIELD_NAMES = new Set([
+  "signature_box",
+  "blank_box",
+  "todays_date",
+  "concat_box",
+]);
+
+function isConcatField(field: Pick<MappedField, "field_name" | "field_type">) {
+  return (
+    field.field_name === "concat_box" ||
+    String(field.field_name || "").startsWith("concat_") ||
+    field.field_type === "concat"
+  );
+}
+
+function isTodaysDateField(field: Pick<MappedField, "field_name">) {
+  return (
+    field.field_name === "todays_date" ||
+    String(field.field_name || "").startsWith("todays_date")
+  );
+}
+
+function formatTodaysDate() {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const year = today.getFullYear();
+  return `${month}/${day}/${year}`;
+}
 
 function getTokenFromCookie() {
   if (typeof document === "undefined") return "";
@@ -89,6 +126,7 @@ export default function TemplateDocEditorPage() {
         field_name: "signature_box",
         field_label: "Signature Box",
         is_hidden: false,
+        field_type: "e_signature",
       },
       {
         id: -1002,
@@ -96,10 +134,36 @@ export default function TemplateDocEditorPage() {
         field_name: "blank_box",
         field_label: "Blank Box (Variable)",
         is_hidden: false,
+        field_type: "text",
+      },
+      {
+        id: -1003,
+        entity_type: "system",
+        field_name: "todays_date",
+        field_label: "Today's Date",
+        is_hidden: false,
+        field_type: "text",
+      },
+      {
+        id: -1004,
+        entity_type: "system",
+        field_name: "concat_box",
+        field_label: "Concatenated Field (2 text fields)",
+        is_hidden: false,
+        field_type: "text",
       },
     ],
     []
   );
+
+  /** Job-seeker text fields eligible as concat sources (max 2). */
+  const concatSourceFields = useMemo(() => {
+    return availableFields.filter((f) => {
+      if (!f.field_name || SYSTEM_FIELD_NAMES.has(f.field_name)) return false;
+      const t = String(f.field_type || "text").toLowerCase();
+      return t === "text";
+    });
+  }, [availableFields]);
 
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
@@ -114,9 +178,12 @@ export default function TemplateDocEditorPage() {
       if (!response.ok) throw new Error("Failed to fetch available fields");
       const data = await response.json();
 
-      const fields = (data.customFields || []).filter(
-        (f: any) => f.is_hidden === false
-      );
+      const fields = (data.customFields || [])
+        .filter((f: any) => f.is_hidden === false)
+        .map((f: any) => ({
+          ...f,
+          field_type: f.field_type || "text",
+        }));
 
       setAvailableFields(fields);
     } catch (err: any) {
@@ -163,6 +230,10 @@ export default function TemplateDocEditorPage() {
         y: Number(r.y ?? 20),
         w: Number(r.w ?? 220),
         h: Number(r.h ?? 44),
+        config:
+          typeof r.config === "string"
+            ? JSON.parse(r.config || "{}")
+            : r.config || {},
       }));
 
       setMappedFields(mapped);
@@ -210,7 +281,7 @@ export default function TemplateDocEditorPage() {
     const f = mappedFields.find((x) => x.id === id);
     if (!f) return;
     setSelectedId(id);
-    const next = { ...f };
+    const next: MappedField = { ...f, config: { ...(f.config || {}) } };
 
     if (next.field_name === "signature_box") {
       next.field_type = "e_signature";
@@ -218,6 +289,27 @@ export default function TemplateDocEditorPage() {
 
     if (next.field_name === "blank_box") {
       if (next.field_type !== "textarea") next.field_type = "text";
+    }
+
+    if (isTodaysDateField(next)) {
+      next.field_type = "text";
+      next.is_auto_populated = true;
+    }
+
+    if (isConcatField(next)) {
+      next.field_type = "text";
+      next.is_auto_populated = true;
+      const names = Array.isArray(next.config?.concat_field_names)
+        ? next.config!.concat_field_names!.filter(Boolean).slice(0, 2)
+        : [];
+      next.config = {
+        ...next.config,
+        concat_field_names: names,
+        separator:
+          typeof next.config?.separator === "string"
+            ? next.config.separator
+            : " ",
+      };
     }
 
     setDraftField(next);
@@ -231,6 +323,25 @@ export default function TemplateDocEditorPage() {
 
   const applyDraftToState = () => {
     if (!draftField) return;
+
+    if (isConcatField(draftField)) {
+      const names = (draftField.config?.concat_field_names || [])
+        .filter(Boolean)
+        .slice(0, 2);
+      if (names.length !== 2) {
+        toast.error("Select exactly 2 text fields to concatenate");
+        return;
+      }
+      if (names[0] === names[1]) {
+        toast.error("Choose two different text fields");
+        return;
+      }
+      if (draftField.field_type !== "text") {
+        toast.error("Concatenated field type must be text");
+        return;
+      }
+    }
+
     const id = draftField.id;
     setMappedFields((prev) => prev.map((f) => (f.id === id ? draftField : f)));
     closeModal();
@@ -238,6 +349,38 @@ export default function TemplateDocEditorPage() {
 
   const updateDraft = (patch: Partial<MappedField>) => {
     setDraftField((cur) => (cur ? { ...cur, ...patch } : cur));
+  };
+
+  const updateConcatSource = (index: 0 | 1, fieldName: string) => {
+    setDraftField((cur) => {
+      if (!cur) return cur;
+      const current = [...(cur.config?.concat_field_names || [])];
+      while (current.length < 2) current.push("");
+      current[index] = fieldName;
+      const selected = current.filter(Boolean).slice(0, 2);
+      const labels = selected.map(
+        (name) =>
+          concatSourceFields.find((f) => f.field_name === name)?.field_label ||
+          name
+      );
+      return {
+        ...cur,
+        field_type: "text",
+        is_auto_populated: true,
+        field_label:
+          labels.length === 2
+            ? `${labels[0]} + ${labels[1]}`
+            : cur.field_label || "Concatenated Field",
+        config: {
+          ...(cur.config || {}),
+          concat_field_names: selected,
+          separator:
+            typeof cur.config?.separator === "string"
+              ? cur.config.separator
+              : " ",
+        },
+      };
+    });
   };
 
   const getUnscaledPageSize = () => {
@@ -278,6 +421,10 @@ export default function TemplateDocEditorPage() {
     let w = 220;
     let h = 44;
     let field_type = "text";
+    let field_name = src.field_name;
+    let field_label = src.field_label || src.field_name;
+    let is_auto_populated = false;
+    let config: MappedFieldConfig = {};
 
     if (src.field_name === "signature_box") {
       field_type = "e_signature";
@@ -287,22 +434,37 @@ export default function TemplateDocEditorPage() {
       field_type = "text";
       w = 260;
       h = 44;
+    } else if (src.field_name === "todays_date") {
+      field_type = "text";
+      is_auto_populated = true;
+      field_label = "Today's Date";
+      w = 160;
+      h = 36;
+    } else if (src.field_name === "concat_box") {
+      field_type = "text";
+      is_auto_populated = true;
+      field_name = `concat_${crypto.randomUUID().slice(0, 8)}`;
+      field_label = "Concatenated Field";
+      config = { concat_field_names: [], separator: " " };
+      w = 280;
+      h = 44;
     }
 
     const newField: MappedField = {
       id: crypto.randomUUID(),
-      field_name: src.field_name,
-      field_label: src.field_label || src.field_name,
+      field_name,
+      field_label,
       field_type,
       required: false,
       who_fills: "job_seeker",
-      is_auto_populated: false,
-      source: src.entity_type === "system" ? "external" : "custom_field",
+      is_auto_populated,
+      source: src.entity_type === "system" ? "system" : "custom_field",
       page: page,
       x,
       y,
       w,
       h,
+      config,
     };
 
     setMappedFields((p) => [...p, newField]);
@@ -397,6 +559,18 @@ export default function TemplateDocEditorPage() {
 
   const saveMapping = async () => {
     try {
+      const invalidConcat = mappedFields.find((f) => {
+        if (!isConcatField(f)) return false;
+        const names = (f.config?.concat_field_names || []).filter(Boolean);
+        return names.length !== 2 || f.field_type !== "text";
+      });
+      if (invalidConcat) {
+        toast.error(
+          `Concatenated field "${invalidConcat.field_label}" must use field type text and exactly 2 text fields`
+        );
+        return;
+      }
+
       setSaving(true);
 
       const payload = {
@@ -415,6 +589,7 @@ export default function TemplateDocEditorPage() {
           y: Math.round(f.y),
           w: Math.round(f.w),
           h: Math.round(f.h),
+          config: f.config || {},
         })),
       };
 
@@ -823,14 +998,116 @@ export default function TemplateDocEditorPage() {
                             field_type: e.target.value,
                           })
                         }
-                        className="w-full h-9 px-3 border rounded text-sm bg-white"
+                        disabled={
+                          isConcatField(draftField) ||
+                          isTodaysDateField(draftField) ||
+                          draftField.field_name === "signature_box"
+                        }
+                        className="w-full h-9 px-3 border rounded text-sm bg-white disabled:bg-gray-100 disabled:text-gray-500"
                       >
                         <option value="text">Text Input</option>
                         <option value="textarea">Text Area</option>
                         <option value="e_signature">E-Signature</option>
                         <option value="optional_note">Optional Note</option>
                       </select>
+                      {(isConcatField(draftField) ||
+                        isTodaysDateField(draftField)) && (
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          This field type is locked to text.
+                        </div>
+                      )}
                     </div>
+
+                    {isTodaysDateField(draftField) && (
+                      <div className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                        Auto-fills with today&apos;s date ({formatTodaysDate()}).
+                      </div>
+                    )}
+
+                    {isConcatField(draftField) && (
+                      <div className="space-y-3 rounded border border-gray-200 bg-gray-50 p-3">
+                        <div className="text-xs font-semibold text-gray-800">
+                          Concatenate 2 text fields (max 2)
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Field 1
+                          </label>
+                          <select
+                            value={draftField.config?.concat_field_names?.[0] || ""}
+                            onChange={(e) =>
+                              updateConcatSource(0, e.target.value)
+                            }
+                            className="w-full h-9 px-3 border rounded text-sm bg-white"
+                          >
+                            <option value="">Select text field…</option>
+                            {concatSourceFields.map((f) => (
+                              <option
+                                key={`c1-${f.field_name}`}
+                                value={f.field_name}
+                                disabled={
+                                  f.field_name ===
+                                  draftField.config?.concat_field_names?.[1]
+                                }
+                              >
+                                {f.field_label} ({f.field_name})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Field 2
+                          </label>
+                          <select
+                            value={draftField.config?.concat_field_names?.[1] || ""}
+                            onChange={(e) =>
+                              updateConcatSource(1, e.target.value)
+                            }
+                            className="w-full h-9 px-3 border rounded text-sm bg-white"
+                          >
+                            <option value="">Select text field…</option>
+                            {concatSourceFields.map((f) => (
+                              <option
+                                key={`c2-${f.field_name}`}
+                                value={f.field_name}
+                                disabled={
+                                  f.field_name ===
+                                  draftField.config?.concat_field_names?.[0]
+                                }
+                              >
+                                {f.field_label} ({f.field_name})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Separator
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              typeof draftField.config?.separator === "string"
+                                ? draftField.config.separator
+                                : " "
+                            }
+                            onChange={(e) =>
+                              updateDraft({
+                                config: {
+                                  ...(draftField.config || {}),
+                                  concat_field_names:
+                                    draftField.config?.concat_field_names || [],
+                                  separator: e.target.value,
+                                },
+                              })
+                            }
+                            className="w-full h-9 px-3 border rounded text-sm bg-white"
+                            placeholder="Space"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* RIGHT */}
