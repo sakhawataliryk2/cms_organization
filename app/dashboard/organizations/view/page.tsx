@@ -20,6 +20,7 @@ import {
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import CountdownTimer from "@/components/CountdownTimer";
+import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import {
   DndContext,
   DragOverlay,
@@ -5888,7 +5889,7 @@ export default function OrganizationView() {
     >
     <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
-      <div className="bg-gray-400 p-2 flex items-center">
+      <div className="bg-gray-400 p-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
             <HiOutlineOfficeBuilding size={24} />
@@ -5903,6 +5904,15 @@ export default function OrganizationView() {
               </div>
             )}
           </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <ZoomInfoEnrichButton
+            atsEntityType="organization"
+            atsEntityId={organization.id}
+            onEnriched={() => {
+              if (organizationId) void fetchOrganizationData(organizationId);
+            }}
+          />
         </div>
       </div>
 

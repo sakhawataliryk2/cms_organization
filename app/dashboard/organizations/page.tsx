@@ -57,6 +57,7 @@ import PermissionRouteGuard from "@/components/PermissionRouteGuard";
 import PermissionGate from "@/components/PermissionGate";
 import { useOrganizationPermissions } from "@/hooks/useOrganizationPermissions";
 import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
+import ZoomInfoCompanySearchModal from "@/components/zoominfo/ZoomInfoCompanySearchModal";
 
 interface Organization {
   record_number: number;
@@ -329,6 +330,7 @@ export default function OrganizationList() {
   // Bulk delete state
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
+  const [showZoomInfoCompanyModal, setShowZoomInfoCompanyModal] = useState(false);
   const [bulkDeleteForm, setBulkDeleteForm] = useState({ reason: "" });
   const [isSubmittingBulkDelete, setIsSubmittingBulkDelete] = useState(false);
   const [bulkDeleteResults, setBulkDeleteResults] = useState<{ success: number; failed: number; errors: { name: string; error: string }[] } | null>(null);
@@ -1568,6 +1570,16 @@ export default function OrganizationList() {
             Add
           </button>
           </PermissionGate>
+          <PermissionGate permission="integrations.zoominfo.search">
+            <button
+              type="button"
+              onClick={() => setShowZoomInfoCompanyModal(true)}
+              className="px-4 py-2 border border-indigo-300 text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100 flex items-center shrink-0 whitespace-nowrap"
+              title="Search and import companies from ZoomInfo"
+            >
+              ZoomInfo
+            </button>
+          </PermissionGate>
         </div>
         <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
           <div className="relative">
@@ -2708,6 +2720,15 @@ export default function OrganizationList() {
         entityIds={selectedOrganizations}
         entityType="organizations"
         selectedCount={selectedOrganizations.length}
+      />
+
+      <ZoomInfoCompanySearchModal
+        open={showZoomInfoCompanyModal}
+        onClose={() => setShowZoomInfoCompanyModal(false)}
+        onImported={() => {
+          organizationsQueryCacheRef.current.clear();
+          void fetchOrganizations(currentPage);
+        }}
       />
     </div>
     </PermissionRouteGuard>

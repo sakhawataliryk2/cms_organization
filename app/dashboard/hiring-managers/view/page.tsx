@@ -10,6 +10,7 @@ import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiUserCheck, FiSearch, FiPhone } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import ZoomInfoEnrichButton from '@/components/zoominfo/ZoomInfoEnrichButton';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -4190,7 +4191,7 @@ out.sort((a, b) => {
   return (
     <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with hiring manager name and buttons */}
-      <div className="bg-gray-400 p-2 flex items-center">
+      <div className="bg-gray-400 p-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
             <FiUserCheck size={20} />
@@ -4206,6 +4207,13 @@ out.sort((a, b) => {
             )
           }
         </div>
+        <ZoomInfoEnrichButton
+          atsEntityType="hiring_manager"
+          atsEntityId={hiringManager.id}
+          onEnriched={() => {
+            if (hiringManagerId) void fetchHiringManager(hiringManagerId);
+          }}
+        />
       </div>
 
       <div className="bg-white border-b border-gray-300 p-3">

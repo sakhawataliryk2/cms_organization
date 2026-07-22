@@ -16,6 +16,7 @@ import {
   toLocalDateTimeString,
 } from "@/lib/googleCalendar";
 import { FiUsers, FiX, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } from "react-icons/fi";
+import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
@@ -5032,7 +5033,7 @@ Best regards`;
   return (
     <div className="bg-gray-200 min-h-screen p-2 sm:p-4 min-w-0">
       {/* Header with job seeker name and buttons */}
-      <div className="bg-gray-400 p-2 sm:p-3 flex items-center min-w-0">
+      <div className="bg-gray-400 p-2 sm:p-3 flex items-center justify-between gap-2 min-w-0 flex-wrap">
         <div className="flex items-center min-w-0 flex-1">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2 shrink-0">
             <FiUsers size={20} />
@@ -5046,6 +5047,13 @@ Best regards`;
             )}
           </h1>
         </div>
+        <ZoomInfoEnrichButton
+          atsEntityType="job_seeker"
+          atsEntityId={jobSeeker.id}
+          onEnriched={() => {
+            if (jobSeekerId) void fetchJobSeeker(jobSeekerId);
+          }}
+        />
       </div>
 
       <div className="bg-white border-b border-gray-300 h-ful px-3 py-2 sm:px-4">
