@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "nextjs-toploader/app";
 
@@ -40,6 +40,15 @@ function PreviewSkeleton() {
   );
 }
 
+function contactLabel(item: ContactItem) {
+  return (
+    [item.firstName, item.lastName].filter(Boolean).join(" ") ||
+    item.email ||
+    item.zoominfoId ||
+    "Unnamed"
+  );
+}
+
 export default function ZoomInfoContactSearchModal({
   open,
   onClose,
@@ -53,8 +62,10 @@ export default function ZoomInfoContactSearchModal({
   const [searching, setSearching] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   const [items, setItems] = useState<ContactItem[]>([]);
   const [selected, setSelected] = useState<ContactItem | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [previewFields, setPreviewFields] = useState<PreviewField[]>([]);
   const [target, setTarget] = useState<ImportTarget>(defaultTarget);
   const [detailLevel, setDetailLevel] = useState<"basic" | "enriched">("basic");
@@ -68,11 +79,23 @@ export default function ZoomInfoContactSearchModal({
     organizationId
   );
 
+  const canBulkSelect = target === "hiring_manager";
+
+  const checkedItems = useMemo(
+    () => items.filter((i) => i.zoominfoId && checkedIds.has(String(i.zoominfoId))),
+    [items, checkedIds]
+  );
+
+  const allVisibleChecked =
+    items.length > 0 &&
+    items.every((i) => !i.zoominfoId || checkedIds.has(String(i.zoominfoId)));
+
   const reset = () => {
     setCompanyName("");
     setJobTitle("");
     setItems([]);
     setSelected(null);
+    setCheckedIds(new Set());
     setPreviewFields([]);
     setDetailLevel("basic");
     setOrgResolution(null);
@@ -80,11 +103,32 @@ export default function ZoomInfoContactSearchModal({
     setChosenOrgId(organizationId);
     setTarget(defaultTarget);
     setPreviewLoading(false);
+    setBulkProgress(null);
   };
 
   const handleClose = () => {
     reset();
     onClose();
+  };
+
+  const toggleChecked = (zoominfoId: string, next?: boolean) => {
+    setCheckedIds((prev) => {
+      const copy = new Set(prev);
+      const shouldCheck = next ?? !copy.has(zoominfoId);
+      if (shouldCheck) copy.add(zoominfoId);
+      else copy.delete(zoominfoId);
+      return copy;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allVisibleChecked) {
+      setCheckedIds(new Set());
+      return;
+    }
+    setCheckedIds(
+      new Set(items.map((i) => i.zoominfoId).filter(Boolean).map(String))
+    );
   };
 
   const search = useCallback(async () => {
@@ -94,8 +138,10 @@ export default function ZoomInfoContactSearchModal({
     }
     setSearching(true);
     setSelected(null);
+    setCheckedIds(new Set());
     setPreviewFields([]);
     setPreviewLoading(false);
+    setBulkProgress(null);
     try {
       const res = await fetch("/api/zoominfo/search", {
         method: "POST",
@@ -132,13 +178,15 @@ export default function ZoomInfoContactSearchModal({
       toast.error("Missing ZoomInfo contact id");
       return;
     }
-    // Open details panel immediately with skeleton, then fill in
     setSelected(item);
     setTarget(nextTarget);
     setDetailLevel(level);
     setPreviewFields([]);
     setOrgResolution(null);
     setPreviewLoading(true);
+    if (nextTarget !== "hiring_manager") {
+      setCheckedIds(new Set());
+    }
     try {
       const res = await fetch("/api/zoominfo/preview", {
         method: "POST",
@@ -171,35 +219,41 @@ export default function ZoomInfoContactSearchModal({
     }
   };
 
+  const importOne = async (item: ContactItem) => {
+    const res = await fetch("/api/zoominfo/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entity: "contact",
+        zoominfoId: item.zoominfoId,
+        target,
+        resolution: "create",
+        searchItem: item,
+        organizationId: chosenOrgId || undefined,
+        createOrganizationIfMissing:
+          target === "hiring_manager" ? createOrgIfMissing : false,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      const err = new Error(data.message || "Import failed") as Error & {
+        needsOrganization?: boolean;
+        orgResolution?: unknown;
+        data?: unknown;
+      };
+      err.needsOrganization = Boolean(data.needsOrganization);
+      err.orgResolution = data.orgResolution;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  };
+
   const importContact = async () => {
     if (!selected?.zoominfoId) return;
     setImporting(true);
     try {
-      const res = await fetch("/api/zoominfo/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity: "contact",
-          zoominfoId: selected.zoominfoId,
-          target,
-          resolution: "create",
-          searchItem: selected,
-          organizationId: chosenOrgId || undefined,
-          createOrganizationIfMissing:
-            target === "hiring_manager" ? createOrgIfMissing : false,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        if (data.needsOrganization) {
-          setOrgResolution(data.orgResolution || { status: "not_found" });
-          toast.error(
-            "Link or create an organization before importing this hiring manager"
-          );
-          return;
-        }
-        throw new Error(data.message || "Import failed");
-      }
+      const data = await importOne(selected);
       toast.success(
         target === "candidate"
           ? "Candidate imported from ZoomInfo contact"
@@ -215,9 +269,79 @@ export default function ZoomInfoContactSearchModal({
         );
       }
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Import failed");
+      const err = e as Error & {
+        needsOrganization?: boolean;
+        orgResolution?: { status?: string };
+      };
+      if (err.needsOrganization) {
+        setOrgResolution(err.orgResolution || { status: "not_found" });
+        toast.error(
+          "Link or create an organization before importing this hiring manager"
+        );
+      } else {
+        toast.error(err.message || "Import failed");
+      }
     } finally {
       setImporting(false);
+    }
+  };
+
+  const importSelectedHiringManagers = async () => {
+    if (!canBulkSelect || checkedItems.length === 0) return;
+
+    const ok = window.confirm(
+      `Import ${checkedItems.length} hiring manager${checkedItems.length === 1 ? "" : "s"} from ZoomInfo?`
+    );
+    if (!ok) return;
+
+    setImporting(true);
+    let success = 0;
+    const failures: string[] = [];
+
+    try {
+      for (let i = 0; i < checkedItems.length; i++) {
+        const item = checkedItems[i];
+        setBulkProgress(`Importing ${i + 1} of ${checkedItems.length}…`);
+        try {
+          await importOne(item);
+          success += 1;
+        } catch (e: unknown) {
+          const err = e as Error & { needsOrganization?: boolean };
+          if (err.needsOrganization) {
+            setOrgResolution(
+              (err as { orgResolution?: { status?: string } }).orgResolution || {
+                status: "not_found",
+              }
+            );
+            failures.push(
+              `${contactLabel(item)}: link/create organization first`
+            );
+            // Stop early — remaining will hit the same org issue
+            break;
+          }
+          failures.push(
+            `${contactLabel(item)}: ${err instanceof Error ? err.message : "failed"}`
+          );
+        }
+      }
+
+      if (success > 0 && failures.length === 0) {
+        toast.success(
+          `Imported ${success} hiring manager${success === 1 ? "" : "s"}`
+        );
+        handleClose();
+        router.push("/dashboard/hiring-managers");
+      } else if (success > 0) {
+        toast.warning(
+          `Imported ${success}; ${failures.length} failed. ${failures[0] || ""}`
+        );
+        setCheckedIds(new Set());
+      } else {
+        toast.error(failures[0] || "Bulk import failed");
+      }
+    } finally {
+      setImporting(false);
+      setBulkProgress(null);
     }
   };
 
@@ -232,7 +356,9 @@ export default function ZoomInfoContactSearchModal({
               Search ZoomInfo Contacts
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Import as Hiring Manager or Candidate (same ZoomInfo Contact API)
+              {canBulkSelect
+                ? "Select multiple contacts to import as hiring managers"
+                : "Import as Hiring Manager or Candidate"}
             </p>
           </div>
           <button
@@ -269,27 +395,73 @@ export default function ZoomInfoContactSearchModal({
             {searching ? "Searching…" : "Search contacts"}
           </button>
 
-          <div className="border rounded divide-y max-h-56 overflow-y-auto">
-            {items.map((item) => (
+          {canBulkSelect && items.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <label className="flex items-center gap-2 text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={allVisibleChecked}
+                  onChange={toggleSelectAll}
+                  disabled={importing}
+                />
+                Select all ({items.length})
+              </label>
               <button
-                key={item.zoominfoId || `${item.firstName}-${item.lastName}`}
                 type="button"
-                onClick={() => loadPreview(item, "basic")}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
-                  selected?.zoominfoId === item.zoominfoId ? "bg-blue-50" : ""
-                }`}
+                disabled={importing || checkedItems.length === 0}
+                onClick={importSelectedHiringManagers}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
               >
-                <div className="font-medium text-gray-900">
-                  {[item.firstName, item.lastName].filter(Boolean).join(" ") ||
-                    "Unnamed"}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {[item.title, item.company?.name, item.email]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
+                {importing && bulkProgress
+                  ? bulkProgress
+                  : `Import selected (${checkedItems.length})`}
               </button>
-            ))}
+            </div>
+          )}
+
+          <div className="border rounded divide-y max-h-56 overflow-y-auto">
+            {items.map((item) => {
+              const id = item.zoominfoId ? String(item.zoominfoId) : "";
+              const isChecked = id ? checkedIds.has(id) : false;
+              const isSelected = selected?.zoominfoId === item.zoominfoId;
+              return (
+                <div
+                  key={id || `${item.firstName}-${item.lastName}`}
+                  className={`flex items-start gap-2 px-3 py-2 text-sm hover:bg-blue-50 ${
+                    isSelected ? "bg-blue-50" : ""
+                  }`}
+                >
+                  {canBulkSelect && (
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={isChecked}
+                      disabled={!id || importing}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        if (id) toggleChecked(id, e.target.checked);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${contactLabel(item)}`}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => loadPreview(item, "basic")}
+                    className="flex-1 text-left"
+                  >
+                    <div className="font-medium text-gray-900">
+                      {contactLabel(item)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {[item.title, item.company?.name, item.email]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </button>
+                </div>
+              );
+            })}
             {!items.length && !searching && (
               <div className="px-3 py-6 text-sm text-gray-400 text-center">
                 Search for contacts to begin
@@ -306,7 +478,7 @@ export default function ZoomInfoContactSearchModal({
                     <input
                       type="radio"
                       checked={target === "hiring_manager"}
-                      disabled={previewLoading}
+                      disabled={previewLoading || importing}
                       onChange={() =>
                         loadPreview(selected, detailLevel, "hiring_manager")
                       }
@@ -318,7 +490,7 @@ export default function ZoomInfoContactSearchModal({
                       <input
                         type="radio"
                         checked={target === "candidate"}
-                        disabled={previewLoading}
+                        disabled={previewLoading || importing}
                         onChange={() =>
                           loadPreview(selected, detailLevel, "candidate")
                         }
@@ -331,7 +503,7 @@ export default function ZoomInfoContactSearchModal({
 
               <button
                 type="button"
-                disabled={previewLoading || detailLevel === "enriched"}
+                disabled={previewLoading || detailLevel === "enriched" || importing}
                 onClick={() => loadPreview(selected, "enriched")}
                 className="text-xs px-2 py-1 border rounded bg-white hover:bg-gray-100 disabled:opacity-50"
               >
@@ -392,14 +564,26 @@ export default function ZoomInfoContactSearchModal({
                 </div>
               )}
 
-              <button
-                type="button"
-                disabled={importing || previewLoading}
-                onClick={importContact}
-                className="px-3 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
-              >
-                {importing ? "Importing…" : "Import"}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={importing || previewLoading}
+                  onClick={importContact}
+                  className="px-3 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
+                >
+                  {importing && !bulkProgress ? "Importing…" : "Import this one"}
+                </button>
+                {canBulkSelect && checkedItems.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={importing || previewLoading}
+                    onClick={importSelectedHiringManagers}
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white disabled:opacity-50"
+                  >
+                    Import selected ({checkedItems.length})
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

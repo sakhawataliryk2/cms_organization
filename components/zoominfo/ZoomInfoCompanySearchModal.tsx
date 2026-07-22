@@ -36,13 +36,23 @@ function PreviewSkeleton() {
   );
 }
 
+function normalizeWebsiteQuery(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split("/")[0]
+    .trim();
+}
+
 export default function ZoomInfoCompanySearchModal({
   open,
   onClose,
   onImported,
 }: Props) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [website, setWebsite] = useState("");
   const [searching, setSearching] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -56,7 +66,8 @@ export default function ZoomInfoCompanySearchModal({
   } | null>(null);
 
   const reset = () => {
-    setQuery("");
+    setCompanyName("");
+    setWebsite("");
     setItems([]);
     setSelected(null);
     setPreviewFields([]);
@@ -71,8 +82,10 @@ export default function ZoomInfoCompanySearchModal({
   };
 
   const search = useCallback(async () => {
-    if (!query.trim()) {
-      toast.error("Enter a company name");
+    const name = companyName.trim();
+    const site = normalizeWebsiteQuery(website);
+    if (!name && !site) {
+      toast.error("Enter a company name or website");
       return;
     }
     setSearching(true);
@@ -86,7 +99,10 @@ export default function ZoomInfoCompanySearchModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           entity: "company",
-          filters: { companyName: query.trim() },
+          filters: {
+            companyName: name || undefined,
+            website: site || undefined,
+          },
           page: 1,
           pageSize: 25,
         }),
@@ -102,7 +118,7 @@ export default function ZoomInfoCompanySearchModal({
     } finally {
       setSearching(false);
     }
-  }, [query]);
+  }, [companyName, website]);
 
   const loadPreview = async (
     item: CompanyItem,
@@ -112,7 +128,6 @@ export default function ZoomInfoCompanySearchModal({
       toast.error("Missing ZoomInfo company id");
       return;
     }
-    // Open details panel immediately with skeleton, then fill in
     setSelected(item);
     setPreviewFields([]);
     setDuplicates(null);
@@ -208,7 +223,7 @@ export default function ZoomInfoCompanySearchModal({
               Search ZoomInfo Companies
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Not Zoom Phone — company data from ZoomInfo Sales Professional
+              Search by company name and/or website
             </p>
           </div>
           <button
@@ -221,23 +236,30 @@ export default function ZoomInfoCompanySearchModal({
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
               placeholder="Company name…"
-              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+              className="border border-gray-300 rounded px-3 py-2 text-sm"
             />
-            <button
-              type="button"
-              onClick={search}
-              disabled={searching}
-              className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-            >
-              {searching ? "Searching…" : "Search"}
-            </button>
+            <input
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && search()}
+              placeholder="Website (e.g. acme.com)…"
+              className="border border-gray-300 rounded px-3 py-2 text-sm"
+            />
           </div>
+          <button
+            type="button"
+            onClick={search}
+            disabled={searching}
+            className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {searching ? "Searching…" : "Search"}
+          </button>
 
           <div className="border rounded divide-y max-h-56 overflow-y-auto">
             {items.map((item) => (
@@ -261,7 +283,7 @@ export default function ZoomInfoCompanySearchModal({
             ))}
             {!items.length && !searching && (
               <div className="px-3 py-6 text-sm text-gray-400 text-center">
-                Search for a company to begin
+                Search by name or website to begin
               </div>
             )}
           </div>
