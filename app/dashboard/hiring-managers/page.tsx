@@ -37,6 +37,8 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
+import ZoomInfoContactSearchModal from "@/components/zoominfo/ZoomInfoContactSearchModal";
+import PermissionGate from "@/components/PermissionGate";
 
 interface HiringManager {
   id: string;
@@ -111,6 +113,7 @@ export default function HiringManagerList() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
+  const [showZoomInfoContactModal, setShowZoomInfoContactModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<any>(null);
 
   // Favorites State
@@ -1042,6 +1045,16 @@ export default function HiringManagerList() {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
             Add
           </button>
+          <PermissionGate permission="integrations.zoominfo.search">
+            <button
+              type="button"
+              onClick={() => setShowZoomInfoContactModal(true)}
+              className="px-4 py-2 border border-indigo-300 text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100 flex items-center"
+              title="Search ZoomInfo contacts and import as Hiring Manager"
+            >
+              ZoomInfo
+            </button>
+          </PermissionGate>
         </div>
 
         {selectedHiringManagers.length > 0 && (
@@ -1612,6 +1625,13 @@ export default function HiringManagerList() {
         entityIds={selectedHiringManagers}
         entityType="hiring-managers"
         selectedCount={selectedHiringManagers.length}
+      />
+
+      <ZoomInfoContactSearchModal
+        open={showZoomInfoContactModal}
+        onClose={() => setShowZoomInfoContactModal(false)}
+        defaultTarget="hiring_manager"
+        allowCandidate={false}
       />
     </div>
     </ModuleListGuard>

@@ -1235,7 +1235,7 @@ export default function DataUploader() {
                 return str;
             };
 
-            const headers = fields.map(f => escapeCSV(f.field_label));
+            const headers = ['Record Number', ...fields.map(f => escapeCSV(f.field_label))];
             const csvContent = headers.join(',') + '\n';
 
             // Create a blob and download
