@@ -73,8 +73,22 @@ export default function ZoomInfoContactSearchModal({
     status?: string;
     organization?: { id: number; name: string } | null;
     matches?: Array<{ id: number; name: string }>;
+    companyName?: string | null;
+    companyApiId?: string | null;
+    canCreateOrganization?: boolean;
   } | null>(null);
   const [createOrgIfMissing, setCreateOrgIfMissing] = useState(false);
+  const [duplicates, setDuplicates] = useState<{
+    recordNumber?: Array<{
+      id: number;
+      name?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string | null;
+      title?: string | null;
+      record_number?: number;
+    }>;
+  } | null>(null);
   const [chosenOrgId, setChosenOrgId] = useState<number | string | null>(
     organizationId
   );
@@ -99,6 +113,7 @@ export default function ZoomInfoContactSearchModal({
     setPreviewFields([]);
     setDetailLevel("basic");
     setOrgResolution(null);
+    setDuplicates(null);
     setCreateOrgIfMissing(false);
     setChosenOrgId(organizationId);
     setTarget(defaultTarget);
@@ -160,6 +175,8 @@ export default function ZoomInfoContactSearchModal({
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Search failed");
       }
+      // Clear stale selection preview when searching again
+      setDuplicates(null);
       setItems(data.items || []);
       if (!(data.items || []).length) toast.message("No contacts found");
     } catch (e: unknown) {
@@ -183,6 +200,7 @@ export default function ZoomInfoContactSearchModal({
     setDetailLevel(level);
     setPreviewFields([]);
     setOrgResolution(null);
+    setDuplicates(null);
     setPreviewLoading(true);
     if (nextTarget !== "hiring_manager") {
       setCheckedIds(new Set());
@@ -206,6 +224,7 @@ export default function ZoomInfoContactSearchModal({
       }
       setPreviewFields(data.mapped?.previewFields || []);
       setOrgResolution(data.orgResolution || null);
+      setDuplicates(data.duplicates || null);
       if (data.orgResolution?.organization?.id) {
         setChosenOrgId(data.orgResolution.organization.id);
       }
@@ -219,7 +238,11 @@ export default function ZoomInfoContactSearchModal({
     }
   };
 
-  const importOne = async (item: ContactItem) => {
+  const importOne = async (
+    item: ContactItem,
+    resolution: "create" | "merge" = "create",
+    existingRecordId?: number | null
+  ) => {
     const res = await fetch("/api/zoominfo/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -227,14 +250,31 @@ export default function ZoomInfoContactSearchModal({
         entity: "contact",
         zoominfoId: item.zoominfoId,
         target,
-        resolution: "create",
+        resolution,
         searchItem: item,
         organizationId: chosenOrgId || undefined,
-        createOrganizationIfMissing:
-          target === "hiring_manager" ? createOrgIfMissing : false,
+        createOrganizationIfMissing: createOrgIfMissing,
+        existingRecordId:
+          resolution === "merge"
+            ? existingRecordId || duplicates?.recordNumber?.[0]?.id || null
+            : null,
       }),
     });
     const data = await res.json();
+    if (data.needsDuplicateDecision) {
+      setDuplicates(data.duplicates || null);
+      const err = new Error(
+        "This ZoomInfo contact already exists in ATS — choose merge"
+      ) as Error & {
+        needsDuplicateDecision?: boolean;
+        duplicates?: unknown;
+        data?: unknown;
+      };
+      err.needsDuplicateDecision = true;
+      err.duplicates = data.duplicates;
+      err.data = data;
+      throw err;
+    }
     if (!res.ok || !data.success) {
       const err = new Error(data.message || "Import failed") as Error & {
         needsOrganization?: boolean;
@@ -249,15 +289,36 @@ export default function ZoomInfoContactSearchModal({
     return data;
   };
 
-  const importContact = async () => {
+  const importContact = async (resolution: "create" | "merge" = "create") => {
     if (!selected?.zoominfoId) return;
+    if (
+      resolution === "create" &&
+      (duplicates?.recordNumber?.length || 0) > 0
+    ) {
+      toast.error(
+        "This contact already exists (same ZoomInfo / record number). Use Merge instead."
+      );
+      return;
+    }
     setImporting(true);
     try {
-      const data = await importOne(selected);
+      const data = await importOne(
+        selected,
+        resolution,
+        duplicates?.recordNumber?.[0]?.id || null
+      );
       toast.success(
-        target === "candidate"
-          ? "Candidate imported from ZoomInfo contact"
-          : "Hiring manager imported from ZoomInfo"
+        resolution === "merge"
+          ? target === "candidate"
+            ? "Candidate merged from ZoomInfo"
+            : "Hiring manager merged from ZoomInfo"
+          : data.organizationCreatedFromZoomInfo
+            ? target === "candidate"
+              ? "Candidate imported — organization created from ZoomInfo"
+              : "Hiring manager imported — organization created from ZoomInfo"
+            : target === "candidate"
+              ? "Candidate imported from ZoomInfo contact"
+              : "Hiring manager imported from ZoomInfo"
       );
       const id = data.record?.id;
       handleClose();
@@ -271,9 +332,14 @@ export default function ZoomInfoContactSearchModal({
     } catch (e: unknown) {
       const err = e as Error & {
         needsOrganization?: boolean;
+        needsDuplicateDecision?: boolean;
         orgResolution?: { status?: string };
       };
-      if (err.needsOrganization) {
+      if (err.needsDuplicateDecision) {
+        toast.error(
+          "Duplicate found — use Merge into existing"
+        );
+      } else if (err.needsOrganization) {
         setOrgResolution(err.orgResolution || { status: "not_found" });
         toast.error(
           "Link or create an organization before importing this hiring manager"
@@ -303,7 +369,26 @@ export default function ZoomInfoContactSearchModal({
         const item = checkedItems[i];
         setBulkProgress(`Importing ${i + 1} of ${checkedItems.length}…`);
         try {
-          await importOne(item);
+          // Prefer merge when this ZoomInfo id already exists as record_number
+          let resolution: "create" | "merge" = "create";
+          let existingId: number | null = null;
+          try {
+            await importOne(item, "create");
+          } catch (firstErr: unknown) {
+            const fe = firstErr as Error & {
+              needsDuplicateDecision?: boolean;
+              duplicates?: {
+                recordNumber?: Array<{ id: number }>;
+              };
+            };
+            if (fe.needsDuplicateDecision && fe.duplicates?.recordNumber?.[0]?.id) {
+              existingId = fe.duplicates.recordNumber[0].id;
+              resolution = "merge";
+              await importOne(item, "merge", existingId);
+            } else {
+              throw firstErr;
+            }
+          }
           success += 1;
         } catch (e: unknown) {
           const err = e as Error & { needsOrganization?: boolean };
@@ -447,7 +532,7 @@ export default function ZoomInfoContactSearchModal({
                   )}
                   <button
                     type="button"
-                    onClick={() => loadPreview(item, "basic")}
+                    onClick={() => loadPreview(item, "enriched")}
                     className="flex-1 text-left"
                   >
                     <div className="font-medium text-gray-900">
@@ -511,7 +596,7 @@ export default function ZoomInfoContactSearchModal({
                   ? "Enriched"
                   : previewLoading
                     ? "Loading…"
-                    : "Load enriched details (credits)"}
+                    : "Reload enriched details"}
               </button>
 
               {previewLoading ? (
@@ -527,14 +612,17 @@ export default function ZoomInfoContactSearchModal({
                 </dl>
               )}
 
-              {!previewLoading && target === "hiring_manager" && (
+              {!previewLoading &&
+                (target === "hiring_manager" || target === "candidate") && (
                 <div className="text-xs space-y-2 border-t pt-2">
                   <div>
                     Org resolution:{" "}
                     <strong>{orgResolution?.status || "unknown"}</strong>
                     {orgResolution?.organization?.name
                       ? ` → ${orgResolution.organization.name}`
-                      : ""}
+                      : orgResolution?.companyName
+                        ? ` → ${orgResolution.companyName}`
+                        : ""}
                   </div>
                   {(orgResolution?.matches?.length || 0) > 1 && (
                     <select
@@ -550,29 +638,82 @@ export default function ZoomInfoContactSearchModal({
                       ))}
                     </select>
                   )}
-                  {(orgResolution?.status === "not_found" ||
-                    orgResolution?.status === "ambiguous") && (
-                    <label className="flex items-center gap-2">
+                  {(orgResolution?.status === "can_create_from_zoominfo" ||
+                    orgResolution?.canCreateOrganization) && (
+                    <label className="flex items-start gap-2 text-xs text-gray-800 bg-blue-50 border border-blue-200 rounded p-2 cursor-pointer">
                       <input
                         type="checkbox"
+                        className="mt-0.5"
                         checked={createOrgIfMissing}
                         onChange={(e) => setCreateOrgIfMissing(e.target.checked)}
+                        disabled={importing}
                       />
-                      Create organization from company if missing
+                      <span>
+                        Create organization from ZoomInfo if missing
+                        {orgResolution?.companyApiId
+                          ? ` (company id ${orgResolution.companyApiId})`
+                          : ""}
+                        {orgResolution?.companyName
+                          ? ` — ${orgResolution.companyName}`
+                          : ""}
+                        . Uses 1 enrich credit when checked.
+                      </span>
                     </label>
                   )}
+                  {orgResolution?.status === "not_found" &&
+                    !orgResolution?.canCreateOrganization && (
+                      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                        No ZoomInfo company id available — organization name will
+                        be stored as text if present.
+                      </div>
+                    )}
                 </div>
               )}
+
+              {!previewLoading &&
+                (duplicates?.recordNumber?.length || 0) > 0 && (
+                  <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                    Already in ATS:{" "}
+                    <strong>
+                      {duplicates?.recordNumber?.[0]?.name ||
+                        `#${duplicates?.recordNumber?.[0]?.record_number}`}
+                    </strong>
+                    {duplicates?.recordNumber?.[0]?.email
+                      ? ` (${duplicates.recordNumber[0].email})`
+                      : ""}
+                    . Record number / ZoomInfo id matches — use merge to update
+                    empty fields.
+                  </div>
+                )}
 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  disabled={importing || previewLoading}
-                  onClick={importContact}
+                  disabled={
+                    importing ||
+                    previewLoading ||
+                    (duplicates?.recordNumber?.length || 0) > 0
+                  }
+                  onClick={() => importContact("create")}
                   className="px-3 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
                 >
-                  {importing && !bulkProgress ? "Importing…" : "Import this one"}
+                  {importing && !bulkProgress
+                    ? "Importing…"
+                    : target === "candidate"
+                      ? "Create candidate"
+                      : "Create hiring manager"}
                 </button>
+                {!previewLoading &&
+                  (duplicates?.recordNumber?.length || 0) > 0 && (
+                    <button
+                      type="button"
+                      disabled={importing}
+                      onClick={() => importContact("merge")}
+                      className="px-3 py-2 border border-gray-300 rounded text-sm bg-white disabled:opacity-50"
+                    >
+                      Merge into existing
+                    </button>
+                  )}
                 {canBulkSelect && checkedItems.length > 1 && (
                   <button
                     type="button"

@@ -266,7 +266,7 @@ export default function ZoomInfoCompanySearchModal({
               <button
                 key={item.zoominfoId || item.name || Math.random()}
                 type="button"
-                onClick={() => loadPreview(item, "basic")}
+                onClick={() => loadPreview(item, "enriched")}
                 className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
                   selected?.zoominfoId === item.zoominfoId ? "bg-blue-50" : ""
                 }`}
@@ -302,7 +302,7 @@ export default function ZoomInfoCompanySearchModal({
                     ? "Enriched"
                     : previewLoading
                       ? "Loading…"
-                      : "Load enriched details"}
+                      : "Reload enriched details"}
                 </button>
               </div>
               {previewLoading ? (
