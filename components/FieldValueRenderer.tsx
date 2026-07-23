@@ -204,6 +204,32 @@ function isDateFieldOrValue(label?: string, key?: string, value?: string): boole
   return hasDateInName || looksLikeDate;
 }
 
+/**
+ * True only when the whole value is a standalone URL.
+ * Avoids treating HTML/descriptions that merely contain "https://" (or start with a
+ * bogus "https://<p>...") as links.
+ */
+function looksLikeStandaloneUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  // Real URLs are a single token; HTML/descriptions have spaces or tags
+  if (/\s/.test(trimmed) || /[<>]/.test(trimmed)) return false;
+  if (!/^(https?:\/\/|www\.)/i.test(trimmed)) return false;
+
+  const candidate = /^www\./i.test(trimmed) ? `https://${trimmed}` : trimmed;
+  try {
+    const url = new URL(candidate);
+    return Boolean(url.hostname && url.hostname.includes("."));
+  } catch {
+    return false;
+  }
+}
+
+/** Strip a leading protocol wrongly glued onto HTML (e.g. "https://<p>..."). */
+function stripBogusProtocolBeforeHtml(value: string): string {
+  return value.replace(/^https?:\/\/(?=\s*<)/i, "");
+}
+
 // Checks if field is Full Address
 const isAddressField = (label?: string): boolean => {
   const normalize = (value?: string): string =>
@@ -609,18 +635,16 @@ export default function FieldValueRenderer({
   }
 
 
-  // URL / link
+  // URL / link — only explicit url/link fields or a standalone URL value
+  // (do not use .includes("https://"); that mis-classifies HTML descriptions)
   const isUrl =
     fieldType === "url" ||
     fieldType === "link" ||
-    str.toLowerCase().includes("http://") ||
-    str.toLowerCase().includes("https://") ||
-    str.toLowerCase().startsWith("http") ||
-    str.toLowerCase().startsWith("https") ||
-    str.toLowerCase().startsWith("www.");
+    looksLikeStandaloneUrl(str);
 
   // Universal long-text behavior: show icon + modal for values longer than 100 chars
   if (!isUrl && rawTextLength > 100) {
+    const modalContent = stripBogusProtocolBeforeHtml(rawOriginal);
     return (
       <>
         <Tooltip text="Click to view full content">
@@ -638,7 +662,7 @@ export default function FieldValueRenderer({
         <DescriptionModal
           isOpen={isDescriptionModalOpen}
           onClose={() => setIsDescriptionModalOpen(false)}
-          content={rawOriginal}
+          content={modalContent}
           title={fieldInfo?.label || "Details"}
         />
       </>
