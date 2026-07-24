@@ -107,6 +107,50 @@ function getProxyUrl(url: string): string {
   return `/api/documents/proxy?url=${encodeURIComponent(url)}`;
 }
 
+function isSignatureField(field: {
+  field_name?: string;
+  field_type?: string;
+}) {
+  const t = String(field.field_type || "").toLowerCase();
+  const n = String(field.field_name || "").toLowerCase();
+  return (
+    t === "e_signature" ||
+    t === "signature" ||
+    n === "signature_box" ||
+    n === "e_signature" ||
+    n === "signature"
+  );
+}
+
+function renderSignatureOrText(value: string) {
+  const val = String(value || "");
+  if (!val) return null;
+  if (val.startsWith("data:image")) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={val} alt="Signature" className="w-full h-full object-contain" />
+    );
+  }
+  if (val.startsWith("text:")) {
+    return (
+      <span className="font-serif italic text-base text-gray-900">
+        {val.replace(/^text:/, "")}
+      </span>
+    );
+  }
+  // Long data URLs without proper prefix — avoid dumping raw base64
+  if (val.length > 120 && (val.includes("base64") || val.startsWith("iVBOR"))) {
+    return <span className="text-xs text-gray-400 italic">Signature on file</span>;
+  }
+  return <span className="whitespace-pre-wrap break-words">{val}</span>;
+}
+
+async function dataUrlToBytes(dataUrl: string): Promise<Uint8Array> {
+  const res = await fetch(dataUrl);
+  const buf = await res.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
 function MappedPdfPreview({
   approval,
   submittedMap,
@@ -117,9 +161,100 @@ function MappedPdfPreview({
   const [numPages, setNumPages] = useState(0);
   const [pageDims, setPageDims] = useState<Record<number, { w: number; h: number }>>({});
   const [renderWidth, setRenderWidth] = useState(760);
+  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!approval.file_url) {
+      setPdfObjectUrl(null);
+      setPdfError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const directUrl = String(approval.file_url).trim();
+    const proxyUrl = getProxyUrl(directUrl);
+
+    (async () => {
+      setPdfLoading(true);
+      setPdfError(null);
+      setPdfObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setNumPages(0);
+      setPageDims({});
+
+      try {
+        let blob: Blob | null = null;
+
+        // Prefer direct public blob (CORS *), then staff proxy
+        if (/^https?:\/\//i.test(directUrl)) {
+          try {
+            const res = await fetch(directUrl, {
+              cache: "no-store",
+              mode: "cors",
+              signal: controller.signal,
+            });
+            if (res.ok && res.status !== 204) {
+              const b = await res.blob();
+              if (b.size > 0) blob = b;
+            }
+          } catch {
+            // fall through to proxy
+          }
+        }
+
+        if (!blob) {
+          const res = await fetch(proxyUrl, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (!res.ok || res.status === 204) {
+            throw new Error(`Failed to load PDF (${res.status})`);
+          }
+          const b = await res.blob();
+          if (!b.size) throw new Error("PDF file is empty");
+          blob = b;
+        }
+
+        if (cancelled) return;
+        const pdfBlob = blob.type.includes("pdf")
+          ? blob
+          : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
+        setPdfObjectUrl(URL.createObjectURL(pdfBlob));
+      } catch (e: unknown) {
+        if (cancelled || (e instanceof DOMException && e.name === "AbortError")) return;
+        setPdfError(e instanceof Error ? e.message : "Failed to load PDF preview");
+      } finally {
+        if (!cancelled) setPdfLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [approval.file_url, approval.item_id]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfObjectUrl) URL.revokeObjectURL(pdfObjectUrl);
+    };
+  }, [pdfObjectUrl]);
 
   if (!approval.file_url) {
     return <div className="text-sm text-gray-500">No template PDF available for preview.</div>;
+  }
+
+  if (pdfLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading document preview...</div>;
+  }
+
+  if (pdfError || !pdfObjectUrl) {
+    return <div className="p-6 text-sm text-red-600">{pdfError || "Failed to load PDF preview"}</div>;
   }
 
   return (
@@ -127,10 +262,10 @@ function MappedPdfPreview({
       <div className="mb-2 text-xs text-gray-600">Mapped PDF preview (read-only)</div>
       <div className="max-h-[60vh] overflow-auto">
         <Document
-          file={getProxyUrl(approval.file_url)}
+          file={pdfObjectUrl}
           onLoadSuccess={({ numPages: n }) => setNumPages(n)}
           onLoadError={() => toast.error("Failed to load PDF preview")}
-          loading={<div className="p-6 text-sm text-gray-500">Loading document preview...</div>}
+          loading={<div className="p-6 text-sm text-gray-500">Rendering document preview...</div>}
         >
           {Array.from({ length: numPages }, (_, i) => {
             const pageNumber = i + 1;
@@ -149,32 +284,38 @@ function MappedPdfPreview({
                   width={renderWidth}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
-                  onLoadSuccess={(page) => {
-                    setPageDims((prev) => ({
-                      ...prev,
+                  onLoadSuccess={(page) =>
+                    setPageDims((p) => ({
+                      ...p,
                       [pageNumber]: { w: page.originalWidth, h: page.originalHeight },
-                    }));
-                  }}
+                    }))
+                  }
                 />
                 {dim &&
                   fields.map((field, idx) => {
-                    const fieldName = field.field_name;
-                    const value = submittedMap[fieldName] ?? "";
+                    const key = field.field_name || String(idx);
+                    let val = submittedMap[key] || "";
+                    // Fallback: signature stored under e_signature / signature table
+                    if (!val && isSignatureField(field)) {
+                      val =
+                        submittedMap.e_signature ||
+                        submittedMap.signature_box ||
+                        submittedMap.signature ||
+                        "";
+                    }
                     return (
                       <div
-                        key={`${pageNumber}-${fieldName}-${idx}`}
+                        key={`${key}-${idx}`}
+                        className="absolute overflow-hidden text-[10px] leading-tight px-0.5 bg-yellow-100/70 border border-yellow-400/60 flex items-center justify-center"
                         style={{
-                          position: "absolute",
-                          left: Number(field.x || 0) * scaleX,
-                          top: Number(field.y || 0) * scaleY,
-                          width: Math.max(60, Number(field.w || 120) * scaleX),
-                          minHeight: Math.max(20, Number(field.h || 24) * scaleY),
-                          zIndex: 10 + idx,
+                          left: field.x * scaleX,
+                          top: field.y * scaleY,
+                          width: field.w * scaleX,
+                          height: field.h * scaleY,
                         }}
-                        className="border border-gray-400 bg-transparent text-[14px] font-medium text-black px-1 py-0.5 overflow-hidden whitespace-pre-wrap"
                         title={field.field_label || field.field_name}
                       >
-                        {value || " "}
+                        {renderSignatureOrText(val)}
                       </div>
                     );
                   })}
@@ -260,11 +401,15 @@ export default function OnboardingApprovalsPage() {
   const submittedMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     (selectedApproval?.submission?.submitted_fields || []).forEach((f) => {
-      const name = String((f as any).field_name || "");
+      const name = String((f as any).field_name || (f as any).name || "").trim();
+      if (!name) return;
       map[name] = String((f as any).value ?? "");
     });
-    if (selectedApproval?.signature?.signature_value) {
-      map.e_signature = selectedApproval.signature.signature_value;
+    const sig = selectedApproval?.signature?.signature_value;
+    if (sig) {
+      map.e_signature = map.e_signature || sig;
+      map.signature_box = map.signature_box || sig;
+      map.signature = map.signature || sig;
     }
     return map;
   }, [selectedApproval]);
@@ -348,7 +493,14 @@ export default function OnboardingApprovalsPage() {
       }
 
       for (const field of approval.mapped_fields || []) {
-        const rawValue = submitted[field.field_name] ?? "";
+        let rawValue = submitted[field.field_name] ?? "";
+        if (!rawValue && isSignatureField(field)) {
+          rawValue =
+            submitted.e_signature ||
+            submitted.signature_box ||
+            submitted.signature ||
+            "";
+        }
         const value = String(rawValue || "").trim();
         if (!value) continue;
 
@@ -359,17 +511,35 @@ export default function OnboardingApprovalsPage() {
         const pageHeight = page.getHeight();
         const x = Number(field.x || 0);
         const yTop = Number(field.y || 0);
+        const w = Math.max(20, Number(field.w || 140));
         const h = Math.max(8, Number(field.h || 18));
-        const y = Math.max(2, pageHeight - yTop - h + 2);
-        const fontSize = Math.max(8, Math.min(12, h - 2));
+        const y = Math.max(2, pageHeight - yTop - h);
 
-        page.drawText(value, {
+        if (value.startsWith("data:image")) {
+          try {
+            const imgBytes = await dataUrlToBytes(value);
+            const image = value.includes("image/jpeg") || value.includes("image/jpg")
+              ? await pdfDoc.embedJpg(imgBytes)
+              : await pdfDoc.embedPng(imgBytes);
+            page.drawImage(image, { x, y, width: w, height: h });
+          } catch {
+            // skip broken signature image
+          }
+          continue;
+        }
+
+        const textValue = value.startsWith("text:") ? value.replace(/^text:/, "") : value;
+        // Avoid embedding giant base64 as text
+        if (textValue.length > 200 && textValue.includes("base64")) continue;
+
+        const fontSize = Math.max(8, Math.min(12, h - 2));
+        page.drawText(textValue, {
           x,
-          y,
+          y: y + 2,
           size: fontSize,
           font,
           color: rgb(0, 0, 0),
-          maxWidth: Math.max(40, Number(field.w || 140)),
+          maxWidth: w,
         });
       }
 
@@ -544,8 +714,12 @@ export default function OnboardingApprovalsPage() {
                         <label className="text-[10px] text-gray-400 block uppercase font-bold">
                           {label}
                         </label>
-                        <div className="text-sm text-gray-700">
-                          {value || <span className="text-gray-300 italic">Empty</span>}
+                        <div className="text-sm text-gray-700 min-h-8 flex items-center">
+                          {value ? (
+                            renderSignatureOrText(value)
+                          ) : (
+                            <span className="text-gray-300 italic">Empty</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -559,8 +733,8 @@ export default function OnboardingApprovalsPage() {
                     <FiCheck className="text-emerald-600" /> Digital Signature
                   </h4>
                   <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                    <div className="text-3xl font-serif italic mb-4 text-center py-6 text-gray-800 border-b border-gray-200">
-                      {selectedApproval.signature.signature_value}
+                    <div className="mb-4 flex items-center justify-center py-4 text-gray-800 border-b border-gray-200 min-h-[96px]">
+                      {renderSignatureOrText(selectedApproval.signature.signature_value)}
                     </div>
                     <div className="text-[10px] text-gray-400 flex justify-between font-mono">
                       <span>IP: {selectedApproval.signature.ip_address}</span>

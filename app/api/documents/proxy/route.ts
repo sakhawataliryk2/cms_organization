@@ -40,52 +40,63 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const headers: Record<string, string> = {
+      "User-Agent": "CMS-Organization/1.0",
+    };
+    // Do not forward browser Range requests — always fetch the full PDF.
+    // pdf.js range probes against a non-range proxy often surface as odd/empty responses.
+
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+    if (blobToken) {
+      headers.Authorization = `Bearer ${blobToken}`;
+    }
+
     const res = await fetch(url, {
-      headers: {
-        "User-Agent": "CMS-Organization/1.0",
-      },
+      headers,
       cache: "no-store",
+      redirect: "follow",
     });
 
     if (!res.ok || res.status === 204) {
       return NextResponse.json(
-        { success: false, message: "Failed to fetch document" },
-        { status: res.status === 204 ? 502 : res.status }
+        { success: false, message: `Failed to fetch document (${res.status})` },
+        { status: 502 }
       );
     }
 
-    let contentType = res.headers.get("content-type") || "application/octet-stream";
-    let contentDisposition = res.headers.get("content-disposition");
-
     const body = await res.arrayBuffer();
 
-    if (body.byteLength === 0) {
+    if (!body.byteLength) {
       return NextResponse.json(
         { success: false, message: "Document is empty" },
         { status: 502 }
       );
     }
 
-    if (contentType.includes("pdf")) {
+    const bytes = new Uint8Array(body);
+    const looksPdf =
+      bytes.length >= 4 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46;
+
+    let contentType = res.headers.get("content-type") || "application/octet-stream";
+    if (looksPdf || contentType.includes("pdf") || url.toLowerCase().includes(".pdf")) {
       contentType = "application/pdf";
-      if (!contentDisposition || contentDisposition.toLowerCase().includes("attachment")) {
-        contentDisposition = "inline";
-      }
     }
 
-    const headers: Record<string, string> = {
-      "Content-Type": contentType,
-      "Cache-Control": "private, max-age=3600",
-      "X-Frame-Options": "SAMEORIGIN",
-    };
-    if (contentDisposition) {
-      headers["Content-Disposition"] =
-        typeof contentDisposition === "string"
-          ? contentDisposition.replace(/attachment/i, "inline")
-          : "inline";
-    }
-
-    return new NextResponse(body, { status: 200, headers });
+    return new NextResponse(bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": 'inline; filename="document.pdf"',
+        "Content-Length": String(bytes.byteLength),
+        "Cache-Control": "private, max-age=3600",
+        "Accept-Ranges": "none",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error: unknown) {
     console.error("Document proxy error:", error);
     return NextResponse.json(
