@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { toast } from "sonner";
 import SendOnboardingModal from "./SendOnboardingModal";
 
 // ✅ PDF overlay viewer
@@ -33,6 +34,7 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
   const [showModal, setShowModal] = useState(false);
   const [items, setItems] = useState<OnboardingItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
 
   // reject modal
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -84,6 +86,49 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCopyLink() {
+    if (!jobSeeker?.id) return;
+    setLinkBusy(true);
+    try {
+      const res = await fetch(`/api/onboarding/job-seekers/${jobSeeker.id}/packet-link`, {
+        method: "POST",
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.packetUrl) {
+        throw new Error(json?.message || "Failed to create link");
+      }
+      await navigator.clipboard.writeText(json.packetUrl);
+      toast.success("Secure link copied to clipboard");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to copy link");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function handleResendLink() {
+    if (!jobSeeker?.id) return;
+    setLinkBusy(true);
+    try {
+      const res = await fetch(`/api/onboarding/job-seekers/${jobSeeker.id}/resend-link`, {
+        method: "POST",
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.message || "Failed to resend link");
+      }
+      toast.success(`Secure link resent to ${json.recipient || "recipient"}`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to resend link");
+    } finally {
+      setLinkBusy(false);
     }
   }
 
@@ -194,13 +239,33 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
   return (
     <div className="col-span-7">
       <div className="bg-white p-4 rounded shadow-sm">
-        <div className="flex justify-center mb-6">
+        <div className="flex flex-wrap justify-center gap-2 mb-6">
           <button
             onClick={() => setShowModal(true)}
             className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Send Onboarding
           </button>
+          {pending.length > 0 && (
+            <>
+              <button
+                type="button"
+                disabled={linkBusy}
+                onClick={handleCopyLink}
+                className="px-4 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                Copy secure link
+              </button>
+              <button
+                type="button"
+                disabled={linkBusy}
+                onClick={handleResendLink}
+                className="px-4 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                Resend secure link
+              </button>
+            </>
+          )}
         </div>
 
         {loading && <div className="text-sm text-gray-500 mb-3">Loading...</div>}

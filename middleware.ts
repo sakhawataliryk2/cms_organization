@@ -7,8 +7,12 @@ export async function middleware(request: NextRequest) {
   // Get the pathname of the request
   const path = request.nextUrl.pathname;
 
-  // Skip middleware for dedicated external portals
-  if (path.startsWith("/job-seeker-portal") || path.startsWith("/portal")) {
+  // Skip middleware for dedicated external portals and public onboarding packets
+  if (
+    path.startsWith("/job-seeker-portal") ||
+    path.startsWith("/portal") ||
+    path.startsWith("/onboarding")
+  ) {
     return NextResponse.next();
   }
 

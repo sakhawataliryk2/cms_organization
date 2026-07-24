@@ -432,6 +432,7 @@ export default function TemplateDocEditorPage() {
       h = 80;
     } else if (src.field_name === "blank_box") {
       field_type = "text";
+      field_name = `blank_${crypto.randomUUID().slice(0, 8)}`;
       w = 260;
       h = 44;
     } else if (src.field_name === "todays_date") {
