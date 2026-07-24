@@ -28,7 +28,7 @@ const SECTION_CONFIG: Record<
   "job-seeker": {
     types: [
       { value: "ONBOARDING_INTERNAL_SENT", label: "Onboarding - Internal Notification" },
-      { value: "ONBOARDING_JOBSEEKER_FIRST_TIME", label: "Onboarding - Job Seeker (First Time Credentials Sent)" },
+      { value: "ONBOARDING_JOBSEEKER_FIRST_TIME", label: "Onboarding - Job Seeker (First Time)" },
       { value: "ONBOARDING_JOBSEEKER_REPEAT", label: "Onboarding - Job Seeker (Repeat)" },
       { value: "JOB_SEEKER_DELETE_REQUEST", label: "Job Seeker - Delete Request (Payroll)" },
       { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
@@ -39,8 +39,20 @@ const SECTION_CONFIG: Record<
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}", "{{jobTitle}}", "{{noteText}}"],
-      ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
-      ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+      ONBOARDING_JOBSEEKER_FIRST_TIME: [
+        "{{packetUrl}}",
+        "{{portalUrl}}",
+        "{{jobSeekerName}}",
+        "{{jobTitle}}",
+        "{{username}}",
+        "{{tempPassword}}",
+      ],
+      ONBOARDING_JOBSEEKER_REPEAT: [
+        "{{packetUrl}}",
+        "{{portalUrl}}",
+        "{{jobSeekerName}}",
+        "{{jobTitle}}",
+      ],
       JOB_SEEKER_DELETE_REQUEST: [
         "{{requestedBy}}",
         "{{requestedByEmail}}",
@@ -97,8 +109,8 @@ const SECTION_CONFIG: Record<
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
-      ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
-      ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+      ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{packetUrl}}"],
+      ONBOARDING_JOBSEEKER_REPEAT: ["{{packetUrl}}"],
       JOB_SEEKER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
@@ -121,26 +133,26 @@ const SECTION_CONFIG: Record<
       },
       ONBOARDING_JOBSEEKER_FIRST_TIME: {
         template_name: "Onboarding Job Seeker - First Time",
-        subject: "Onboarding Documents - Portal Access",
+        subject: "Complete your onboarding documents",
         body:
           `<div>` +
-          `<p>Hello,</p>` +
-          `<p>You have onboarding documents that are awaiting your submission.</p>` +
-          `<p><b>Portal:</b> <a href="{{portalUrl}}">WEBSITE</a></p>` +
-          `<p><b>Username:</b> {{username}}</p>` +
-          `<p><b>Temporary Password:</b> {{tempPassword}}</p>` +
-          `<p>Please log in and complete your documents.</p>` +
+          `<p>Hello {{jobSeekerName}},</p>` +
+          `<p>You have onboarding documents awaiting your submission. No account login is required.</p>` +
+          `<p><b>Onboarding documents:</b> <a href="{{packetUrl}}">Open onboarding packet</a></p>` +
+          `<p>If you also need portal access later:</p>` +
+          `<p><b>Portal:</b> <a href="{{portalUrl}}">{{portalUrl}}</a></p>` +
           `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
           `</div>`,
       },
       ONBOARDING_JOBSEEKER_REPEAT: {
         template_name: "Onboarding Job Seeker - Repeat",
-        subject: "Onboarding Documents",
+        subject: "Onboarding documents available",
         body:
           `<div>` +
-          `<p>Hello,</p>` +
-          `<p>You have onboarding documents that are awaiting your submission.</p>` +
-          `<p>Please log into <a href="{{portalUrl}}">WEBSITE</a> to complete your documents. Your username is the email address you received this email to.</p>` +
+          `<p>Hello {{jobSeekerName}},</p>` +
+          `<p>You have onboarding documents awaiting your submission for <b>{{jobTitle}}</b>.</p>` +
+          `<p><b>Onboarding documents:</b> <a href="{{packetUrl}}">Open onboarding packet</a></p>` +
+          `<p>Portal (optional): <a href="{{portalUrl}}">{{portalUrl}}</a></p>` +
           `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
           `</div>`,
       },
