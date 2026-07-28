@@ -63,6 +63,22 @@ export type DefaultVisibleKeysOptions = {
 };
 
 /**
+ * True when the saved layout is empty or still the old auto-persisted
+ * "show every catalog field" layout (not a real user customization).
+ */
+export function isUncustomizedLayout(
+  savedKeys: string[] | null | undefined,
+  catalogKeys: string[]
+): boolean {
+  if (!Array.isArray(savedKeys) || savedKeys.length === 0) return true;
+  if (!catalogKeys.length) return true;
+
+  const savedSet = new Set(savedKeys);
+  // Auto-persist saved every catalog key; treat that as not customized.
+  return catalogKeys.every((k) => savedSet.has(k));
+}
+
+/**
  * Keys for the initial overview/panel layout for first-time users.
  * Uses fields marked Default (and not hidden), ordered by sort_order.
  * If none are marked, uses fallbackKeys or all catalogKeys.
@@ -105,7 +121,8 @@ export function getDefaultVisibleKeys(
 }
 
 /**
- * Effective visible keys: saved layout if non-empty, else Default fallback.
+ * Effective visible keys: real saved custom layouts win; otherwise Default fallback.
+ * Layouts that still contain every catalog field (old auto-persist) are treated as uncustomized.
  */
 export function getEffectiveVisibleKeys(
   savedKeys: string[] | null | undefined,
@@ -113,8 +130,8 @@ export function getEffectiveVisibleKeys(
   catalogKeys: string[],
   options?: DefaultVisibleKeysOptions
 ): string[] {
-  if (Array.isArray(savedKeys) && savedKeys.length > 0) {
-    return savedKeys;
+  if (!isUncustomizedLayout(savedKeys, catalogKeys)) {
+    return savedKeys as string[];
   }
   return getDefaultVisibleKeys(fields, catalogKeys, options);
 }

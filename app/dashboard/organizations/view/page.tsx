@@ -19,7 +19,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import CountdownTimer from "@/components/CountdownTimer";
 import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import {
@@ -1810,24 +1810,20 @@ export default function OrganizationView() {
     const saved = getPanelFieldPath(panelFieldsConfig, "contactInfo");
     setVisibleFields((prev) => {
       const current = prev.contactInfo || [];
-      if (saved && saved.length > 0) {
-        const remapped = remapLegacyCustomKeys(saved, contactInfoFieldCatalog);
-        const next =
-          remapped.length > 0
-            ? remapped
-            : getDefaultVisibleKeys(availableFields, catalogKeys, {
-                keyForField: panelCatalogKeyFromField,
-              });
-        if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
-          return { ...prev, contactInfo: next };
-        }
-        return prev;
+      const remapped =
+        saved && saved.length > 0
+          ? remapLegacyCustomKeys(saved, contactInfoFieldCatalog)
+          : [];
+      const next = getEffectiveVisibleKeys(
+        remapped.length > 0 ? remapped : saved,
+        availableFields,
+        catalogKeys,
+        { keyForField: panelCatalogKeyFromField }
+      );
+      if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+        return { ...prev, contactInfo: next };
       }
-      if (current.length > 0) return prev;
-      const defaultKeys = getDefaultVisibleKeys(availableFields, catalogKeys, {
-        keyForField: panelCatalogKeyFromField,
-      });
-      return { ...prev, contactInfo: defaultKeys };
+      return prev;
     });
   }, [contactInfoFieldCatalog, panelFieldsConfig, availableFields]);
 

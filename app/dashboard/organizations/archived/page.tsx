@@ -159,7 +159,7 @@ export default function ArchivedOrganizationsList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const base = effectiveColumnFields;
     const oldIndex = base.indexOf(active.id as string);
     const newIndex = base.indexOf(over.id as string);
 
@@ -347,7 +347,7 @@ export default function ArchivedOrganizationsList() {
   );
 
   const editorColumnFields =
-    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    effectiveColumnFields;
 
   useEffect(() => {
     if (catalogKeys.length === 0) return;

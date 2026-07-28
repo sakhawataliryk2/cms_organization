@@ -323,7 +323,7 @@ export default function ArchivedTasksList() {
   );
 
   const editorColumnFields =
-    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    effectiveColumnFields;
 
   useEffect(() => {
     if (catalogKeys.length === 0) return;

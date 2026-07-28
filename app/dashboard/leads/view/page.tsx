@@ -20,7 +20,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 // Drag and drop 
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
@@ -884,26 +884,21 @@ out.sort((a, b) => {
       const saved = getPanelFieldPath(panelFieldsConfig, path);
       setVisibleFields((prev) => {
         const current = prev[panelId] || [];
-        if (saved && saved.length > 0) {
-          const remapped = remapLegacyCustomKeys(saved, catalog);
-          const next =
-            remapped.length > 0
-              ? remapped
-              : getDefaultVisibleKeys(options?.fields, catalogKeys, {
-                  keyForField: panelCatalogKeyFromField,
-                  fallbackKeys: options?.fallback,
-                });
-          if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
-            return { ...prev, [panelId]: next };
+        const remapped =
+          saved && saved.length > 0 ? remapLegacyCustomKeys(saved, catalog) : [];
+        const next = getEffectiveVisibleKeys(
+          remapped.length > 0 ? remapped : saved,
+          options?.fields,
+          catalogKeys,
+          {
+            keyForField: panelCatalogKeyFromField,
+            fallbackKeys: options?.fallback,
           }
-          return prev;
+        );
+        if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+          return { ...prev, [panelId]: next };
         }
-        if (current.length > 0) return prev;
-        const defaultKeys = getDefaultVisibleKeys(options?.fields, catalogKeys, {
-          keyForField: panelCatalogKeyFromField,
-          fallbackKeys: options?.fallback,
-        });
-        return defaultKeys.length > 0 ? { ...prev, [panelId]: defaultKeys } : prev;
+        return prev;
       });
     },
     [panelFieldsConfig]
