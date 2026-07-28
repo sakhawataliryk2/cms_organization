@@ -72,6 +72,7 @@ interface CustomField {
   field_type: string;
   is_required: boolean;
   is_hidden: boolean;
+  is_default?: boolean;
   is_read_only?: boolean;
   sort_order: number;
   options?: string[];
@@ -216,9 +217,10 @@ const FieldMapping = () => {
     field3: "Field Type",
     field4: "Hidden",
     field5: "Required",
-    field6: "Sort Order",
-    field7: "Last Modified",
-    field8: "Modified By",
+    field6: "Default",
+    field7: "Sort Order",
+    field8: "Last Modified",
+    field9: "Modified By",
   });
   const [editFormData, setEditFormData] = useState({
     fieldName: "",
@@ -226,6 +228,7 @@ const FieldMapping = () => {
     fieldType: "text",
     isRequired: false,
     isHidden: false,
+    isDefault: false,
     isReadOnly: false,
     sortOrder: 0,
     options: [] as string[],
@@ -268,6 +271,7 @@ const FieldMapping = () => {
     field_type: "",
     is_hidden: "",
     is_required: "",
+    is_default: "",
     sort_order: "",
     updated_at: "",
     updated_by: "",
@@ -436,6 +440,7 @@ const FieldMapping = () => {
       fieldType: field.field_type,
       isRequired: field.is_required,
       isHidden: field.is_hidden,
+      isDefault: Boolean(field.is_default),
       isReadOnly: Boolean((field as any).is_read_only),
       sortOrder: field.sort_order,
       options: Array.isArray(field.options)
@@ -480,6 +485,7 @@ const FieldMapping = () => {
       fieldType: "text",
       isRequired: false,
       isHidden: false,
+      isDefault: false,
       isReadOnly: false,
       sortOrder: customFields.length + 1,
       options: [],
@@ -547,6 +553,9 @@ const FieldMapping = () => {
         newData.isHidden = false;
       } else if (name === "isHidden" && checked === true) {
         newData.isRequired = false;
+        newData.isDefault = false;
+      } else if (name === "isDefault" && checked === true) {
+        newData.isHidden = false;
       }
 
       return newData;
@@ -631,6 +640,7 @@ const FieldMapping = () => {
           fieldType: editFormData.fieldType,
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
+          isDefault: editFormData.isDefault,
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
@@ -673,6 +683,7 @@ const FieldMapping = () => {
           fieldType: editFormData.fieldType,
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
+          isDefault: editFormData.isDefault,
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
@@ -805,9 +816,10 @@ const FieldMapping = () => {
       const newHiddenValue = !field.is_hidden;
       const updateData: any = { isHidden: newHiddenValue };
 
-      // Critical: If Hidden is being set to true, also set Required to false
+      // Critical: If Hidden is being set to true, also set Required/Default to false
       if (newHiddenValue === true) {
         updateData.isRequired = false;
+        updateData.isDefault = false;
       }
 
       console.log("Toggling field hidden status:", updateData);
@@ -847,6 +859,51 @@ const FieldMapping = () => {
       }
 
       // Refresh the fields list
+      await fetchCustomFields();
+    } catch (err) {
+      console.error("Error updating field:", err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "An error occurred while updating the custom field";
+      toast.error(`Failed to update field status: ${errorMessage}`);
+    }
+  };
+
+  const toggleFieldDefault = async (field: CustomField) => {
+    try {
+      const newDefaultValue = !field.is_default;
+      const updateData: Record<string, boolean> = { isDefault: newDefaultValue };
+
+      if (newDefaultValue === true) {
+        updateData.isHidden = false;
+      }
+
+      const response = await fetch(
+        `/api/admin/field-management/fields/${field.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateData),
+        }
+      );
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Invalid response format from server");
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+          `Server error: ${response.status} ${response.statusText}`
+        );
+      }
+
       await fetchCustomFields();
     } catch (err) {
       console.error("Error updating field:", err);
@@ -1014,6 +1071,10 @@ const FieldMapping = () => {
                 <li>
                   • Click on Field 5 (Required) to toggle whether the field is
                   mandatory
+                </li>
+                <li>
+                  • Click on Field 6 (Default) to include the field in first-time
+                  overview and panel layouts
                 </li>
                 <li>• Click the edit icon to modify field properties</li>
                 <li>
@@ -1205,6 +1266,21 @@ const FieldMapping = () => {
       }
     }
 
+    // Default filter (boolean)
+    if (columnFilters.is_default) {
+      const filterValue = columnFilters.is_default.toLowerCase();
+      const isDefault = Boolean(field.is_default);
+      if (filterValue === "yes" || filterValue === "true" || filterValue === "1") {
+        if (!isDefault) return false;
+      } else if (filterValue === "no" || filterValue === "false" || filterValue === "0") {
+        if (isDefault) return false;
+      } else if (filterValue !== "") {
+        if (!String(isDefault).toLowerCase().includes(filterValue)) {
+          return false;
+        }
+      }
+    }
+
     // Sort Order filter (number)
     if (
       columnFilters.sort_order &&
@@ -1266,6 +1342,10 @@ const FieldMapping = () => {
       case "is_required":
         aValue = a.is_required ? 1 : 0;
         bValue = b.is_required ? 1 : 0;
+        break;
+      case "is_default":
+        aValue = a.is_default ? 1 : 0;
+        bValue = b.is_default ? 1 : 0;
         break;
       case "sort_order":
         aValue = a.sort_order;
@@ -1373,7 +1453,7 @@ const FieldMapping = () => {
               e.stopPropagation();
               toggleFieldHidden(field);
             }}
-            disabled={field.is_required} // Keep original disabled for business logic
+            disabled={field.is_required}
             className={`h-4 w-4 rounded flex items-center justify-center ${field.is_required
               ? "bg-gray-200 cursor-not-allowed opacity-50"
               : locks?.is_hidden_locked
@@ -1425,6 +1505,33 @@ const FieldMapping = () => {
             }
           >
             {field.is_required && !field.is_hidden && (
+              <span className="text-xs leading-none">✓</span>
+            )}
+          </button>
+        </td>
+        <td className="p-3 text-center">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFieldDefault(field);
+            }}
+            disabled={field.is_hidden}
+            className={`h-4 w-4 rounded flex items-center justify-center ${field.is_hidden
+              ? "bg-gray-200 cursor-not-allowed opacity-50"
+              : field.is_default
+                ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                : "bg-gray-200 hover:bg-gray-400"
+              }`}
+            title={
+              field.is_hidden
+                ? "Cannot mark a hidden field as Default - Uncheck Hidden first"
+                : field.is_default
+                  ? "Default - Click to remove from default view"
+                  : "Not default - Click to include in default view"
+            }
+          >
+            {field.is_default && !field.is_hidden && (
               <span className="text-xs leading-none">✓</span>
             )}
           </button>
@@ -1622,6 +1729,17 @@ const FieldMapping = () => {
 
                     <SortableFilterableHeader
                       label={fieldColumnNames.field6}
+                      columnKey="is_default"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.is_default}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="boolean"
+                      filterPlaceholder="All"
+                    />
+
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field7}
                       columnKey="sort_order"
                       sortConfig={sortConfig}
                       filterValue={columnFilters.sort_order}
@@ -1632,7 +1750,7 @@ const FieldMapping = () => {
                     />
 
                     <SortableFilterableHeader
-                      label={fieldColumnNames.field7}
+                      label={fieldColumnNames.field8}
                       columnKey="updated_at"
                       sortConfig={sortConfig}
                       filterValue={columnFilters.updated_at}
@@ -1643,7 +1761,7 @@ const FieldMapping = () => {
                     />
 
                     <SortableFilterableHeader
-                      label={fieldColumnNames.field8}
+                      label={fieldColumnNames.field9}
                       columnKey="updated_by"
                       sortConfig={sortConfig}
                       filterValue={columnFilters.updated_by}
@@ -2085,6 +2203,26 @@ const FieldMapping = () => {
                       Hidden
                       {editFormData.isRequired && !fieldLocks?.is_hidden_locked && (
                         <span className="text-xs text-gray-400 block">(Cannot hide required fields)</span>
+                      )}
+                    </span>
+                  </label>
+
+                  <label className={`flex items-center ${editFormData.isHidden ? "opacity-50" : ""}`}>
+                    <input
+                      type="checkbox"
+                      name="isDefault"
+                      checked={editFormData.isDefault}
+                      onChange={handleEditFormChange}
+                      disabled={editFormData.isHidden}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""}`}
+                    />
+                    <span className={`ml-2 text-sm ${editFormData.isHidden ? "text-gray-500" : ""}`}>
+                      Default
+                      {editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">(Cannot default hidden fields)</span>
+                      )}
+                      {!editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">(Initial overview and panel layout)</span>
                       )}
                     </span>
                   </label>

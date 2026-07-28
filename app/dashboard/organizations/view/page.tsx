@@ -19,6 +19,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
 import CountdownTimer from "@/components/CountdownTimer";
 import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import {
@@ -1811,16 +1812,24 @@ export default function OrganizationView() {
       const current = prev.contactInfo || [];
       if (saved && saved.length > 0) {
         const remapped = remapLegacyCustomKeys(saved, contactInfoFieldCatalog);
-        const next = remapped.length > 0 ? remapped : catalogKeys;
+        const next =
+          remapped.length > 0
+            ? remapped
+            : getDefaultVisibleKeys(availableFields, catalogKeys, {
+                keyForField: panelCatalogKeyFromField,
+              });
         if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
           return { ...prev, contactInfo: next };
         }
         return prev;
       }
       if (current.length > 0) return prev;
-      return { ...prev, contactInfo: catalogKeys };
+      const defaultKeys = getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: panelCatalogKeyFromField,
+      });
+      return { ...prev, contactInfo: defaultKeys };
     });
-  }, [contactInfoFieldCatalog, panelFieldsConfig]);
+  }, [contactInfoFieldCatalog, panelFieldsConfig, availableFields]);
 
   // Initialize modal state when opening Contact Info edit (order has no duplicate keys)
   useEffect(() => {

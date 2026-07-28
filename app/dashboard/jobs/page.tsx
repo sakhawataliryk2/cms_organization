@@ -8,6 +8,7 @@ import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -645,8 +646,6 @@ export default function JobList() {
     });
   }, [availableFields]);
 
-  const columnCatalogKeys = useMemo(() => columnsCatalog.map((c) => c.key), [columnsCatalog]);
-
   const getRequiredAdminColumnKeys = useCallback(() => {
     const requiredNames = new Set(
       (availableFields || [])
@@ -664,9 +663,51 @@ export default function JobList() {
     return Array.from(new Set(required.map((c) => c.key)));
   }, [availableFields, columnsCatalog]);
 
-  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
+  const catalogKeys = useMemo(
+    () => columnsCatalog.map((c) => c.key),
+    [columnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && JOB_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        fallbackKeys: getRequiredAdminColumnKeys(),
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField, getRequiredAdminColumnKeys]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        fallbackKeys: getRequiredAdminColumnKeys(),
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField, getRequiredAdminColumnKeys]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = columnCatalogKeys;
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -685,39 +726,19 @@ export default function JobList() {
         validOrder.length === 1 && validOrder[0] === "record_number";
       const shouldIgnoreStaleRecordOnlyPreference =
         isOnlyRecordNumberPreference && catalogKeys.length > 1;
-      if (
-        !wouldCollapseToRecordNumberOnly &&
-        !shouldIgnoreStaleRecordOnlyPreference &&
-        validOrder.length > 0
-      ) {
+      if (shouldIgnoreStaleRecordOnlyPreference) {
+        setColumnFields([]);
+        return;
+      }
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [catalogKeys, columnFields, setColumnFields, columnsCatalog]);
 
-    const defaultColumns = getRequiredAdminColumnKeys();
-    const nextColumns =
-      defaultColumns.length > 0 ? defaultColumns : catalogKeys;
-
-    if (columnFields.length === 0) {
-      if (nextColumns.length > 0) {
-        setColumnFields(nextColumns);
-      }
-      return;
-    }
-
-    const isOnlyRecordNumber =
-      columnFields.length === 1 && columnFields[0] === "record_number";
-    if (
-      isOnlyRecordNumber &&
-      catalogKeys.length > 1 &&
-      JSON.stringify(nextColumns) !== JSON.stringify(columnFields)
-    ) {
-      setColumnFields(nextColumns);
-    }
-  }, [columnCatalogKeys, columnFields, setColumnFields, columnsCatalog, getRequiredAdminColumnKeys]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -898,7 +919,7 @@ export default function JobList() {
       : filteredAndSortedJobs.length;
 
   const showTableSkeleton = isLoading || isPageLoading;
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     columnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -909,11 +930,12 @@ export default function JobList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -1108,7 +1130,7 @@ export default function JobList() {
     );
 
     // Get headers from currently displayed columns
-    const headers = columnFields.map((key) => getColumnLabel(key));
+    const headers = effectiveColumnFields.map((key) => getColumnLabel(key));
 
     // Escape CSV values
     const escapeCSV = (value: any): string => {
@@ -1124,7 +1146,7 @@ export default function JobList() {
     const csvRows = [
       headers.map(escapeCSV).join(','),
       ...selectedData.map((job) => {
-        const row = columnFields.map((key) =>
+        const row = effectiveColumnFields.map((key) =>
           key === "record_number" ? escapeCSV(`J ${getColumnValue(job, key)}`) : escapeCSV(getColumnValue(job, key))
         );
         return row.join(',');
@@ -1737,10 +1759,10 @@ export default function JobList() {
 
                   {/* Draggable Dynamic headers (includes Record #) */}
                   <SortableContext
-                    items={columnFields}
+                    items={effectiveColumnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.map((key) => {
+                    {effectiveColumnFields.map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -1845,7 +1867,7 @@ export default function JobList() {
                       </td>
 
                       {/* Dynamic columns (including Record #) */}
-                      {columnFields.map((key) => {
+                      {effectiveColumnFields.map((key) => {
                         if (key === "record_number") {
                           return (
                             <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
@@ -2034,33 +2056,31 @@ export default function JobList() {
           onClose={() => setShowColumnModal(false)}
           title="Customize Columns"
           description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the job list."
-          order={Array.from(
-            new Set([
-              ...columnFields,
-              ...columnsCatalog.map((c) => c.key),
-            ])
-          )}
-          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
+          order={[
+            ...editorColumnFields,
+            ...columnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
+          ]}
+          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, editorColumnFields.includes(c.key)]))}
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
-            if (columnFields.includes(key)) {
-              setColumnFields(columnFields.filter((x) => x !== key));
+            if (editorColumnFields.includes(key)) {
+              setColumnFields(editorColumnFields.filter((x) => x !== key));
             } else {
-              setColumnFields([...columnFields, key]);
+              setColumnFields([...editorColumnFields, key]);
             }
           }}
           onDragEnd={(event) => {
             const { active, over } = event;
             if (!over || active.id === over.id) return;
             const fullOrder = [
-              ...columnFields,
-              ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+              ...editorColumnFields,
+              ...columnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
             ];
             const oldIndex = fullOrder.indexOf(active.id as string);
             const newIndex = fullOrder.indexOf(over.id as string);
             if (oldIndex === -1 || newIndex === -1) return;
             const newOrder = arrayMove(fullOrder, oldIndex, newIndex);
-            setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+            setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
           }}
           onSave={async () => {
             const ok = await saveColumnConfig();
@@ -2069,8 +2089,7 @@ export default function JobList() {
           saveButtonText="Done"
           isSaveDisabled={isSavingColumns}
           onReset={() => {
-            const defaultColumns = getRequiredAdminColumnKeys();
-            setColumnFields(defaultColumns.length > 0 ? defaultColumns : columnCatalogKeys);
+            setColumnFields(defaultColumnKeys);
           }}
           resetButtonText="Reset"
         />

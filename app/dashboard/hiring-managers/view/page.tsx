@@ -19,6 +19,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import {
   sendCalendarInvite,
   type CalendarEvent,
@@ -551,15 +552,6 @@ out.sort((a, b) => {
     [summaryLayout, setSummaryLayout]
   );
 
-  const visibleFields: Record<string, string[]> = useMemo(
-    () => ({
-      details: getPanelFieldPath(panelFields, "details") ?? [],
-      organizationDetails: getPanelFieldPath(panelFields, "organizationDetails") ?? [],
-      recentNotes: recentNotesFields,
-    }),
-    [panelFields, recentNotesFields]
-  );
-
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -765,6 +757,35 @@ out.sort((a, b) => {
       }));
     return [...fromApi];
   }, [organizationAvailableFields]);
+
+  const visibleFields: Record<string, string[]> = useMemo(() => {
+    const detailsCatalogKeys = detailsFieldCatalog.map((f) => f.key);
+    const orgCatalogKeys = organizationDetailsFieldCatalog.map((f) => f.key);
+    const detailsSaved = getPanelFieldPath(panelFields, "details");
+    const orgSaved = getPanelFieldPath(panelFields, "organizationDetails");
+    return {
+      details: remapLegacyCustomKeys(
+        getEffectiveVisibleKeys(detailsSaved, availableFields, detailsCatalogKeys, {
+          keyForField: panelCatalogKeyFromField,
+        }),
+        detailsFieldCatalog
+      ),
+      organizationDetails: remapLegacyCustomKeys(
+        getEffectiveVisibleKeys(orgSaved, organizationAvailableFields, orgCatalogKeys, {
+          keyForField: panelCatalogKeyFromField,
+        }),
+        organizationDetailsFieldCatalog
+      ),
+      recentNotes: recentNotesFields,
+    };
+  }, [
+    panelFields,
+    recentNotesFields,
+    detailsFieldCatalog,
+    organizationDetailsFieldCatalog,
+    availableFields,
+    organizationAvailableFields,
+  ]);
 
   // Basic renderPanel (placeholder content for now)
   // Render individual panels
@@ -1379,37 +1400,25 @@ out.sort((a, b) => {
     }
   };
 
-  // When catalog loads, if details/organizationDetails visible list is empty, default to all catalog keys
+  // Remap legacy custom keys in saved panel layouts (do not auto-persist defaults when empty)
   useEffect(() => {
     const catalog = detailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
-    const keys = catalog.map((f) => f.key);
-    if (keys.length === 0) return;
-
     const current = getPanelFieldPath(panelFields, "details") ?? [];
-    if (current.length > 0) {
-      const remapped = remapLegacyCustomKeys(current, catalog);
-      if (JSON.stringify(remapped) !== JSON.stringify(current)) {
-        setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
-      }
-      return;
+    if (current.length === 0) return;
+    const remapped = remapLegacyCustomKeys(current, catalog);
+    if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+      setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
     }
-    setPanelFields(setPanelFieldPath(panelFields, "details", keys));
   }, [detailsFieldCatalog, panelFields, setPanelFields]);
 
   useEffect(() => {
     const catalog = organizationDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
-    const keys = catalog.map((f) => f.key);
-    if (keys.length === 0) return;
-
     const current = getPanelFieldPath(panelFields, "organizationDetails") ?? [];
-    if (current.length > 0) {
-      const remapped = remapLegacyCustomKeys(current, catalog);
-      if (JSON.stringify(remapped) !== JSON.stringify(current)) {
-        setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", remapped));
-      }
-      return;
+    if (current.length === 0) return;
+    const remapped = remapLegacyCustomKeys(current, catalog);
+    if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+      setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", remapped));
     }
-    setPanelFields(setPanelFieldPath(panelFields, "organizationDetails", keys));
   }, [organizationDetailsFieldCatalog, panelFields, setPanelFields]);
 
   // Sync Hiring Manager Details modal state when opening edit for details

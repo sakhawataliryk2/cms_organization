@@ -21,6 +21,7 @@ import {
     remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import CountdownTimer from '@/components/CountdownTimer';
@@ -670,14 +671,6 @@ export default function TaskView() {
 
     const [recentNotesFields, setRecentNotesFields] = useState<string[]>(["notes"]);
 
-    const visibleFields: Record<string, string[]> = useMemo(
-        () => ({
-            details: getPanelFieldPath(panelFields, "details") ?? [],
-            taskOverview: getPanelFieldPath(panelFields, "overview") ?? [],
-            recentNotes: recentNotesFields,
-        }),
-        [panelFields, recentNotesFields]
-    );
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -787,37 +780,53 @@ export default function TaskView() {
         return [...fromApi];
     }, [availableFields]);
 
-    // When catalog loads, if details/taskOverview visible list is empty, default to all catalog keys
+    const visibleFields: Record<string, string[]> = useMemo(() => {
+        const detailsCatalogKeys = taskDetailsFieldCatalog.map((f) => f.key);
+        const overviewCatalogKeys = taskOverviewFieldCatalog.map((f) => f.key);
+        const detailsSaved = getPanelFieldPath(panelFields, "details");
+        const overviewSaved = getPanelFieldPath(panelFields, "overview");
+        return {
+            details: remapLegacyCustomKeys(
+                getEffectiveVisibleKeys(detailsSaved, availableFields, detailsCatalogKeys, {
+                    keyForField: panelCatalogKeyFromField,
+                }),
+                taskDetailsFieldCatalog
+            ),
+            taskOverview: remapLegacyCustomKeys(
+                getEffectiveVisibleKeys(overviewSaved, availableFields, overviewCatalogKeys, {
+                    keyForField: panelCatalogKeyFromField,
+                }),
+                taskOverviewFieldCatalog
+            ),
+            recentNotes: recentNotesFields,
+        };
+    }, [
+        panelFields,
+        recentNotesFields,
+        taskDetailsFieldCatalog,
+        taskOverviewFieldCatalog,
+        availableFields,
+    ]);
+
+    // Remap legacy custom keys in saved panel layouts (do not auto-persist defaults when empty)
     useEffect(() => {
         const catalog = taskDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
-        const keys = catalog.map((f) => f.key);
-        if (keys.length === 0) return;
-
         const current = getPanelFieldPath(panelFields, "details") ?? [];
-        if (current.length > 0) {
-            const remapped = remapLegacyCustomKeys(current, catalog);
-            if (JSON.stringify(remapped) !== JSON.stringify(current)) {
-                setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
-            }
-            return;
+        if (current.length === 0) return;
+        const remapped = remapLegacyCustomKeys(current, catalog);
+        if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+            setPanelFields(setPanelFieldPath(panelFields, "details", remapped));
         }
-        setPanelFields(setPanelFieldPath(panelFields, "details", keys));
     }, [taskDetailsFieldCatalog, panelFields, setPanelFields]);
 
     useEffect(() => {
         const catalog = taskOverviewFieldCatalog.map((f) => ({ key: f.key, label: f.label }));
-        const keys = catalog.map((f) => f.key);
-        if (keys.length === 0) return;
-
         const current = getPanelFieldPath(panelFields, "overview") ?? [];
-        if (current.length > 0) {
-            const remapped = remapLegacyCustomKeys(current, catalog);
-            if (JSON.stringify(remapped) !== JSON.stringify(current)) {
-                setPanelFields(setPanelFieldPath(panelFields, "overview", remapped));
-            }
-            return;
+        if (current.length === 0) return;
+        const remapped = remapLegacyCustomKeys(current, catalog);
+        if (JSON.stringify(remapped) !== JSON.stringify(current)) {
+            setPanelFields(setPanelFieldPath(panelFields, "overview", remapped));
         }
-        setPanelFields(setPanelFieldPath(panelFields, "overview", keys));
     }, [taskOverviewFieldCatalog, panelFields, setPanelFields]);
 
     // Sync Task Details modal state when opening edit for details

@@ -28,6 +28,7 @@ import {
   panelCatalogKeyFromField,
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import OnboardingTab from "./onboarding/OnboardingTab";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
@@ -2221,14 +2222,14 @@ Best regards`;
     return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
 
-  const jobSeekerDetailsVisible = useMemo(
-    () =>
-      remapLegacyCustomKeys(
-        getPanelFieldPath(panelFieldsConfig, "jobSeekerDetails") ?? [],
-        jobSeekerDetailsFieldCatalog
-      ),
-    [panelFieldsConfig, jobSeekerDetailsFieldCatalog]
-  );
+  const jobSeekerDetailsVisible = useMemo(() => {
+    const catalogKeys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
+    const saved = getPanelFieldPath(panelFieldsConfig, "jobSeekerDetails");
+    const effective = getEffectiveVisibleKeys(saved, availableFields, catalogKeys, {
+      keyForField: panelCatalogKeyFromField,
+    });
+    return remapLegacyCustomKeys(effective, jobSeekerDetailsFieldCatalog);
+  }, [panelFieldsConfig, jobSeekerDetailsFieldCatalog, availableFields]);
 
   // Overview panel field catalog: from admin field definitions + record customFields only
   const overviewFieldCatalog = useMemo(() => {
@@ -2241,14 +2242,14 @@ Best regards`;
     return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
 
-  const overviewVisible = useMemo(
-    () =>
-      remapLegacyCustomKeys(
-        getPanelFieldPath(panelFieldsConfig, "overview") ?? [],
-        overviewFieldCatalog
-      ),
-    [panelFieldsConfig, overviewFieldCatalog]
-  );
+  const overviewVisible = useMemo(() => {
+    const catalogKeys = overviewFieldCatalog.map((f) => f.key);
+    const saved = getPanelFieldPath(panelFieldsConfig, "overview");
+    const effective = getEffectiveVisibleKeys(saved, availableFields, catalogKeys, {
+      keyForField: panelCatalogKeyFromField,
+    });
+    return remapLegacyCustomKeys(effective, overviewFieldCatalog);
+  }, [panelFieldsConfig, overviewFieldCatalog, availableFields]);
 
   // Payroll Info panel: static field catalog (TBI: data from API later)
   const payrollInfoFieldCatalog = useMemo(
@@ -2256,14 +2257,15 @@ Best regards`;
     []
   );
 
-  const payrollInfoVisible = useMemo(
-    () => {
-      const stored = getPanelFieldPath(panelFieldsConfig, "payrollInfo") ?? [];
-      if (stored.length === 0) return payrollInfoFieldCatalog.map((f) => f.key);
+  const payrollInfoVisible = useMemo(() => {
+    const catalogKeys = payrollInfoFieldCatalog.map((f) => f.key);
+    const stored = getPanelFieldPath(panelFieldsConfig, "payrollInfo") ?? [];
+    if (stored.length > 0) {
       return remapLegacyCustomKeys(stored, payrollInfoFieldCatalog);
-    },
-    [panelFieldsConfig, payrollInfoFieldCatalog]
-  );
+    }
+    // Static catalog has no is_default flags — fall back to all catalog keys without persisting
+    return getDefaultVisibleKeys([], catalogKeys);
+  }, [panelFieldsConfig, payrollInfoFieldCatalog]);
 
   const visibleFields = useMemo(
     (): Record<string, string[]> => ({
@@ -2274,32 +2276,6 @@ Best regards`;
     }),
     [visibleFieldsState.resume, jobSeekerDetailsVisible, overviewVisible, payrollInfoVisible]
   );
-
-  // When catalog loads, if overview/jobSeekerDetails visible list is empty, default to all catalog keys
-  useEffect(() => {
-    const keys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, "jobSeekerDetails");
-    if (current && current.length > 0) return;
-    updatePanelFields("jobSeekerDetails", keys);
-  }, [jobSeekerDetailsFieldCatalog, panelFieldsConfig, updatePanelFields]);
-
-  useEffect(() => {
-    const keys = overviewFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, "overview");
-    if (current && current.length > 0) return;
-    updatePanelFields("overview", keys);
-  }, [overviewFieldCatalog, panelFieldsConfig, updatePanelFields]);
-
-  // When Payroll Info catalog is ready, if visible list is empty, default to all keys
-  useEffect(() => {
-    const keys = payrollInfoFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, "payrollInfo");
-    if (current && current.length > 0) return;
-    updatePanelFields("payrollInfo", keys);
-  }, [payrollInfoFieldCatalog, panelFieldsConfig, updatePanelFields]);
 
   // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
   useEffect(() => {

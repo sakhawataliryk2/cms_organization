@@ -24,6 +24,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
   buildPinnedKey,
@@ -1225,7 +1226,11 @@ export default function PlacementView() {
   }, [jobAvailableFields]);
 
   const syncPlacementPanelFromConfig = useCallback(
-    (panelId: string, catalog: Array<{ key: string; label: string }>) => {
+    (
+      panelId: string,
+      catalog: Array<{ key: string; label: string }>,
+      fields?: any[]
+    ) => {
       const path = PLACEMENT_PANEL_CONFIG_PATHS[panelId];
       if (!path) return;
       const catalogKeys = catalog.map((f) => f.key);
@@ -1235,35 +1240,51 @@ export default function PlacementView() {
         const current = prev[panelId] || [];
         if (saved && saved.length > 0) {
           const remapped = remapLegacyCustomKeys(saved, catalog);
-          const next = remapped.length > 0 ? remapped : catalogKeys;
+          const next =
+            remapped.length > 0
+              ? remapped
+              : getDefaultVisibleKeys(fields, catalogKeys, {
+                  keyForField: panelCatalogKeyFromField,
+                });
           if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
             return { ...prev, [panelId]: next };
           }
           return prev;
         }
         if (current.length > 0) return prev;
-        return { ...prev, [panelId]: catalogKeys };
+        const defaultKeys = getDefaultVisibleKeys(fields, catalogKeys, {
+          keyForField: panelCatalogKeyFromField,
+        });
+        return { ...prev, [panelId]: defaultKeys };
       });
     },
     [panelFieldsConfig]
   );
 
   useEffect(() => {
-    syncPlacementPanelFromConfig("candidateDetails", candidateFieldCatalog);
-  }, [candidateFieldCatalog, syncPlacementPanelFromConfig]);
+    syncPlacementPanelFromConfig("candidateDetails", candidateFieldCatalog, candidateAvailableFields);
+  }, [candidateFieldCatalog, candidateAvailableFields, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    syncPlacementPanelFromConfig("companyDetails", companyFieldCatalog);
-  }, [companyFieldCatalog, syncPlacementPanelFromConfig]);
+    syncPlacementPanelFromConfig("companyDetails", companyFieldCatalog, companyAvailableFields);
+  }, [companyFieldCatalog, companyAvailableFields, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    syncPlacementPanelFromConfig("billingContactDetails", hiringManagerFieldCatalog);
-    syncPlacementPanelFromConfig("timesheetApproverDetails", hiringManagerFieldCatalog);
-  }, [hiringManagerFieldCatalog, syncPlacementPanelFromConfig]);
+    syncPlacementPanelFromConfig(
+      "billingContactDetails",
+      hiringManagerFieldCatalog,
+      hiringManagerAvailableFields
+    );
+    syncPlacementPanelFromConfig(
+      "timesheetApproverDetails",
+      hiringManagerFieldCatalog,
+      hiringManagerAvailableFields
+    );
+  }, [hiringManagerFieldCatalog, hiringManagerAvailableFields, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    syncPlacementPanelFromConfig("jobDetails", jobDetailsFieldCatalog);
-  }, [jobDetailsFieldCatalog, syncPlacementPanelFromConfig]);
+    syncPlacementPanelFromConfig("jobDetails", jobDetailsFieldCatalog, jobAvailableFields);
+  }, [jobDetailsFieldCatalog, jobAvailableFields, syncPlacementPanelFromConfig]);
   useEffect(() => {
-    syncPlacementPanelFromConfig("placementDetails", placementDetailsFieldCatalog);
-  }, [placementDetailsFieldCatalog, syncPlacementPanelFromConfig]);
+    syncPlacementPanelFromConfig("placementDetails", placementDetailsFieldCatalog, availableFields);
+  }, [placementDetailsFieldCatalog, availableFields, syncPlacementPanelFromConfig]);
 
   const savePlacementPanelConfig = useCallback(
     (panelId: string, fields: string[]) => {

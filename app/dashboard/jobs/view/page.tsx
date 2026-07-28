@@ -22,6 +22,7 @@ import {
   panelCatalogKeyFromField,
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import RequestActionModal from '@/components/RequestActionModal';
 import { useAuth } from '@/lib/auth';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
@@ -1780,22 +1781,17 @@ out.sort((a, b) => {
     return [...fromApi];
   }, [hiringManagerAvailableFields]);
 
-  const hiringManagerVisible = useMemo(
-    () =>
-      remapLegacyCustomKeys(
-        getPanelFieldPath(panelFieldsConfig, "hiringManager") ?? [],
-        hiringManagerFieldCatalog
-      ),
-    [panelFieldsConfig, hiringManagerFieldCatalog]
-  );
-
-  useEffect(() => {
-    const keys = hiringManagerFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, "hiringManager");
-    if (current && current.length > 0) return;
-    updatePanelFields("hiringManager", keys);
-  }, [hiringManagerFieldCatalog, panelFieldsConfig, updatePanelFields]);
+  const hiringManagerVisible = useMemo(() => {
+    const catalogKeys = hiringManagerFieldCatalog.map((f) => f.key);
+    const saved = getPanelFieldPath(panelFieldsConfig, "hiringManager");
+    const effective = getEffectiveVisibleKeys(
+      saved,
+      hiringManagerAvailableFields,
+      catalogKeys,
+      { keyForField: panelCatalogKeyFromField }
+    );
+    return remapLegacyCustomKeys(effective, hiringManagerFieldCatalog);
+  }, [panelFieldsConfig, hiringManagerFieldCatalog, hiringManagerAvailableFields]);
 
   const jobDetailsFieldCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
@@ -1807,14 +1803,14 @@ out.sort((a, b) => {
     return [...fromApi];
   }, [availableFields]);
 
-  const jobDetailsVisible = useMemo(
-    () =>
-      remapLegacyCustomKeys(
-        getPanelFieldPath(panelFieldsConfig, jobDetailsPanelPath) ?? [],
-        jobDetailsFieldCatalog
-      ),
-    [panelFieldsConfig, jobDetailsPanelPath, jobDetailsFieldCatalog]
-  );
+  const jobDetailsVisible = useMemo(() => {
+    const catalogKeys = jobDetailsFieldCatalog.map((f) => f.key);
+    const saved = getPanelFieldPath(panelFieldsConfig, jobDetailsPanelPath);
+    const effective = getEffectiveVisibleKeys(saved, availableFields, catalogKeys, {
+      keyForField: panelCatalogKeyFromField,
+    });
+    return remapLegacyCustomKeys(effective, jobDetailsFieldCatalog);
+  }, [panelFieldsConfig, jobDetailsPanelPath, jobDetailsFieldCatalog, availableFields]);
 
   const detailsFieldCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
@@ -1826,14 +1822,14 @@ out.sort((a, b) => {
     return [...fromApi];
   }, [availableFields]);
 
-  const detailsVisible = useMemo(
-    () =>
-      remapLegacyCustomKeys(
-        getPanelFieldPath(panelFieldsConfig, detailsPanelPath) ?? [],
-        detailsFieldCatalog
-      ),
-    [panelFieldsConfig, detailsPanelPath, detailsFieldCatalog]
-  );
+  const detailsVisible = useMemo(() => {
+    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
+    const saved = getPanelFieldPath(panelFieldsConfig, detailsPanelPath);
+    const effective = getEffectiveVisibleKeys(saved, availableFields, catalogKeys, {
+      keyForField: panelCatalogKeyFromField,
+    });
+    return remapLegacyCustomKeys(effective, detailsFieldCatalog);
+  }, [panelFieldsConfig, detailsPanelPath, detailsFieldCatalog, availableFields]);
 
   const visibleFields = useMemo(
     (): Record<string, string[]> => ({
@@ -1844,22 +1840,6 @@ out.sort((a, b) => {
     }),
     [jobDetailsVisible, detailsVisible, hiringManagerVisible, visibleFieldsState.recentNotes]
   );
-
-  useEffect(() => {
-    const keys = jobDetailsFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, jobDetailsPanelPath);
-    if (current && current.length > 0) return;
-    updatePanelFields(jobDetailsPanelPath, keys);
-  }, [jobDetailsFieldCatalog, jobDetailsPanelPath, panelFieldsConfig, updatePanelFields]);
-
-  useEffect(() => {
-    const keys = detailsFieldCatalog.map((f) => f.key);
-    if (keys.length === 0) return;
-    const current = getPanelFieldPath(panelFieldsConfig, detailsPanelPath);
-    if (current && current.length > 0) return;
-    updatePanelFields(detailsPanelPath, keys);
-  }, [detailsFieldCatalog, detailsPanelPath, panelFieldsConfig, updatePanelFields]);
 
   const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "jobDetails") {

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -158,11 +159,12 @@ export default function ArchivedOrganizationsList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -304,8 +306,50 @@ export default function ArchivedOrganizationsList() {
     });
   }, [organizations, availableFields]);
 
+
+  const catalogKeys = useMemo(
+    () => columnsCatalog.map((c) => c.key),
+    [columnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && ORG_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -324,21 +368,17 @@ export default function ArchivedOrganizationsList() {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
-
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog, columnFields, setColumnFields]);
-
-  const orgCatalogKeys = useMemo(() => columnsCatalog.map((c) => c.key), [columnsCatalog]);
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [columnsCatalog, catalogKeys, columnFields, setColumnFields]);
   const columnOrderForModal = useMemo(
-    () => [...columnFields, ...orgCatalogKeys.filter((k) => !columnFields.includes(k))],
-    [columnFields, orgCatalogKeys]
+    () => [...editorColumnFields, ...catalogKeys.filter((k) => !editorColumnFields.includes(k))],
+    [editorColumnFields, catalogKeys]
   );
   const columnVisibleForModal = useMemo(
-    () => Object.fromEntries(orgCatalogKeys.map((k) => [k, columnFields.includes(k)])),
-    [columnFields, orgCatalogKeys]
+    () => Object.fromEntries(catalogKeys.map((k) => [k, editorColumnFields.includes(k)])),
+    [editorColumnFields, catalogKeys]
   );
 
   const getColumnLabel = (key: string) =>
@@ -457,7 +497,7 @@ export default function ArchivedOrganizationsList() {
 
   const filteredAndSortedOrganizations = organizations;
 
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     columnsCatalog.some((c) => c.key === k),
   );
   const skeletonColumnCount =
@@ -837,10 +877,10 @@ export default function ArchivedOrganizationsList() {
 
                   {/* Draggable Dynamic headers (includes Record Number) */}
                   <SortableContext
-                    items={columnFields}
+                    items={effectiveColumnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.map((key) => {
+                    {effectiveColumnFields.map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -939,7 +979,7 @@ export default function ArchivedOrganizationsList() {
                         />
                       </td>
 
-                      {columnFields.map((key) => {
+                      {effectiveColumnFields.map((key) => {
                         if (key === "record_number") {
                           return (
                             <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
@@ -1038,8 +1078,10 @@ export default function ArchivedOrganizationsList() {
         visible={columnVisibleForModal}
         fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
         onToggle={(key) =>
-          setColumnFields((prev) =>
-            prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
+          setColumnFields(
+            editorColumnFields.includes(key)
+              ? editorColumnFields.filter((x) => x !== key)
+              : [...editorColumnFields, key]
           )
         }
         onDragEnd={(event) => {
@@ -1050,7 +1092,7 @@ export default function ArchivedOrganizationsList() {
           const newIndex = order.indexOf(over.id as string);
           if (oldIndex === -1 || newIndex === -1) return;
           const newOrder = arrayMove(order, oldIndex, newIndex);
-          setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+          setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
         }}
         onSave={async () => {
           const ok = await saveColumnConfig();
@@ -1058,7 +1100,7 @@ export default function ArchivedOrganizationsList() {
         }}
         isSaveDisabled={!!isSavingColumns}
         saveButtonText="Done"
-        onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+        onReset={() => setColumnFields(defaultColumnKeys)}
         resetButtonText="Reset"
       />
 
