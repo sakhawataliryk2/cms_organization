@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewEntityType } from "@/lib/viewConfigEntityTypes";
-import { HEADER_CONFIG_ENTITY_MAP } from "@/lib/viewConfigEntityTypes";
 import {
   clearLegacyLocalStorage,
   mergeCache,
   migrateLegacyLocalStorage,
   readCache,
+  writeCache,
   type ViewConfig,
 } from "@/lib/viewConfigCache";
 
@@ -88,41 +88,6 @@ function getToken(): string | undefined {
     ?.split("=")[1];
 }
 
-async function fetchHeaderConfigDefault(
-  entityType: ViewEntityType
-): Promise<Partial<ViewConfig>> {
-  const mapping = HEADER_CONFIG_ENTITY_MAP[entityType];
-  if (!mapping) return {};
-
-  const token = getToken();
-  if (!token) return {};
-
-  try {
-    const url = `/api/header-config?entityType=${encodeURIComponent(
-      mapping.entityType
-    )}&configType=${encodeURIComponent(mapping.configType)}`;
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-
-    const data = await response.json();
-    if (!data?.success) return {};
-
-    if (mapping.configType === "header" && Array.isArray(data.headerFields)) {
-      return { header_fields: data.headerFields };
-    }
-    if (mapping.configType === "columns" && Array.isArray(data.listColumns)) {
-      return { column_order: data.listColumns };
-    }
-  } catch {
-    // ignore
-  }
-
-  return {};
-}
-
 async function fetchServerConfig(
   entityType: ViewEntityType
 ): Promise<ViewConfig> {
@@ -171,6 +136,24 @@ function hasConfigData(config: ViewConfig): boolean {
   );
 }
 
+/** Layout keys owned by Field Management Default for first-time users */
+const LAYOUT_CONFIG_KEYS = new Set<ConfigKey>([
+  "column_order",
+  "panel_fields",
+  "header_fields",
+  "summary_layout",
+]);
+
+function stripLayoutKeys(config: ViewConfig): ViewConfig {
+  const next: ViewConfig = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (LAYOUT_CONFIG_KEYS.has(key as ConfigKey)) continue;
+    if (value == null) continue;
+    (next as Record<string, unknown>)[key] = value;
+  }
+  return next;
+}
+
 async function loadEntityConfig(entityType: ViewEntityType): Promise<ViewConfig> {
   const cached = readCache(entityType);
   if (cached && hasConfigData(cached)) {
@@ -186,21 +169,23 @@ async function loadEntityConfig(entityType: ViewEntityType): Promise<ViewConfig>
     return serverConfig;
   }
 
+  // Server has no per-user config: act like a brand-new user for layouts.
+  // 1) Pull non-layout prefs from legacy keys (favorites, etc.)
+  // 2) Drop legacy column/panel/header layouts (they used to resurrect after DB reset)
+  // 3) Do NOT seed from org-wide header_configs — Field Management Default owns that
   const legacy = migrateLegacyLocalStorage(entityType);
-  if (hasConfigData(legacy)) {
-    await saveServerConfig(entityType, { ...legacy, _migrated: true });
-    mergeCache(entityType, { ...legacy, _migrated: true });
-    clearLegacyLocalStorage(entityType);
-    return { ...legacy, _migrated: true };
+  clearLegacyLocalStorage(entityType);
+
+  const nonLayout = stripLayoutKeys(legacy);
+  if (hasConfigData(nonLayout)) {
+    const toSave = { ...nonLayout, _migrated: true as const };
+    await saveServerConfig(entityType, toSave);
+    writeCache(entityType, toSave);
+    return toSave;
   }
 
-  const defaults = await fetchHeaderConfigDefault(entityType);
-  if (hasConfigData(defaults)) {
-    mergeCache(entityType, defaults);
-    return defaults;
-  }
-
-  return cached || {};
+  writeCache(entityType, {});
+  return {};
 }
 
 function ensureEntityLoaded(entityType: ViewEntityType): Promise<ViewConfig> {
