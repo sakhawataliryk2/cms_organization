@@ -1,4 +1,5 @@
 import type { ViewEntityType } from "./viewConfigEntityTypes";
+import { getUser } from "./auth";
 
 export type ViewConfig = {
   column_order?: string[];
@@ -17,6 +18,32 @@ export type ViewConfig = {
 
 const CACHE_PREFIX = "userViewConfig:";
 
+/** Resolve the signed-in user id for scoped localStorage keys. */
+export function getViewConfigUserId(): string | null {
+  try {
+    const id = getUser()?.id;
+    if (id == null) return null;
+    const s = String(id).trim();
+    return s.length > 0 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Per-user cache key: userViewConfig:<userId>:<entityType>
+ * Falls back to null when logged out (no cache read/write).
+ */
+function cacheKey(entityType: ViewEntityType, userId?: string | null): string | null {
+  const uid = userId ?? getViewConfigUserId();
+  if (!uid) return null;
+  return `${CACHE_PREFIX}${uid}:${entityType}`;
+}
+
+/** Pre-user-scoping key (migrated once into the current user's key). */
+function legacyUnscopedCacheKey(entityType: ViewEntityType): string {
+  return `${CACHE_PREFIX}${entityType}`;
+}
 type LegacyKeyMap = Partial<Record<keyof ViewConfig, string | string[]>>;
 
 const LEGACY_KEY_MAP: Record<ViewEntityType, LegacyKeyMap> = {
@@ -192,10 +219,6 @@ const ORG_DETAIL_PANEL_KEY_MAP: Record<string, string> = {
   organizationContactInfoFields: "contactInfo",
 };
 
-function cacheKey(entityType: ViewEntityType): string {
-  return `${CACHE_PREFIX}${entityType}`;
-}
-
 function readJson<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {
@@ -227,7 +250,24 @@ function setNestedPanelField(
 
 export function readCache(entityType: ViewEntityType): ViewConfig | null {
   if (typeof window === "undefined") return null;
-  return readJson<ViewConfig>(localStorage.getItem(cacheKey(entityType)));
+  const key = cacheKey(entityType);
+  if (!key) return null;
+
+  const scoped = readJson<ViewConfig>(localStorage.getItem(key));
+  if (scoped) return scoped;
+
+  // One-time migrate pre-user-scoping cache into this user's key
+  const legacyKey = legacyUnscopedCacheKey(entityType);
+  const legacy = readJson<ViewConfig>(localStorage.getItem(legacyKey));
+  if (!legacy) return null;
+
+  try {
+    localStorage.setItem(key, JSON.stringify(legacy));
+    localStorage.removeItem(legacyKey);
+  } catch {
+    // ignore quota / private mode
+  }
+  return legacy;
 }
 
 export function writeCache(
@@ -235,7 +275,15 @@ export function writeCache(
   config: ViewConfig
 ): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(cacheKey(entityType), JSON.stringify(config));
+  const key = cacheKey(entityType);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(config));
+    // Drop unscoped legacy key so it cannot leak across users
+    localStorage.removeItem(legacyUnscopedCacheKey(entityType));
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 export function mergeCache(
