@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ViewEntityType } from "@/lib/viewConfigEntityTypes";
 import {
   clearLegacyLocalStorage,
+  getViewConfigUserId,
   mergeCache,
   migrateLegacyLocalStorage,
   readCache,
@@ -38,11 +39,17 @@ type EntityState = {
   listeners: Set<() => void>;
 };
 
-const entityStates = new Map<ViewEntityType, EntityState>();
-const loadPromises = new Map<ViewEntityType, Promise<ViewConfig>>();
+/** In-memory state keyed by userId:entityType so shared browsers don't mix users */
+const entityStates = new Map<string, EntityState>();
+const loadPromises = new Map<string, Promise<ViewConfig>>();
+
+function memoryKey(entityType: ViewEntityType): string {
+  return `${getViewConfigUserId() || "anonymous"}:${entityType}`;
+}
 
 function getEntityState(entityType: ViewEntityType): EntityState {
-  let state = entityStates.get(entityType);
+  const key = memoryKey(entityType);
+  let state = entityStates.get(key);
   if (!state) {
     state = {
       config: readCache(entityType) || {},
@@ -51,13 +58,13 @@ function getEntityState(entityType: ViewEntityType): EntityState {
       loaded: false,
       listeners: new Set(),
     };
-    entityStates.set(entityType, state);
+    entityStates.set(key, state);
   }
   return state;
 }
 
 function notifyListeners(entityType: ViewEntityType) {
-  const state = entityStates.get(entityType);
+  const state = entityStates.get(memoryKey(entityType));
   if (!state) return;
   state.listeners.forEach((fn) => fn());
 }
@@ -189,7 +196,8 @@ async function loadEntityConfig(entityType: ViewEntityType): Promise<ViewConfig>
 }
 
 function ensureEntityLoaded(entityType: ViewEntityType): Promise<ViewConfig> {
-  const existing = loadPromises.get(entityType);
+  const key = memoryKey(entityType);
+  const existing = loadPromises.get(key);
   if (existing) return existing;
 
   const state = getEntityState(entityType);
@@ -211,10 +219,10 @@ function ensureEntityLoaded(entityType: ViewEntityType): Promise<ViewConfig> {
       return state.config;
     })
     .finally(() => {
-      loadPromises.delete(entityType);
+      loadPromises.delete(key);
     });
 
-  loadPromises.set(entityType, promise);
+  loadPromises.set(key, promise);
   return promise;
 }
 
@@ -225,6 +233,7 @@ export function useUserViewConfig<T extends ConfigKey>({
   debounceMs = 500,
   enabled = true,
 }: UseUserViewConfigOptions<T>): UseUserViewConfigResult<T> {
+  const userId = getViewConfigUserId();
   const state = getEntityState(entityType);
   const [, forceUpdate] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -237,12 +246,12 @@ export function useUserViewConfig<T extends ConfigKey>({
     return () => {
       state.listeners.delete(listener);
     };
-  }, [entityType, state]);
+  }, [entityType, state, userId]);
 
   useEffect(() => {
     if (!enabled) return;
     ensureEntityLoaded(entityType);
-  }, [entityType, enabled]);
+  }, [entityType, enabled, userId]);
 
   const currentValue =
     (state.config[key] as NonNullable<ViewConfig[T]> | undefined) ??
