@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
@@ -311,8 +312,50 @@ export default function ArchivedHiringManagersList() {
     return String(val);
   };
 
+
+  const catalogKeys = useMemo(
+    () => hmColumnsCatalog.map((c) => c.key),
+    [hmColumnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && HM_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = hmColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -331,12 +374,11 @@ export default function ArchivedHiringManagersList() {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [hmColumnsCatalog, catalogKeys, columnFields, setColumnFields]);
 
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [hmColumnsCatalog, columnFields, setColumnFields]);
 
   const applyFavorite = (fav: HiringManagerFavorite) => {
     const catalogKeys = new Set(hmColumnsCatalog.map((c) => c.key));
@@ -421,11 +463,12 @@ export default function ArchivedHiringManagersList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -464,7 +507,7 @@ export default function ArchivedHiringManagersList() {
     );
   }, [hiringManagers, advancedSearchCriteria, hmColumnsCatalog]);
 
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     hmColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -749,10 +792,10 @@ export default function ArchivedHiringManagersList() {
                   </th>
 
                   <SortableContext
-                    items={columnFields}
+                    items={effectiveColumnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.map((key) => {
+                    {effectiveColumnFields.map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -861,7 +904,7 @@ export default function ArchivedHiringManagersList() {
                         />
                       </td>
 
-                      {columnFields.map((key) => {
+                      {effectiveColumnFields.map((key) => {
                         if (key === "record_number") {
                           return (
                             <td key={key} className="px-6 py-4 whitespace-nowrap">
@@ -946,30 +989,30 @@ export default function ArchivedHiringManagersList() {
           title="Customize Columns"
           description="Drag to reorder, check/uncheck to show or hide columns in the archived hiring manager list."
           order={[
-            ...columnFields,
-            ...hmColumnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+            ...editorColumnFields,
+            ...hmColumnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
           ]}
-          visible={Object.fromEntries(hmColumnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
+          visible={Object.fromEntries(hmColumnsCatalog.map((c) => [c.key, editorColumnFields.includes(c.key)]))}
           fieldCatalog={hmColumnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
-            if (columnFields.includes(key)) {
-              setColumnFields((prev) => prev.filter((x) => x !== key));
+            if (editorColumnFields.includes(key)) {
+              setColumnFields(editorColumnFields.filter((x) => x !== key));
             } else {
-              setColumnFields((prev) => [...prev, key]);
+              setColumnFields([...editorColumnFields, key]);
             }
           }}
           onDragEnd={(event) => {
             const { active, over } = event;
             if (!over || active.id === over.id) return;
             const fullOrder = [
-              ...columnFields,
-              ...hmColumnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+              ...editorColumnFields,
+              ...hmColumnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
             ];
             const oldIndex = fullOrder.indexOf(active.id as string);
             const newIndex = fullOrder.indexOf(over.id as string);
             if (oldIndex === -1 || newIndex === -1) return;
             const newOrder = arrayMove(fullOrder, oldIndex, newIndex);
-            setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+            setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
           }}
           onSave={async () => {
             const ok = await saveColumnConfig();
@@ -977,7 +1020,7 @@ export default function ArchivedHiringManagersList() {
           }}
           saveButtonText="Done"
           isSaveDisabled={!!isSavingColumns}
-          onReset={() => setColumnFields(hmColumnsCatalog.map((c) => c.key))}
+          onReset={() => setColumnFields(defaultColumnKeys)}
           resetButtonText="Reset"
           listMaxHeight="60vh"
         />

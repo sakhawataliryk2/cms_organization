@@ -20,6 +20,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
+import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
 // Drag and drop 
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
@@ -876,23 +877,32 @@ out.sort((a, b) => {
       panelId: string,
       path: string,
       catalog: Array<{ key: string; label: string }>,
-      fallback?: string[]
+      options?: { fallback?: string[]; fields?: any[] }
     ) => {
       const catalogKeys = catalog.map((f) => f.key);
-      if (catalogKeys.length === 0 && !fallback?.length) return;
+      if (catalogKeys.length === 0 && !options?.fallback?.length) return;
       const saved = getPanelFieldPath(panelFieldsConfig, path);
       setVisibleFields((prev) => {
         const current = prev[panelId] || [];
         if (saved && saved.length > 0) {
           const remapped = remapLegacyCustomKeys(saved, catalog);
-          const next = remapped.length > 0 ? remapped : catalogKeys;
+          const next =
+            remapped.length > 0
+              ? remapped
+              : getDefaultVisibleKeys(options?.fields, catalogKeys, {
+                  keyForField: panelCatalogKeyFromField,
+                  fallbackKeys: options?.fallback,
+                });
           if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
             return { ...prev, [panelId]: next };
           }
           return prev;
         }
         if (current.length > 0) return prev;
-        const defaultKeys = catalogKeys.length > 0 ? catalogKeys : fallback || [];
+        const defaultKeys = getDefaultVisibleKeys(options?.fields, catalogKeys, {
+          keyForField: panelCatalogKeyFromField,
+          fallbackKeys: options?.fallback,
+        });
         return defaultKeys.length > 0 ? { ...prev, [panelId]: defaultKeys } : prev;
       });
     },
@@ -900,19 +910,27 @@ out.sort((a, b) => {
   );
 
   useEffect(() => {
-    syncPanelFieldsFromConfig("contactInfo", "contactInfo", contactInfoFieldCatalog);
-  }, [contactInfoFieldCatalog, syncPanelFieldsFromConfig]);
+    syncPanelFieldsFromConfig("contactInfo", "contactInfo", contactInfoFieldCatalog, {
+      fields: availableFields,
+    });
+  }, [contactInfoFieldCatalog, availableFields, syncPanelFieldsFromConfig]);
 
   useEffect(() => {
-    syncPanelFieldsFromConfig("details", "details", detailsFieldCatalog);
-  }, [detailsFieldCatalog, syncPanelFieldsFromConfig]);
+    syncPanelFieldsFromConfig("details", "details", detailsFieldCatalog, {
+      fields: availableFields,
+    });
+  }, [detailsFieldCatalog, availableFields, syncPanelFieldsFromConfig]);
 
   useEffect(() => {
-    syncPanelFieldsFromConfig("websiteJobs", "websiteJobs", websiteJobsFieldCatalog, ["jobs"]);
+    syncPanelFieldsFromConfig("websiteJobs", "websiteJobs", websiteJobsFieldCatalog, {
+      fallback: ["jobs"],
+    });
   }, [websiteJobsFieldCatalog, syncPanelFieldsFromConfig]);
 
   useEffect(() => {
-    syncPanelFieldsFromConfig("ourJobs", "ourJobs", ourJobsFieldCatalog, ["jobs"]);
+    syncPanelFieldsFromConfig("ourJobs", "ourJobs", ourJobsFieldCatalog, {
+      fallback: ["jobs"],
+    });
   }, [ourJobsFieldCatalog, syncPanelFieldsFromConfig]);
 
   const savePanelFieldConfig = useCallback(

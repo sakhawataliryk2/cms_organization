@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "nextjs-toploader/app";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -8,6 +8,7 @@ import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { remapLegacyCustomKeys } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -357,11 +358,12 @@ export default function TearsheetList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -406,9 +408,42 @@ export default function TearsheetList() {
     ];
   }, []);
 
-  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
+
+  const catalogKeys = useMemo(
+    () => columnsCatalog.map((c) => c.key),
+    [columnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? f?.key ?? "").trim();
+      return name;
+    },
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(null, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("id") ? ["id"] : [],
+      }),
+    [catalogKeys, columnKeyForField]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, null, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("id") ? ["id"] : [],
+      }),
+    [columnFields, catalogKeys, columnKeyForField]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -427,30 +462,27 @@ export default function TearsheetList() {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [columnsCatalog, catalogKeys, columnFields, setColumnFields]);
 
-    if (columnFields.length === 0) {
-      setColumnFields(catalogKeys);
-    }
-  }, [columnsCatalog, columnFields, setColumnFields]);
 
   // Map current column selection into visibility map for the sortable fields modal
   const columnVisibilityMap = useMemo(() => {
     const map: Record<string, boolean> = {};
-    const selected = new Set(columnFields);
+    const selected = new Set(editorColumnFields);
     columnsCatalog.forEach((c) => {
       map[c.key] = selected.has(c.key);
     });
     return map;
-  }, [columnsCatalog, columnFields]);
+  }, [columnsCatalog, editorColumnFields]);
 
   const handleToggleColumnVisible = (key: string) => {
     setColumnFields(
-      columnFields.includes(key)
-        ? columnFields.filter((k) => k !== key)
-        : [...columnFields, key]
+      editorColumnFields.includes(key)
+        ? editorColumnFields.filter((k) => k !== key)
+        : [...editorColumnFields, key]
     );
   };
 
@@ -720,7 +752,7 @@ export default function TearsheetList() {
   }, [tearsheets, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const showTableSkeleton = isLoading;
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     columnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -1131,10 +1163,10 @@ export default function TearsheetList() {
 
                   {/* Draggable Dynamic headers (includes Record Number) */}
                   <SortableContext
-                    items={columnFields}
+                    items={effectiveColumnFields}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {columnFields.map((key) => {
+                    {effectiveColumnFields.map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -1204,7 +1236,7 @@ export default function TearsheetList() {
                       </td>
 
                       {/* Dynamic cells (including Record Number) */}
-                      {columnFields.map((key) => (
+                      {effectiveColumnFields.map((key) => (
                         <td
                           key={key}
                           className={`px-6 py-4 whitespace-nowrap text-sm ${key === "id" ? "text-black" : "text-gray-500"}`}
@@ -1313,14 +1345,17 @@ export default function TearsheetList() {
         onClose={() => setShowColumnModal(false)}
         title="Customize Columns"
         description="Drag to reorder, check or uncheck to show or hide columns."
-        order={columnFields}
+        order={[
+          ...editorColumnFields,
+          ...columnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
+        ]}
         visible={columnVisibilityMap}
         fieldCatalog={columnsCatalog.map(({ key, label }) => ({ key, label }))}
         onToggle={handleToggleColumnVisible}
         onDragEnd={handleDragEnd}
         onSave={handleSaveColumns}
-        isSaveDisabled={columnFields.length === 0}
-        onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+        isSaveDisabled={editorColumnFields.length === 0 || !!isSavingColumns}
+        onReset={() => setColumnFields(defaultColumnKeys)}
         resetButtonText="Reset"
       />
 

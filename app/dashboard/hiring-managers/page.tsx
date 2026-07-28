@@ -7,6 +7,7 @@ import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { IoFilterSharp } from "react-icons/io5";
@@ -388,6 +389,86 @@ export default function HiringManagerList() {
       return true;
     });
   }, [availableFields]);
+
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderViewConfig({
+    entityType: VIEW_ENTITY_TYPES.hiringManagers,
+    configType: "columns",
+    defaultFields: [],
+  });
+
+  const catalogKeys = useMemo(
+    () => hmColumnsCatalog.map((c) => c.key),
+    [hmColumnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && HM_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
+  useEffect(() => {
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+
+    if (columnFields.length > 0) {
+      let validOrder = remapLegacyCustomKeys(columnFields, hmColumnsCatalog).filter(
+        (k: string) => catalogSet.has(k)
+      );
+      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+        validOrder = ["record_number", ...validOrder];
+      }
+      const wouldCollapseToRecordNumberOnly =
+        columnFields.length > 1 &&
+        validOrder.length === 1 &&
+        validOrder[0] === "record_number";
+      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
+        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
+          setColumnFields(validOrder);
+        }
+      }
+    }
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [hmColumnsCatalog, catalogKeys, columnFields, setColumnFields]);
+
   const getColumnLabel = (key: string) =>
     hmColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
@@ -425,48 +506,6 @@ export default function HiringManagerList() {
         return "—";
     }
   };
-
-  const {
-    columnFields,
-    setColumnFields,
-    showHeaderFieldModal: showColumnModal,
-    setShowHeaderFieldModal: setShowColumnModal,
-    saveHeaderConfig: saveColumnConfig,
-    isSaving: isSavingColumns,
-  } = useHeaderViewConfig({
-    entityType: VIEW_ENTITY_TYPES.hiringManagers,
-    configType: "columns",
-    defaultFields: [],
-  });
-
-  useEffect(() => {
-    const catalogKeys = hmColumnsCatalog.map((c) => c.key);
-    if (catalogKeys.length === 0) return;
-    const catalogSet = new Set(catalogKeys);
-
-    if (columnFields.length > 0) {
-      let validOrder = remapLegacyCustomKeys(columnFields, hmColumnsCatalog).filter(
-        (k: string) => catalogSet.has(k)
-      );
-      if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
-        validOrder = ["record_number", ...validOrder];
-      }
-      const wouldCollapseToRecordNumberOnly =
-        columnFields.length > 1 &&
-        validOrder.length === 1 &&
-        validOrder[0] === "record_number";
-      if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
-        if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
-          setColumnFields(validOrder);
-        }
-        return;
-      }
-    }
-
-    if (columnFields.length === 0) {
-      setColumnFields(catalogKeys);
-    }
-  }, [hmColumnsCatalog, columnFields, setColumnFields]);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchTerm(searchInput), SEARCH_DEBOUNCE_MS);
@@ -644,11 +683,12 @@ export default function HiringManagerList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -698,7 +738,7 @@ export default function HiringManagerList() {
     );
 
     // Get headers from currently displayed columns
-    const headers = columnFields.map((key) => getColumnLabel(key));
+    const headers = effectiveColumnFields.map((key) => getColumnLabel(key));
 
     // Escape CSV values
     const escapeCSV = (value: any): string => {
@@ -714,7 +754,7 @@ export default function HiringManagerList() {
     const csvRows = [
       headers.map(escapeCSV).join(','),
       ...selectedData.map((hm) => {
-        const row = columnFields.map((key) =>
+        const row = effectiveColumnFields.map((key) =>
           key === "record_number" ? escapeCSV(`HM ${getColumnValue(hm, key)}`) : escapeCSV(getColumnValue(hm, key))
         );
         return row.join(',');
@@ -849,7 +889,7 @@ export default function HiringManagerList() {
   }, [currentPage, totalPages]);
 
   const showTableSkeleton = isLoading || isPageLoading;
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     hmColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -1154,10 +1194,10 @@ export default function HiringManagerList() {
 
                 {/* Draggable Dynamic headers (includes Record #) */}
                 <SortableContext
-                  items={columnFields}
+                  items={effectiveColumnFields}
                   strategy={horizontalListSortingStrategy}
                 >
-                  {columnFields.map((key) => {
+                  {effectiveColumnFields.map((key) => {
                     const columnInfo = getColumnInfo(key);
                     if (!columnInfo) return null;
 
@@ -1265,7 +1305,7 @@ export default function HiringManagerList() {
                     </td>
 
                     {/* Dynamic cells (including Record #) */}
-                    {columnFields.filter(k => hmColumnsCatalog.some(c => c.key === k)).map((key) => {
+                    {effectiveColumnFields.filter(k => hmColumnsCatalog.some(c => c.key === k)).map((key) => {
                       if (key === "record_number") {
                         return (
                           <td key={key} className="px-6 py-4 whitespace-nowrap">
@@ -1398,30 +1438,30 @@ export default function HiringManagerList() {
           title="Customize Columns"
           description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the hiring manager list."
           order={[
-            ...columnFields,
-            ...hmColumnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+            ...editorColumnFields,
+            ...hmColumnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
           ]}
-          visible={Object.fromEntries(hmColumnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
+          visible={Object.fromEntries(hmColumnsCatalog.map((c) => [c.key, editorColumnFields.includes(c.key)]))}
           fieldCatalog={hmColumnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
-            if (columnFields.includes(key)) {
-              setColumnFields(columnFields.filter((x) => x !== key));
+            if (editorColumnFields.includes(key)) {
+              setColumnFields(editorColumnFields.filter((x) => x !== key));
             } else {
-              setColumnFields([...columnFields, key]);
+              setColumnFields([...editorColumnFields, key]);
             }
           }}
           onDragEnd={(event) => {
             const { active, over } = event;
             if (!over || active.id === over.id) return;
             const fullOrder = [
-              ...columnFields,
-              ...hmColumnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+              ...editorColumnFields,
+              ...hmColumnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
             ];
             const oldIndex = fullOrder.indexOf(active.id as string);
             const newIndex = fullOrder.indexOf(over.id as string);
             if (oldIndex === -1 || newIndex === -1) return;
             const newOrder = arrayMove(fullOrder, oldIndex, newIndex);
-            setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+            setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
           }}
           onSave={async () => {
             const ok = await saveColumnConfig();
@@ -1430,16 +1470,7 @@ export default function HiringManagerList() {
           saveButtonText="Done"
           isSaveDisabled={!!isSavingColumns}
           onReset={() => {
-            const required = (availableFields || [])
-              .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => {
-                const name = f.field_name || f.fieldName || "";
-                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
-                const isBackendCandidate = name && HM_BACKEND_COLUMN_KEYS.includes(name);
-                return catalogKeyFromColumn(name, String(label || name), !!isBackendCandidate);
-              });
-            const defaults = Array.from(new Set(["record_number", ...HM_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
-            setColumnFields(defaults);
+            setColumnFields(defaultColumnKeys);
           }}
           resetButtonText="Reset"
           listMaxHeight="60vh"

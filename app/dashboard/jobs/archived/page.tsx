@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import Image from 'next/image';
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
@@ -268,8 +269,67 @@ export default function ArchivedJobsList() {
     defaultFields: [],
   });
 
+
+  const getRequiredAdminColumnKeys = useCallback(() => {
+    const requiredNames = new Set(
+      (availableFields || [])
+        .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden && (f.is_required || f.required || f.isRequired))
+        .map((f: any) => String((f.field_name ?? f.fieldName ?? "").trim()).toLowerCase())
+        .filter(Boolean)
+    );
+    const required = jobColumnsCatalog.filter((c) => {
+      if (c.key === "record_number") return true;
+      if (!("name" in c) || !c.name) return false;
+      return requiredNames.has(String(c.name).trim().toLowerCase());
+    });
+    return Array.from(new Set(required.map((c) => c.key)));
+  }, [availableFields, jobColumnsCatalog]);
+
+  const catalogKeys = useMemo(
+    () => jobColumnsCatalog.map((c) => c.key),
+    [jobColumnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && JOB_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        fallbackKeys: getRequiredAdminColumnKeys(),
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField, getRequiredAdminColumnKeys]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        fallbackKeys: getRequiredAdminColumnKeys(),
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField, getRequiredAdminColumnKeys]
+  );
+
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = jobColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -288,12 +348,11 @@ export default function ArchivedJobsList() {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [jobColumnsCatalog, catalogKeys, columnFields, setColumnFields]);
 
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [jobColumnsCatalog, columnFields, setColumnFields]);
 
   const { value: favoritesRaw, setValue: setFavoritesConfig } = useUserViewConfig({
     entityType: VIEW_ENTITY_TYPES.jobsArchived,
@@ -305,15 +364,13 @@ export default function ArchivedJobsList() {
   const persistFavorites = (updated: JobFavorite[]) => {
     setFavoritesConfig(updated);
   };
-
-  const jobCatalogKeys = useMemo(() => jobColumnsCatalog.map((c) => c.key), [jobColumnsCatalog]);
   const columnOrderForModal = useMemo(
-    () => [...columnFields, ...jobCatalogKeys.filter((k) => !columnFields.includes(k))],
-    [columnFields, jobCatalogKeys]
+    () => [...editorColumnFields, ...catalogKeys.filter((k) => !editorColumnFields.includes(k))],
+    [editorColumnFields, catalogKeys]
   );
   const columnVisibleForModal = useMemo(
-    () => Object.fromEntries(jobCatalogKeys.map((k) => [k, columnFields.includes(k)])),
-    [columnFields, jobCatalogKeys]
+    () => Object.fromEntries(catalogKeys.map((k) => [k, editorColumnFields.includes(k)])),
+    [editorColumnFields, catalogKeys]
   );
 
   const applyFavorite = (fav: JobFavorite) => {
@@ -389,11 +446,12 @@ export default function ArchivedJobsList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -414,7 +472,7 @@ export default function ArchivedJobsList() {
 
   const filteredAndSortedJobs = jobs;
 
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     jobColumnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -614,8 +672,8 @@ export default function ArchivedJobsList() {
                 </th>
                 <th className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Actions</th>
                 {/* Draggable Dynamic headers (includes Record #) */}
-                <SortableContext items={columnFields} strategy={horizontalListSortingStrategy}>
-                  {columnFields.map((key) => {
+                <SortableContext items={effectiveColumnFields} strategy={horizontalListSortingStrategy}>
+                  {effectiveColumnFields.map((key) => {
                     const columnInfo = getColumnInfo(key);
                     if (!columnInfo) return null;
                     return (
@@ -695,7 +753,7 @@ export default function ArchivedJobsList() {
                       />
                     </td>
 
-                    {columnFields.map((key) => {
+                    {effectiveColumnFields.map((key) => {
                       if (key === "record_number") {
                         return (
                           <td key={key} className="px-6 py-4 whitespace-nowrap">
@@ -776,8 +834,10 @@ export default function ArchivedJobsList() {
         visible={columnVisibleForModal}
         fieldCatalog={jobColumnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
         onToggle={(key) =>
-          setColumnFields((prev) =>
-            prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
+          setColumnFields(
+            editorColumnFields.includes(key)
+              ? editorColumnFields.filter((x) => x !== key)
+              : [...editorColumnFields, key]
           )
         }
         onDragEnd={(event) => {
@@ -788,7 +848,7 @@ export default function ArchivedJobsList() {
           const newIndex = order.indexOf(over.id as string);
           if (oldIndex === -1 || newIndex === -1) return;
           const newOrder = arrayMove(order, oldIndex, newIndex);
-          setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+          setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
         }}
         onSave={async () => {
           const ok = await saveColumnConfig();
@@ -796,7 +856,7 @@ export default function ArchivedJobsList() {
         }}
         isSaveDisabled={!!isSavingColumns}
         saveButtonText="Done"
-        onReset={() => setColumnFields(jobColumnsCatalog.map((c) => c.key))}
+        onReset={() => setColumnFields(defaultColumnKeys)}
         resetButtonText="Reset"
       />
 

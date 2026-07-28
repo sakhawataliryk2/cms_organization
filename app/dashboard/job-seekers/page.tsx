@@ -6,6 +6,7 @@ import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { useServerEntityList } from "@/hooks/useServerEntityList";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { IoFilterSharp } from "react-icons/io5";
@@ -115,11 +116,12 @@ export default function JobSeekerList() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = columnFields.indexOf(active.id as string);
-    const newIndex = columnFields.indexOf(over.id as string);
+    const base = columnFields.length > 0 ? columnFields : effectiveColumnFields;
+    const oldIndex = base.indexOf(active.id as string);
+    const newIndex = base.indexOf(over.id as string);
 
     if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      const newOrder = arrayMove(base, oldIndex, newIndex);
       setColumnFields(newOrder);
     }
   };
@@ -261,8 +263,51 @@ export default function JobSeekerList() {
     });
   }, [jobSeekers, availableFields]);
 
+  const catalogKeys = useMemo(
+    () => columnsCatalog.map((c) => c.key),
+    [columnsCatalog]
+  );
+
+  const columnKeyForField = useCallback(
+    (f: any) => {
+      const name = String(f?.field_name ?? f?.fieldName ?? "").trim();
+      const label =
+        f?.field_label ?? f?.fieldLabel ?? (name ? humanize(name) : "");
+      const isBackendCol = Boolean(name && JS_BACKEND_COLUMN_KEYS.includes(name));
+      return catalogKeyFromColumn(name, String(label || name), isBackendCol);
+    },
+    // JS_BACKEND_COLUMN_KEYS is stable in this component
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const defaultColumnKeys = useMemo(
+    () =>
+      getDefaultVisibleKeys(availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [availableFields, catalogKeys, columnKeyForField]
+  );
+
+  const effectiveColumnFields = useMemo(
+    () =>
+      getEffectiveVisibleKeys(columnFields, availableFields, catalogKeys, {
+        keyForField: columnKeyForField,
+        alwaysInclude: catalogKeys.includes("record_number")
+          ? ["record_number"]
+          : [],
+      }),
+    [columnFields, availableFields, catalogKeys, columnKeyForField]
+  );
+
+  /** Keys used by the column editor when the user has no saved layout yet */
+  const editorColumnFields =
+    columnFields.length > 0 ? columnFields : effectiveColumnFields;
+
   useEffect(() => {
-    const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
 
@@ -281,14 +326,10 @@ export default function JobSeekerList() {
         if (JSON.stringify(validOrder) !== JSON.stringify(columnFields)) {
           setColumnFields(validOrder);
         }
-        return;
       }
     }
-
-    if (columnFields.length === 0) {
-      setColumnFields(catalogKeys);
-    }
-  }, [columnsCatalog, columnFields, setColumnFields]);
+    // Empty saved layout: do not auto-persist — use effectiveColumnFields for display
+  }, [columnsCatalog, catalogKeys, columnFields, setColumnFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -529,7 +570,7 @@ export default function JobSeekerList() {
   }, [currentPage, totalPages]);
 
   const showTableSkeleton = isLoading || isPageLoading;
-  const visibleTableColumnKeys = columnFields.filter((k) =>
+  const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
     columnsCatalog.some((c) => c.key === k)
   );
   const skeletonColumnCount =
@@ -592,7 +633,7 @@ export default function JobSeekerList() {
     );
 
     // Get headers from currently displayed columns
-    const headers = columnFields.map((key) => getColumnLabel(key));
+    const headers = effectiveColumnFields.map((key) => getColumnLabel(key));
 
     // Escape CSV values
     const escapeCSV = (value: any): string => {
@@ -608,7 +649,7 @@ export default function JobSeekerList() {
     const csvRows = [
       headers.map(escapeCSV).join(','),
       ...selectedData.map((js) => {
-        const row = columnFields.map((key) =>
+        const row = effectiveColumnFields.map((key) =>
           key === "record_number" ? escapeCSV(`JS ${getColumnValue(js, key)}`) : escapeCSV(getColumnValue(js, key))
         );
         return row.join(',');
@@ -909,10 +950,10 @@ export default function JobSeekerList() {
 
                 {/* Draggable Dynamic headers (includes Record #) */}
                 <SortableContext
-                  items={columnFields}
+                  items={effectiveColumnFields}
                   strategy={horizontalListSortingStrategy}
                 >
-                  {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
+                  {effectiveColumnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                     const columnInfo = getColumnInfo(key);
                     if (!columnInfo) return null;
 
@@ -1022,7 +1063,7 @@ export default function JobSeekerList() {
                     </td>
 
                     {/* Dynamic columns (including Record #) */}
-                    {columnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
+                    {effectiveColumnFields.filter(k => columnsCatalog.some(c => c.key === k)).map((key) => {
                       if (key === "record_number") {
                         return (
                           <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1207,30 +1248,30 @@ export default function JobSeekerList() {
           title="Customize Columns"
           description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the job seeker list."
           order={[
-            ...columnFields,
-            ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+            ...editorColumnFields,
+            ...columnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
           ]}
-          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
+          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, editorColumnFields.includes(c.key)]))}
           fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
           onToggle={(key) => {
-            if (columnFields.includes(key)) {
-              setColumnFields(columnFields.filter((x) => x !== key));
+            if (editorColumnFields.includes(key)) {
+              setColumnFields(editorColumnFields.filter((x) => x !== key));
             } else {
-              setColumnFields([...columnFields, key]);
+              setColumnFields([...editorColumnFields, key]);
             }
           }}
           onDragEnd={(event) => {
             const { active, over } = event;
             if (!over || active.id === over.id) return;
             const fullOrder = [
-              ...columnFields,
-              ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+              ...editorColumnFields,
+              ...columnsCatalog.filter((c) => !editorColumnFields.includes(c.key)).map((c) => c.key),
             ];
             const oldIndex = fullOrder.indexOf(active.id as string);
             const newIndex = fullOrder.indexOf(over.id as string);
             if (oldIndex === -1 || newIndex === -1) return;
             const newOrder = arrayMove(fullOrder, oldIndex, newIndex);
-            setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+            setColumnFields(newOrder.filter((k) => editorColumnFields.includes(k)));
           }}
           onSave={async () => {
             const success = await saveColumnConfig();
@@ -1239,16 +1280,7 @@ export default function JobSeekerList() {
           saveButtonText="Done"
           isSaveDisabled={isSavingColumns}
           onReset={() => {
-            const required = (availableFields || [])
-              .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => {
-                const name = String(f.field_name ?? f.fieldName ?? "").trim();
-                const label = f.field_label ?? f.fieldLabel ?? (name ? humanize(name) : "");
-                const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
-                return catalogKeyFromColumn(name, String(label || name), !!isBackendCol);
-              });
-            const defaults = Array.from(new Set(["record_number", ...JS_BACKEND_COLUMN_KEYS.slice(0, 4), ...required]));
-            setColumnFields(defaults);
+            setColumnFields(defaultColumnKeys);
           }}
           resetButtonText="Reset"
           listMaxHeight="60vh"
