@@ -28,7 +28,7 @@ import {
   panelCatalogKeyFromField,
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
-import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import OnboardingTab from "./onboarding/OnboardingTab";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
@@ -2260,11 +2260,11 @@ Best regards`;
   const payrollInfoVisible = useMemo(() => {
     const catalogKeys = payrollInfoFieldCatalog.map((f) => f.key);
     const stored = getPanelFieldPath(panelFieldsConfig, "payrollInfo") ?? [];
-    if (stored.length > 0) {
-      return remapLegacyCustomKeys(stored, payrollInfoFieldCatalog);
-    }
-    // Static catalog has no is_default flags — fall back to all catalog keys without persisting
-    return getDefaultVisibleKeys([], catalogKeys);
+    return getEffectiveVisibleKeys(
+      stored.length > 0 ? remapLegacyCustomKeys(stored, payrollInfoFieldCatalog) : stored,
+      [],
+      catalogKeys
+    );
   }, [panelFieldsConfig, payrollInfoFieldCatalog]);
 
   const visibleFields = useMemo(

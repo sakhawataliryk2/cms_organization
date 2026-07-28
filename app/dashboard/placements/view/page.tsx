@@ -24,7 +24,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getDefaultVisibleKeys } from "@/lib/defaultViewFields";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
   buildPinnedKey,
@@ -1238,24 +1238,18 @@ export default function PlacementView() {
       const saved = getPanelFieldPath(panelFieldsConfig, path);
       setVisibleFields((prev) => {
         const current = prev[panelId] || [];
-        if (saved && saved.length > 0) {
-          const remapped = remapLegacyCustomKeys(saved, catalog);
-          const next =
-            remapped.length > 0
-              ? remapped
-              : getDefaultVisibleKeys(fields, catalogKeys, {
-                  keyForField: panelCatalogKeyFromField,
-                });
-          if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
-            return { ...prev, [panelId]: next };
-          }
-          return prev;
+        const remapped =
+          saved && saved.length > 0 ? remapLegacyCustomKeys(saved, catalog) : [];
+        const next = getEffectiveVisibleKeys(
+          remapped.length > 0 ? remapped : saved,
+          fields,
+          catalogKeys,
+          { keyForField: panelCatalogKeyFromField }
+        );
+        if (next.length > 0 && JSON.stringify(current) !== JSON.stringify(next)) {
+          return { ...prev, [panelId]: next };
         }
-        if (current.length > 0) return prev;
-        const defaultKeys = getDefaultVisibleKeys(fields, catalogKeys, {
-          keyForField: panelCatalogKeyFromField,
-        });
-        return { ...prev, [panelId]: defaultKeys };
+        return prev;
       });
     },
     [panelFieldsConfig]
