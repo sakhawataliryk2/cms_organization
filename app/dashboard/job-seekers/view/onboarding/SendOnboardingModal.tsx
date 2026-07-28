@@ -242,10 +242,6 @@ export default function SendOnboardingModal({
       toast.error("Select at least 1 packet or document.");
       return;
     }
-    if (!jobId) {
-      toast.error("Select a job.");
-      return;
-    }
     if (!recipientEmail || recipientEmail === "No email provided") {
       toast.error("Job seeker email not available in custom fields");
       return;
@@ -265,7 +261,7 @@ export default function SendOnboardingModal({
         headers,
         body: JSON.stringify({
           job_seeker_id: jobSeeker.id,
-          job_id: jobId,
+          ...(jobId ? { job_id: jobId } : {}),
           packet_ids: chosenPacketIds,
           document_ids: chosenDocIds,
         }),
@@ -319,7 +315,7 @@ export default function SendOnboardingModal({
               if (Array.isArray(selected)) return;
               setJobId(selected ? Number(selected.value) : "");
             }}
-            placeholder="Select Job"
+            placeholder="Select Job (optional)"
             isClearable
             isSearchable
             noOptionsMessage={() => "No jobs available"}
