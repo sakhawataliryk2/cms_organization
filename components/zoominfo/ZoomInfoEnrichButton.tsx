@@ -3,26 +3,48 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import PermissionGate from "@/components/PermissionGate";
+import ZoomInfoMatchModal, {
+  type ZoomInfoMatchDefaults,
+} from "@/components/zoominfo/ZoomInfoMatchModal";
 
 type AtsEntityType = "organization" | "hiring_manager" | "job_seeker";
+
+type Change = { key: string; from?: unknown; to?: unknown };
 
 type Props = {
   atsEntityType: AtsEntityType;
   atsEntityId: string | number;
+  matchDefaults?: ZoomInfoMatchDefaults;
+  recordLabel?: string | null;
   onEnriched?: () => void;
   className?: string;
 };
 
+function describeChanges(changes: Change[]) {
+  const labels = changes
+    .map((c) => String(c.key || "").replace(/^custom_fields\./, ""))
+    .filter(Boolean);
+  const shown = labels.slice(0, 8);
+  const rest = labels.length - shown.length;
+  return shown.length
+    ? `\n\n${shown.map((l) => `• ${l}`).join("\n")}${rest > 0 ? `\n• …and ${rest} more` : ""}`
+    : "";
+}
+
 export default function ZoomInfoEnrichButton({
   atsEntityType,
   atsEntityId,
+  matchDefaults,
+  recordLabel,
   onEnriched,
   className = "",
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
+  const [matchedId, setMatchedId] = useState<string | null>(null);
 
   const runEnrich = async (apply: boolean, zoominfoId?: string) => {
+    const idForRequest = zoominfoId || matchedId || undefined;
     setBusy(true);
     try {
       const res = await fetch("/api/zoominfo/enrich", {
@@ -33,7 +55,7 @@ export default function ZoomInfoEnrichButton({
           atsEntityId,
           apply,
           mergeMode: "fill_empty",
-          zoominfoId: zoominfoId || undefined,
+          zoominfoId: idForRequest,
         }),
       });
       const data = await res.json();
@@ -42,17 +64,22 @@ export default function ZoomInfoEnrichButton({
       }
       if (data.needsMatch) {
         setMatchOpen(true);
-        toast.message("No ZoomInfo link yet — search and import, then enrich");
         return;
       }
       if (!apply) {
-        const changeCount = data.changes?.length || 0;
+        const changes: Change[] = data.changes || [];
+        if (!changes.length) {
+          setMatchOpen(false);
+          toast.message("ZoomInfo has nothing new to add — all fields already filled");
+          return;
+        }
         const ok = window.confirm(
-          `ZoomInfo found ${changeCount} field update(s) (fill empty only). Apply now?`
+          `ZoomInfo found ${changes.length} field update(s) (empty fields only). Apply now?${describeChanges(changes)}`
         );
-        if (ok) await runEnrich(true);
+        if (ok) await runEnrich(true, idForRequest);
         return;
       }
+      setMatchOpen(false);
       toast.success("Record enriched from ZoomInfo");
       onEnriched?.();
     } catch (e: unknown) {
@@ -60,6 +87,11 @@ export default function ZoomInfoEnrichButton({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleSelectMatch = async (zoominfoId: string) => {
+    setMatchedId(zoominfoId);
+    await runEnrich(false, zoominfoId);
   };
 
   return (
@@ -76,7 +108,15 @@ export default function ZoomInfoEnrichButton({
       >
         {busy ? "Enriching…" : "Enrich from ZoomInfo"}
       </button>
-      {matchOpen ? null : null}
+      <ZoomInfoMatchModal
+        open={matchOpen}
+        onClose={() => setMatchOpen(false)}
+        atsEntityType={atsEntityType}
+        recordLabel={recordLabel}
+        defaults={matchDefaults}
+        onSelect={handleSelectMatch}
+        linking={busy}
+      />
     </PermissionGate>
   );
 }
