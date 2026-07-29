@@ -5914,6 +5914,14 @@ export default function OrganizationView() {
           <ZoomInfoEnrichButton
             atsEntityType="organization"
             atsEntityId={organization.id}
+            recordLabel={organization.name}
+            matchDefaults={{
+              companyName: organization.name,
+              website:
+                organization.website === "https://example.com"
+                  ? ""
+                  : organization.website,
+            }}
             onEnriched={() => {
               if (organizationId) void fetchOrganizationData(organizationId);
             }}

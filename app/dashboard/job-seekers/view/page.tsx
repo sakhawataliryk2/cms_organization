@@ -5026,6 +5026,17 @@ Best regards`;
         <ZoomInfoEnrichButton
           atsEntityType="job_seeker"
           atsEntityId={jobSeeker.id}
+          recordLabel={
+            `${jobSeeker.firstName || ""} ${jobSeeker.lastName || ""}`.trim() ||
+            undefined
+          }
+          matchDefaults={{
+            firstName: jobSeeker.firstName,
+            lastName: jobSeeker.lastName,
+            email: jobSeeker.email,
+            companyName: jobSeeker.currentOrganization,
+            jobTitle: jobSeeker.title,
+          }}
           onEnriched={() => {
             if (jobSeekerId) void fetchJobSeeker(jobSeekerId);
           }}

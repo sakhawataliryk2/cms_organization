@@ -4219,6 +4219,17 @@ out.sort((a, b) => {
         <ZoomInfoEnrichButton
           atsEntityType="hiring_manager"
           atsEntityId={hiringManager.id}
+          recordLabel={
+            `${hiringManager.firstName || ""} ${hiringManager.lastName || ""}`.trim() ||
+            undefined
+          }
+          matchDefaults={{
+            firstName: hiringManager.firstName,
+            lastName: hiringManager.lastName,
+            email: hiringManager.email,
+            companyName: hiringManager.organization?.name,
+            jobTitle: hiringManager.title,
+          }}
           onEnriched={() => {
             if (hiringManagerId) void fetchHiringManager(hiringManagerId);
           }}
