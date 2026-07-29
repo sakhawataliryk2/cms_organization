@@ -29,6 +29,24 @@ interface ValidationError {
     message: string;
 }
 
+interface PreviewCellDetail {
+    fieldLabel: string;
+    rowNumber: number;
+    value: string;
+}
+
+const PREVIEW_WORD_LIMIT = 12;
+const PREVIEW_CHARACTER_LIMIT = 120;
+
+function isLongPreviewValue(value: string): boolean {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return (
+        trimmed.split(/\s+/).length > PREVIEW_WORD_LIMIT ||
+        trimmed.length > PREVIEW_CHARACTER_LIMIT
+    );
+}
+
 interface ImportSummary {
     totalRows: number;
     successful: number;
@@ -212,6 +230,7 @@ export default function DataUploader() {
     const [importLiveProgress, setImportLiveProgress] = useState<ImportLiveProgress | null>(null);
     const [lastStreamProgressAt, setLastStreamProgressAt] = useState<number | null>(null);
     const [isLiveStreamPaused, setIsLiveStreamPaused] = useState(false);
+    const [previewCellDetail, setPreviewCellDetail] = useState<PreviewCellDetail | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const importTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const importAbortControllerRef = useRef<AbortController | null>(null);
@@ -301,6 +320,15 @@ export default function DataUploader() {
         }, 1000);
         return () => window.clearInterval(timer);
     }, [isImporting, lastStreamProgressAt]);
+
+    useEffect(() => {
+        if (!previewCellDetail) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setPreviewCellDetail(null);
+        };
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [previewCellDetail]);
 
     // Auto-run record number verification when entering Step 4 from Step 3
     useEffect(() => {
@@ -1734,9 +1762,11 @@ export default function DataUploader() {
                                                         .map((field) => (
                                                             <th
                                                                 key={field.id}
-                                                                className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b whitespace-nowrap"
+                                                                className="w-64 min-w-64 max-w-64 px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 border-b"
                                                             >
-                                                                {field.field_label}
+                                                                <span className="block truncate" title={field.field_label}>
+                                                                    {field.field_label}
+                                                                </span>
                                                             </th>
                                                         ))}
                                                     {(validationErrors.length > 0 || recordNumberDuplicateErrors.length > 0) && (
@@ -1770,12 +1800,36 @@ export default function DataUploader() {
                                                                 .filter((f) => fieldMappings[f.field_name])
                                                                 .map((field) => {
                                                                     const csvColumn = fieldMappings[field.field_name];
+                                                                    const value = row[csvColumn] || '';
+                                                                    const isLong = isLongPreviewValue(value);
                                                                     return (
                                                                         <td
                                                                             key={field.id}
-                                                                            className="px-4 py-3 text-sm text-gray-900 break-words"
+                                                                            className="w-64 min-w-64 max-w-64 px-4 py-3 align-top text-sm text-gray-900"
                                                                         >
-                                                                            {row[csvColumn] || '-'}
+                                                                            <div
+                                                                                className="line-clamp-2 leading-5 [overflow-wrap:anywhere]"
+                                                                                title={isLong ? undefined : value}
+                                                                            >
+                                                                                {value || '—'}
+                                                                            </div>
+                                                                            {isLong && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        setPreviewCellDetail({
+                                                                                            fieldLabel: field.field_label,
+                                                                                            rowNumber: rowIndex + 2,
+                                                                                            value,
+                                                                                        })
+                                                                                    }
+                                                                                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                                                                    aria-label={`View full ${field.field_label} value for row ${rowIndex + 2}`}
+                                                                                >
+                                                                                    <FiEye className="h-3.5 w-3.5" />
+                                                                                    View full
+                                                                                </button>
+                                                                            )}
                                                                         </td>
                                                                     );
                                                                 })}
@@ -2186,6 +2240,53 @@ export default function DataUploader() {
                     </div>
                 )}
             </div>
+
+            {previewCellDetail && (
+                <div
+                    className="fixed inset-0 z-80 flex items-center justify-center bg-black/50 p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="preview-cell-title"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setPreviewCellDetail(null);
+                    }}
+                >
+                    <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+                            <div className="min-w-0">
+                                <h2 id="preview-cell-title" className="truncate text-lg font-semibold text-gray-900">
+                                    {previewCellDetail.fieldLabel}
+                                </h2>
+                                <p className="mt-0.5 text-xs text-gray-500">
+                                    CSV row {previewCellDetail.rowNumber} · {previewCellDetail.value.trim().split(/\s+/).length} words · {previewCellDetail.value.length} characters
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewCellDetail(null)}
+                                className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                                aria-label="Close full value"
+                            >
+                                <FiX className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto p-5">
+                            <div className="whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-900 [overflow-wrap:anywhere]">
+                                {previewCellDetail.value}
+                            </div>
+                        </div>
+                        <div className="flex justify-end border-t bg-gray-50 px-5 py-3">
+                            <button
+                                type="button"
+                                onClick={() => setPreviewCellDetail(null)}
+                                className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
