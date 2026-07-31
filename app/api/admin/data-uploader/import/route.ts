@@ -1,329 +1,395 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { normalizeDateInputToIso } from '@/lib/dateNormalize';
-import { getLookupBackendColumn, HM_ORGANIZATION_ID_FIELD_NAME } from '@/lib/entitySummaryFieldMaps';
-import { clearImportCancellation, isImportCancelled } from './state';
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { normalizeDateInputToIso } from "@/lib/dateNormalize";
+import {
+  getLookupBackendColumn,
+  HM_ORGANIZATION_ID_FIELD_NAME,
+} from "@/lib/entitySummaryFieldMaps";
+import { clearImportCancellation, isImportCancelled } from "./state";
 
 // Mirror the exact same label→backend-column mappings used by the individual add pages.
 // Every field ALWAYS goes into custom_fields (keyed by field_label).
 // Fields whose label appears here ALSO get set at the top-level column for API compatibility.
 
 const ORG_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'Name': 'name', 'Organization Name': 'name', 'Organization': 'name', 'Company': 'name',
-    'Nicknames': 'nicknames', 'Nickname': 'nicknames',
-    'Parent Organization': 'parent_organization',
-    'Website': 'website', 'Organization Website': 'website', 'URL': 'website',
-    'Contact Phone': 'contact_phone', 'Main Phone': 'contact_phone',
-    'Address': 'address',
-    'Status': 'status',
-    'Contract Signed on File': 'contract_on_file',
-    'Contract Signed By': 'contract_signed_by',
-    'Date Contract Signed': 'date_contract_signed',
-    'Year Founded': 'year_founded',
-    'Overview': 'overview', 'Organization Overview': 'overview', 'About': 'overview',
-    'Standard Perm Fee (%)': 'perm_fee',
-    '# of Employees': 'num_employees',
-    '# of Offices': 'num_offices',
+  Name: "name",
+  "Organization Name": "name",
+  Organization: "name",
+  Company: "name",
+  Nicknames: "nicknames",
+  Nickname: "nicknames",
+  "Parent Organization": "parent_organization",
+  Website: "website",
+  "Organization Website": "website",
+  URL: "website",
+  "Contact Phone": "contact_phone",
+  "Main Phone": "contact_phone",
+  Address: "address",
+  Status: "status",
+  "Contract Signed on File": "contract_on_file",
+  "Contract Signed By": "contract_signed_by",
+  "Date Contract Signed": "date_contract_signed",
+  "Year Founded": "year_founded",
+  Overview: "overview",
+  "Organization Overview": "overview",
+  About: "overview",
+  "Standard Perm Fee (%)": "perm_fee",
+  "# of Employees": "num_employees",
+  "# of Offices": "num_offices",
 };
 
 const JS_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'First Name': 'firstName', 'First': 'firstName', 'FName': 'firstName',
-    'Last Name': 'lastName', 'Last': 'lastName', 'LName': 'lastName',
-    'Email': 'email', 'Email 1': 'email', 'Email Address': 'email', 'E-mail': 'email',
-    'Phone': 'phone', 'Phone Number': 'phone', 'Telephone': 'phone',
-    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone', 'Cell Phone': 'mobilePhone',
-    'Address': 'address', 'Street Address': 'address', 'Address 1': 'address',
-    'City': 'city',
-    'State': 'state',
-    'ZIP Code': 'zip', 'ZIP': 'zip', 'ZipCode': 'zip', 'Postal Code': 'zip',
-    'Status': 'status', 'Current Status': 'status',
-    'Current Organization': 'currentOrganization', 'Organization': 'currentOrganization',
-    'Title': 'title', 'Job Title': 'title', 'Position': 'title',
-    'Resume Text': 'resumeText', 'Resume': 'resumeText',
-    'Skills': 'skills',
-    'Desired Salary': 'desiredSalary', 'Salary': 'desiredSalary',
-    'Owner': 'owner', 'Assigned To': 'owner', 'Assigned Owner': 'owner',
-    'Date Added': 'dateAdded', 'Date Created': 'dateAdded',
+  "First Name": "firstName",
+  First: "firstName",
+  FName: "firstName",
+  "Last Name": "lastName",
+  Last: "lastName",
+  LName: "lastName",
+  Email: "email",
+  "Email 1": "email",
+  "Email Address": "email",
+  "E-mail": "email",
+  Phone: "phone",
+  "Phone Number": "phone",
+  Telephone: "phone",
+  "Mobile Phone": "mobilePhone",
+  Mobile: "mobilePhone",
+  "Cell Phone": "mobilePhone",
+  Address: "address",
+  "Street Address": "address",
+  "Address 1": "address",
+  City: "city",
+  State: "state",
+  "ZIP Code": "zip",
+  ZIP: "zip",
+  ZipCode: "zip",
+  "Postal Code": "zip",
+  Status: "status",
+  "Current Status": "status",
+  "Current Organization": "currentOrganization",
+  Organization: "currentOrganization",
+  Title: "title",
+  "Job Title": "title",
+  Position: "title",
+  "Resume Text": "resumeText",
+  Resume: "resumeText",
+  Skills: "skills",
+  "Desired Salary": "desiredSalary",
+  Salary: "desiredSalary",
+  Owner: "owner",
+  "Assigned To": "owner",
+  "Assigned Owner": "owner",
+  "Date Added": "dateAdded",
+  "Date Created": "dateAdded",
 };
 
 const LEAD_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'First Name': 'firstName', 'First': 'firstName',
-    'Last Name': 'lastName', 'Last': 'lastName',
-    'Email': 'email', 'Email Address': 'email',
-    'Phone': 'phone', 'Phone Number': 'phone',
-    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone',
-    'Title': 'title', 'Job Title': 'title',
-    'Status': 'status',
-    'Department': 'department',
+  "First Name": "firstName",
+  First: "firstName",
+  "Last Name": "lastName",
+  Last: "lastName",
+  Email: "email",
+  "Email Address": "email",
+  Phone: "phone",
+  "Phone Number": "phone",
+  "Mobile Phone": "mobilePhone",
+  Mobile: "mobilePhone",
+  Title: "title",
+  "Job Title": "title",
+  Status: "status",
+  Department: "department",
 };
 
 const HM_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'First Name': 'firstName', 'First': 'firstName',
-    'Last Name': 'lastName', 'Last': 'lastName',
-    'Email': 'email', 'Email Address': 'email',
-    'Phone': 'phone', 'Phone Number': 'phone',
-    'Mobile Phone': 'mobilePhone', 'Mobile': 'mobilePhone',
-    'Title': 'title', 'Job Title': 'title',
-    'Status': 'status',
-    'Department': 'department',
-    'Reports To': 'reportsTo', 'Manager': 'reportsTo',
+  "First Name": "firstName",
+  First: "firstName",
+  "Last Name": "lastName",
+  Last: "lastName",
+  Email: "email",
+  "Email Address": "email",
+  Phone: "phone",
+  "Phone Number": "phone",
+  "Mobile Phone": "mobilePhone",
+  Mobile: "mobilePhone",
+  Title: "title",
+  "Job Title": "title",
+  Status: "status",
+  Department: "department",
+  "Reports To": "reportsTo",
+  Manager: "reportsTo",
 };
 
 const JOB_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'Job Title': 'jobTitle', 'Title': 'jobTitle', 'Position': 'jobTitle',
-    'Category': 'category',
-    'Status': 'status',
+  "Job Title": "jobTitle",
+  Title: "jobTitle",
+  Position: "jobTitle",
+  Category: "category",
+  Status: "status",
 };
 
 const PLACEMENT_BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
-    'Status': 'status',
+  Status: "status",
 };
 
 const LABEL_MAP_BY_ENTITY: Record<string, Record<string, string>> = {
-    'organizations': ORG_BACKEND_COLUMN_BY_LABEL,
-    'job-seekers': JS_BACKEND_COLUMN_BY_LABEL,
-    'leads': LEAD_BACKEND_COLUMN_BY_LABEL,
-    'hiring-managers': HM_BACKEND_COLUMN_BY_LABEL,
-    'jobs': JOB_BACKEND_COLUMN_BY_LABEL,
-    'placements': PLACEMENT_BACKEND_COLUMN_BY_LABEL,
+  organizations: ORG_BACKEND_COLUMN_BY_LABEL,
+  "job-seekers": JS_BACKEND_COLUMN_BY_LABEL,
+  leads: LEAD_BACKEND_COLUMN_BY_LABEL,
+  "hiring-managers": HM_BACKEND_COLUMN_BY_LABEL,
+  jobs: JOB_BACKEND_COLUMN_BY_LABEL,
+  placements: PLACEMENT_BACKEND_COLUMN_BY_LABEL,
 };
 
 // Maps lookup_type → { endpoint, listKey } for fetching all records of that type
-const LOOKUP_TYPE_CONFIG: Record<string, { endpoint: string; listKey: string }> = {
-    'organizations': { endpoint: 'organizations', listKey: 'organizations' },
-    'organization': { endpoint: 'organizations', listKey: 'organizations' },
-    'job-seekers': { endpoint: 'job-seekers', listKey: 'jobSeekers' },
-    'hiring-managers': { endpoint: 'hiring-managers', listKey: 'hiringManagers' },
-    'jobs': { endpoint: 'jobs', listKey: 'jobs' },
-    'leads': { endpoint: 'leads', listKey: 'leads' },
-    'placements': { endpoint: 'placements', listKey: 'placements' },
+const LOOKUP_TYPE_CONFIG: Record<
+  string,
+  { endpoint: string; listKey: string }
+> = {
+  organizations: { endpoint: "organizations", listKey: "organizations" },
+  organization: { endpoint: "organizations", listKey: "organizations" },
+  "job-seekers": { endpoint: "job-seekers", listKey: "jobSeekers" },
+  "hiring-managers": { endpoint: "hiring-managers", listKey: "hiringManagers" },
+  jobs: { endpoint: "jobs", listKey: "jobs" },
+  leads: { endpoint: "leads", listKey: "leads" },
+  placements: { endpoint: "placements", listKey: "placements" },
 };
 
 const LOOKUP_RECORD_PREFIX: Record<string, string> = {
-    organizations: 'O',
-    'job-seekers': 'JS',
-    'hiring-managers': 'HM',
-    jobs: 'J',
-    leads: 'L',
-    placements: 'P',
+  organizations: "O",
+  "job-seekers": "JS",
+  "hiring-managers": "HM",
+  jobs: "J",
+  leads: "L",
+  placements: "P",
 };
 
 type LookupCacheEntry = { id: string; name: string };
 
 function normalizeImportLookupType(lookupType: string): string {
-    const n = lookupType.toLowerCase().replace(/\s+/g, '-').trim();
-    if (n === 'organization') return 'organizations';
-    return n;
+  const n = lookupType.toLowerCase().replace(/\s+/g, "-").trim();
+  if (n === "organization") return "organizations";
+  return n;
 }
 
 interface FieldDefinition {
-    field_name: string;
-    field_label: string;
-    field_type: string;
-    lookup_type?: string | null;
-    lookupType?: string | null;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  lookup_type?: string | null;
+  lookupType?: string | null;
 }
 
 const LOOKUP_RESOLVE_CONCURRENCY = 20;
 
 function fieldLookupType(fd: FieldDefinition): string | null {
-    const t = fd.lookup_type ?? fd.lookupType;
-    return typeof t === 'string' && t.trim() ? t.trim() : null;
+  const t = fd.lookup_type ?? fd.lookupType;
+  return typeof t === "string" && t.trim() ? t.trim() : null;
 }
 
-function itemToLookupEntry(item: Record<string, unknown>): LookupCacheEntry | null {
-    const rn = item.record_number;
-    const id = item.id;
-    if (rn == null || id == null) return null;
-    const num = normalizeRecordNumber(String(rn));
-    if (num === null) return null;
-    const name =
-        item.name ??
-        item.full_name ??
-        item.job_title ??
-        item.title ??
-        '';
-    return { id: String(id), name: String(name || '') };
+function itemToLookupEntry(
+  item: Record<string, unknown>,
+): LookupCacheEntry | null {
+  const rn = item.record_number;
+  const id = item.id;
+  if (rn == null || id == null) return null;
+  const num = normalizeRecordNumber(String(rn));
+  if (num === null) return null;
+  const name =
+    item.name ?? item.full_name ?? item.job_title ?? item.title ?? "";
+  return { id: String(id), name: String(name || "") };
 }
 
-function addItemToLookupMap(map: Map<number, LookupCacheEntry>, item: Record<string, unknown>): void {
-    const entry = itemToLookupEntry(item);
-    if (entry) {
-        const num = normalizeRecordNumber(String(item.record_number));
-        if (num !== null) map.set(num, entry);
-    }
+function addItemToLookupMap(
+  map: Map<number, LookupCacheEntry>,
+  item: Record<string, unknown>,
+): void {
+  const entry = itemToLookupEntry(item);
+  if (entry) {
+    const num = normalizeRecordNumber(String(item.record_number));
+    if (num !== null) map.set(num, entry);
+  }
 }
 
-const AUTO_DATE_FIELD_NAME = 'Field_69';
+const AUTO_DATE_FIELD_NAME = "Field_69";
 
 function toYmdDate(value: unknown): string | null {
-    if (value === null || value === undefined) return null;
-    const str = String(value).trim();
-    if (!str) return null;
-    const iso = normalizeDateInputToIso(str);
-    if (iso) return iso.slice(0, 10);
-    const parsed = new Date(str);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const iso = normalizeDateInputToIso(str);
+  if (iso) return iso.slice(0, 10);
+  const parsed = new Date(str);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
 }
 
 async function resolveFieldLabelByFieldName(
-    apiUrl: string,
-    token: string,
-    entityType: string,
-    fieldName: string
+  apiUrl: string,
+  token: string,
+  entityType: string,
+  fieldName: string,
 ): Promise<string | null> {
-    try {
-        const qs = new URLSearchParams({
-            entity_type: entityType,
-            field_name: fieldName,
-        });
-        const res = await fetch(`${apiUrl}/api/custom-fields/field-label?${qs.toString()}`, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-            cache: 'no-store',
-        });
-        if (!res.ok) return null;
-        const data = await res.json().catch(() => ({}));
-        const label = data?.field_label;
-        return typeof label === 'string' && label.trim() ? label.trim() : null;
-    } catch {
-        return null;
-    }
+  try {
+    const qs = new URLSearchParams({
+      entity_type: entityType,
+      field_name: fieldName,
+    });
+    const res = await fetch(
+      `${apiUrl}/api/custom-fields/field-label?${qs.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      },
+    );
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    const label = data?.field_label;
+    return typeof label === "string" && label.trim() ? label.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Resolve one record number via targeted API search (not a full-table scan). */
 async function fetchLookupByRecordNumber(
-    lookupType: string,
-    recordNum: number,
-    apiUrl: string,
-    token: string,
-    cache: Map<string, Map<number, LookupCacheEntry>>
+  lookupType: string,
+  recordNum: number,
+  apiUrl: string,
+  token: string,
+  cache: Map<string, Map<number, LookupCacheEntry>>,
 ): Promise<LookupCacheEntry | null> {
-    const normalizedType = normalizeImportLookupType(lookupType);
-    const config = LOOKUP_TYPE_CONFIG[normalizedType];
-    if (!config) return null;
+  const normalizedType = normalizeImportLookupType(lookupType);
+  const config = LOOKUP_TYPE_CONFIG[normalizedType];
+  if (!config) return null;
 
-    let rnMap = cache.get(normalizedType);
-    if (!rnMap) {
-        rnMap = new Map();
-        cache.set(normalizedType, rnMap);
+  let rnMap = cache.get(normalizedType);
+  if (!rnMap) {
+    rnMap = new Map();
+    cache.set(normalizedType, rnMap);
+  }
+  const cached = rnMap.get(recordNum);
+  if (cached) return cached;
+
+  const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
+  const q = prefix ? `${prefix} ${recordNum}` : String(recordNum);
+
+  try {
+    const qs = new URLSearchParams({ q, limit: "5" });
+    const res = await fetch(`${apiUrl}/api/${config.endpoint}?${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list: Record<string, unknown>[] =
+      data[config.listKey] ?? data.data ?? [];
+
+    for (const item of list) {
+      addItemToLookupMap(rnMap, item);
+      const itemRn = normalizeRecordNumber(String(item.record_number ?? ""));
+      if (itemRn === recordNum) {
+        return rnMap.get(recordNum) ?? null;
+      }
     }
-    const cached = rnMap.get(recordNum);
-    if (cached) return cached;
+  } catch (e) {
+    console.warn(
+      `Failed direct lookup for ${normalizedType} record ${recordNum}:`,
+      e,
+    );
+  }
 
-    const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
-    const q = prefix ? `${prefix} ${recordNum}` : String(recordNum);
-
-    try {
-        const qs = new URLSearchParams({ q, limit: '5' });
-        const res = await fetch(`${apiUrl}/api/${config.endpoint}?${qs}`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        const list: Record<string, unknown>[] = data[config.listKey] ?? data.data ?? [];
-
-        for (const item of list) {
-            addItemToLookupMap(rnMap, item);
-            const itemRn = normalizeRecordNumber(String(item.record_number ?? ''));
-            if (itemRn === recordNum) {
-                return rnMap.get(recordNum) ?? null;
-            }
-        }
-    } catch (e) {
-        console.warn(`Failed direct lookup for ${normalizedType} record ${recordNum}:`, e);
-    }
-
-    return null;
+  return null;
 }
 
 async function resolveLookupEntry(
-    lookupType: string,
-    recordNum: number,
-    apiUrl: string,
-    token: string,
-    cache: Map<string, Map<number, LookupCacheEntry>>
+  lookupType: string,
+  recordNum: number,
+  apiUrl: string,
+  token: string,
+  cache: Map<string, Map<number, LookupCacheEntry>>,
 ): Promise<LookupCacheEntry | null> {
-    const normalizedType = normalizeImportLookupType(lookupType);
-    const rnMap = cache.get(normalizedType);
-    if (rnMap?.has(recordNum)) return rnMap.get(recordNum)!;
-    return fetchLookupByRecordNumber(lookupType, recordNum, apiUrl, token, cache);
+  const normalizedType = normalizeImportLookupType(lookupType);
+  const rnMap = cache.get(normalizedType);
+  if (rnMap?.has(recordNum)) return rnMap.get(recordNum)!;
+  return fetchLookupByRecordNumber(lookupType, recordNum, apiUrl, token, cache);
 }
 
 /** Pre-resolve unique lookup values in parallel before the per-row import loop. */
 async function preResolveImportLookups(
-    records: Record<string, unknown>[],
-    lookupFields: FieldDefinition[],
-    apiUrl: string,
-    token: string,
-    cache: Map<string, Map<number, LookupCacheEntry>>,
-    throwIfAborted: () => void,
-    onLookupProgress?: (resolved: number, total: number) => void
+  records: Record<string, unknown>[],
+  lookupFields: FieldDefinition[],
+  apiUrl: string,
+  token: string,
+  cache: Map<string, Map<number, LookupCacheEntry>>,
+  throwIfAborted: () => void,
+  onLookupProgress?: (resolved: number, total: number) => void,
 ): Promise<void> {
-    if (lookupFields.length === 0) return;
+  if (lookupFields.length === 0) return;
 
-    const pending: Array<{ lookupType: string; recordNum: number }> = [];
-    const seen = new Set<string>();
+  const pending: Array<{ lookupType: string; recordNum: number }> = [];
+  const seen = new Set<string>();
 
-    for (const record of records) {
-        for (const fieldDef of lookupFields) {
-            const rawValue = record[fieldDef.field_name];
-            if (!rawValue || String(rawValue).trim() === '') continue;
+  for (const record of records) {
+    for (const fieldDef of lookupFields) {
+      const rawValue = record[fieldDef.field_name];
+      if (!rawValue || String(rawValue).trim() === "") continue;
 
-            const lookupType = fieldLookupType(fieldDef)!;
-            const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
-            if (recordNum === null) continue;
+      const lookupType = fieldLookupType(fieldDef)!;
+      const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
+      if (recordNum === null) continue;
 
-            const cacheKey = `${normalizeImportLookupType(lookupType)}:${recordNum}`;
-            if (seen.has(cacheKey)) continue;
-            seen.add(cacheKey);
-            pending.push({ lookupType, recordNum });
-        }
+      const cacheKey = `${normalizeImportLookupType(lookupType)}:${recordNum}`;
+      if (seen.has(cacheKey)) continue;
+      seen.add(cacheKey);
+      pending.push({ lookupType, recordNum });
     }
+  }
 
-    onLookupProgress?.(0, pending.length);
-    let resolvedCount = 0;
-    for (let i = 0; i < pending.length; i += LOOKUP_RESOLVE_CONCURRENCY) {
-        throwIfAborted();
-        const batch = pending.slice(i, i + LOOKUP_RESOLVE_CONCURRENCY);
-        await Promise.all(
-            batch.map(({ lookupType, recordNum }) =>
-                resolveLookupEntry(lookupType, recordNum, apiUrl, token, cache)
-            )
-        );
-        resolvedCount = Math.min(pending.length, i + batch.length);
-        onLookupProgress?.(resolvedCount, pending.length);
-    }
+  onLookupProgress?.(0, pending.length);
+  let resolvedCount = 0;
+  for (let i = 0; i < pending.length; i += LOOKUP_RESOLVE_CONCURRENCY) {
+    throwIfAborted();
+    const batch = pending.slice(i, i + LOOKUP_RESOLVE_CONCURRENCY);
+    await Promise.all(
+      batch.map(({ lookupType, recordNum }) =>
+        resolveLookupEntry(lookupType, recordNum, apiUrl, token, cache),
+      ),
+    );
+    resolvedCount = Math.min(pending.length, i + batch.length);
+    onLookupProgress?.(resolvedCount, pending.length);
+  }
 }
 
 /** Parse a prefixed record reference (e.g. "O 44335") for a lookup type. */
-function extractLookupRecordNumber(value: string, lookupType?: string | null): number | null {
-    const str = String(value).trim();
-    if (!str) return null;
+function extractLookupRecordNumber(
+  value: string,
+  lookupType?: string | null,
+): number | null {
+  const str = String(value).trim();
+  if (!str) return null;
 
-    const normalizedType = normalizeImportLookupType(lookupType ?? '');
-    const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
-    if (prefix) {
-        const prefixed = new RegExp(`^${prefix}\\s*#?\\s*(\\d+)`, 'i');
-        const match = str.match(prefixed);
-        if (match) {
-            const num = parseInt(match[1], 10);
-            return Number.isFinite(num) && num >= 0 ? num : null;
-        }
+  const normalizedType = normalizeImportLookupType(lookupType ?? "");
+  const prefix = LOOKUP_RECORD_PREFIX[normalizedType];
+  if (prefix) {
+    const prefixed = new RegExp(`^${prefix}\\s*#?\\s*(\\d+)`, "i");
+    const match = str.match(prefixed);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      return Number.isFinite(num) && num >= 0 ? num : null;
     }
+  }
 
-    return normalizeRecordNumber(str);
+  return normalizeRecordNumber(str);
 }
 
 function normalizeRecordNumber(value: string): number | null {
-    if (!value || String(value).trim() === '') return null;
-    const str = String(value).trim();
-    const match = str.match(/\d+/);
-    if (!match) return null;
-    const num = parseInt(match[0], 10);
-    return Number.isFinite(num) && num >= 0 ? num : null;
+  if (!value || String(value).trim() === "") return null;
+  const str = String(value).trim();
+  const match = str.match(/\d+/);
+  if (!match) return null;
+  const num = parseInt(match[0], 10);
+  return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
 /**
@@ -333,56 +399,56 @@ function normalizeRecordNumber(value: string): number | null {
  *     ALSO get set at the top-level column key.
  */
 function buildPayload(
-    entityType: string,
-    record: Record<string, any>,
-    fieldNameToLabel: Record<string, string>,
-    fieldDefByName?: Map<string, FieldDefinition>
+  entityType: string,
+  record: Record<string, any>,
+  fieldNameToLabel: Record<string, string>,
+  fieldDefByName?: Map<string, FieldDefinition>,
 ): Record<string, any> {
-    // Performance mode for organizations: keep custom_fields as source of truth
-    // and only mirror critical top-level columns.
-    const orgCustomFieldPrimaryMode = entityType === 'organizations';
-    const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
-    const topLevel: Record<string, any> = {};
-    const customFields: Record<string, any> = {};
+  // Performance mode for organizations: keep custom_fields as source of truth
+  // and only mirror critical top-level columns.
+  const orgCustomFieldPrimaryMode = entityType === "organizations";
+  const labelMap = LABEL_MAP_BY_ENTITY[entityType] ?? {};
+  const topLevel: Record<string, any> = {};
+  const customFields: Record<string, any> = {};
 
-    for (const [fieldName, value] of Object.entries(record)) {
-        if (value === undefined || value === null || value === '') continue;
+  for (const [fieldName, value] of Object.entries(record)) {
+    if (value === undefined || value === null || value === "") continue;
 
-        let v = value;
-        if (typeof v === 'string' && fieldDefByName) {
-            const def = fieldDefByName.get(fieldName);
-            if (def?.field_type === 'date') {
-                const iso = normalizeDateInputToIso(v.trim());
-                if (iso) v = iso;
-            }
-        }
-
-        const label = fieldNameToLabel[fieldName] ?? fieldName;
-        customFields[label] = v;
-
-        const fieldDef = fieldDefByName?.get(fieldName);
-        const backendCol =
-            getLookupBackendColumn(entityType, fieldName, fieldDef?.lookup_type) ??
-            labelMap[label];
-        if (backendCol) {
-            // Keep only required/critical top-level fields for organizations.
-            // This reduces payload size and DB write overhead for bulk imports.
-            if (!orgCustomFieldPrimaryMode || backendCol === 'name') {
-                topLevel[backendCol] = v;
-            }
-        }
+    let v = value;
+    if (typeof v === "string" && fieldDefByName) {
+      const def = fieldDefByName.get(fieldName);
+      if (def?.field_type === "date") {
+        const iso = normalizeDateInputToIso(v.trim());
+        if (iso) v = iso;
+      }
     }
 
-    return { ...topLevel, custom_fields: customFields };
+    const label = fieldNameToLabel[fieldName] ?? fieldName;
+    customFields[label] = v;
+
+    const fieldDef = fieldDefByName?.get(fieldName);
+    const backendCol =
+      getLookupBackendColumn(entityType, fieldName, fieldDef?.lookup_type) ??
+      labelMap[label];
+    if (backendCol) {
+      // Keep only required/critical top-level fields for organizations.
+      // This reduces payload size and DB write overhead for bulk imports.
+      if (!orgCustomFieldPrimaryMode || backendCol === "name") {
+        topLevel[backendCol] = v;
+      }
+    }
+  }
+
+  return { ...topLevel, custom_fields: customFields };
 }
 
 /** Extract a value from the payload by trying multiple possible keys */
 function getVal(payload: Record<string, any>, ...keys: string[]): string {
-    for (const k of keys) {
-        const v = payload[k] ?? payload.custom_fields?.[k];
-        if (v != null && String(v).trim() !== '') return String(v).trim();
-    }
-    return '';
+  for (const k of keys) {
+    const v = payload[k] ?? payload.custom_fields?.[k];
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
 }
 
 /** Organizations: large SQL bulk batches. */
@@ -397,274 +463,352 @@ const IMPORT_REQUEST_TIMEOUT_MS = 180_000;
 const IMPORT_BULK_RETRIES = 1;
 
 async function fetchWithTimeout(
-    url: string,
-    init: RequestInit,
-    timeoutMs: number = IMPORT_REQUEST_TIMEOUT_MS
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = IMPORT_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-        clearTimeout(timeout);
-    }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
-    if (size <= 0) return [arr];
-    const chunks: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) {
-        chunks.push(arr.slice(i, i + size));
-    }
-    return chunks;
+  if (size <= 0) return [arr];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
 }
 
 export async function POST(request: NextRequest) {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get('token')?.value;
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
 
-        if (!token) {
-            return NextResponse.json(
-                { success: false, message: 'Authentication required' },
-                { status: 401 }
-            );
-        }
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 },
+      );
+    }
 
-        const body = await request.json();
-        const { entityType, records, options, fieldNameToLabel = {}, fieldDefinitions = [], importId, importRecordNumbers = [] } = body;
+    const body = await request.json();
+    const {
+      entityType,
+      records,
+      options,
+      fieldNameToLabel = {},
+      fieldDefinitions = [],
+      importId,
+      importRecordNumbers = [],
+    } = body;
 
-        if (!entityType || !records || !Array.isArray(records)) {
-            return NextResponse.json(
-                { success: false, message: 'Invalid request data' },
-                { status: 400 }
-            );
-        }
+    if (!entityType || !records || !Array.isArray(records)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid request data" },
+        { status: 400 },
+      );
+    }
 
-        const entityEndpointMap: Record<string, string> = {
-            'organizations': 'organizations',
-            'job-seekers': 'job-seekers',
-            'jobs': 'jobs',
-            'hiring-managers': 'hiring-managers',
-            'placements': 'placements',
-            'leads': 'leads',
+    const entityEndpointMap: Record<string, string> = {
+      organizations: "organizations",
+      "job-seekers": "job-seekers",
+      jobs: "jobs",
+      "hiring-managers": "hiring-managers",
+      placements: "placements",
+      leads: "leads",
+    };
+
+    const endpoint = entityEndpointMap[entityType];
+    if (!endpoint) {
+      return NextResponse.json(
+        { success: false, message: `Unsupported entity type: ${entityType}` },
+        { status: 400 },
+      );
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const writeLine = (obj: object) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
         };
+        let lastProgressAt = 0;
+        const writeProgress = (
+          scanned: number,
+          successful: number,
+          failed: number,
+          totalInput: number,
+          force = false,
+        ) => {
+          const now = Date.now();
+          if (!force && now - lastProgressAt < 160) return;
+          lastProgressAt = now;
+          writeLine({
+            type: "progress",
+            scanned,
+            totalInput,
+            successful,
+            failed,
+          });
+        };
+        const throwIfAborted = () => {
+          if (request.signal.aborted || isImportCancelled(importId)) {
+            throw new Error("Import cancelled by user");
+          }
+        };
+        let lastScannedForBulk = 0;
 
-        const endpoint = entityEndpointMap[entityType];
-        if (!endpoint) {
-            return NextResponse.json(
-                { success: false, message: `Unsupported entity type: ${entityType}` },
-                { status: 400 }
-            );
-        }
+        try {
+          const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
 
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream<Uint8Array>({
-            async start(controller) {
-                const writeLine = (obj: object) => {
-                    controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
-                };
-                let lastProgressAt = 0;
-                const writeProgress = (
-                    scanned: number,
-                    successful: number,
-                    failed: number,
-                    totalInput: number,
-                    force = false
-                ) => {
-                    const now = Date.now();
-                    if (!force && now - lastProgressAt < 160) return;
-                    lastProgressAt = now;
-                    writeLine({ type: 'progress', scanned, totalInput, successful, failed });
-                };
-                const throwIfAborted = () => {
-                    if (request.signal.aborted || isImportCancelled(importId)) {
-                        throw new Error('Import cancelled by user');
-                    }
-                };
-                let lastScannedForBulk = 0;
-
-                try {
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-
-        // Build a map of field_name → FieldDefinition for quick lookup
-        const fieldDefByName = new Map<string, FieldDefinition>();
-        for (const fd of (fieldDefinitions as FieldDefinition[])) {
+          // Build a map of field_name → FieldDefinition for quick lookup
+          const fieldDefByName = new Map<string, FieldDefinition>();
+          for (const fd of fieldDefinitions as FieldDefinition[]) {
             if (fd.field_name) fieldDefByName.set(fd.field_name, fd);
-        }
+          }
 
-        // Per-request cache: lookup_type → Map<record_number, id>
-        const lookupCache = new Map<string, Map<number, LookupCacheEntry>>();
+          // Per-request cache: lookup_type → Map<record_number, id>
+          const lookupCache = new Map<string, Map<number, LookupCacheEntry>>();
 
-        // Pre-fetch all existing records once for duplicate checking (avoids N queries per row)
-        type ExistingRecord = { id: string;[key: string]: any };
-        let existingRecordsCache: ExistingRecord[] | null = null;
+          // Pre-fetch all existing records once for duplicate checking (avoids N queries per row)
+          type ExistingRecord = { id: string; [key: string]: any };
+          let existingRecordsCache: ExistingRecord[] | null = null;
 
-        const getExistingRecords = async (): Promise<ExistingRecord[]> => {
+          const getExistingRecords = async (): Promise<ExistingRecord[]> => {
             if (existingRecordsCache !== null) return existingRecordsCache;
             try {
-                const res = await fetch(`${apiUrl}/api/${endpoint}?limit=10000`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!res.ok) { existingRecordsCache = []; return []; }
-                const data = await res.json();
-                const listKeyMap: Record<string, string> = {
-                    'job-seekers': 'jobSeekers',
-                    'hiring-managers': 'hiringManagers',
-                    'organizations': 'organizations',
-                    'jobs': 'jobs',
-                    'leads': 'leads',
-                    'placements': 'placements',
-                };
-                const listKey = listKeyMap[endpoint] ?? endpoint;
-                existingRecordsCache = data[listKey] ?? data.data ?? [];
-            } catch {
+              const res = await fetch(`${apiUrl}/api/${endpoint}?limit=10000`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) {
                 existingRecordsCache = [];
+                return [];
+              }
+              const data = await res.json();
+              const listKeyMap: Record<string, string> = {
+                "job-seekers": "jobSeekers",
+                "hiring-managers": "hiringManagers",
+                organizations: "organizations",
+                jobs: "jobs",
+                leads: "leads",
+                placements: "placements",
+              };
+              const listKey = listKeyMap[endpoint] ?? endpoint;
+              existingRecordsCache = data[listKey] ?? data.data ?? [];
+            } catch {
+              existingRecordsCache = [];
             }
             return existingRecordsCache!;
-        };
+          };
 
-        const summary = {
+          const summary = {
             totalRows: records.length,
             successful: 0,
             failed: 0,
-            errors: [] as Array<{ row: number; errors: string[]; links?: Array<{ text: string; url: string }> }>,
-        };
-                    writeProgress(0, 0, 0, records.length, true);
+            errors: [] as Array<{
+              row: number;
+              errors: string[];
+              links?: Array<{ text: string; url: string }>;
+            }>,
+          };
+          writeProgress(0, 0, 0, records.length, true);
 
-        const opts = options ?? {};
-        const hasImportOption = !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
-        // Creates always go through chunked bulk-create (same fast path as organizations).
-        // Update/skip still handled per matching record number below.
-        const bulkChunkSize =
-            entityType === 'organizations' ? ORG_BULK_CHUNK_SIZE : DEFAULT_BULK_CHUNK_SIZE;
-        const bulkConcurrency =
-            entityType === 'organizations' ? ORG_BULK_CONCURRENCY : DEFAULT_BULK_CONCURRENCY;
-        const bulkFlushAt = bulkChunkSize;
+          const opts = options ?? {};
+          const hasImportOption = !!(
+            opts.skipDuplicates ||
+            opts.importNewOnly ||
+            opts.updateExisting
+          );
+          // Creates always go through chunked bulk-create (same fast path as organizations).
+          // Update/skip still handled per matching record number below.
+          const bulkChunkSize =
+            entityType === "organizations"
+              ? ORG_BULK_CHUNK_SIZE
+              : DEFAULT_BULK_CHUNK_SIZE;
+          const bulkConcurrency =
+            entityType === "organizations"
+              ? ORG_BULK_CONCURRENCY
+              : DEFAULT_BULK_CONCURRENCY;
+          const bulkFlushAt = bulkChunkSize;
 
-        // Pre-build record-number → id map once (avoids rebuilding on every row).
-        let existingByRN: Map<number, { id: string }> | null = null;
-        if (hasImportOption) {
+          // Pre-build record-number → id map once (avoids rebuilding on every row).
+          let existingByRN: Map<number, { id: string }> | null = null;
+          if (hasImportOption) {
             writeProgress(0, 0, 0, records.length, true);
             const allExisting = await getExistingRecords();
             existingByRN = new Map<number, { id: string }>();
             for (const rec of allExisting) {
-                const rn = rec.record_number;
-                if (rn == null) continue;
-                const num = normalizeRecordNumber(String(rn));
-                if (num !== null) existingByRN.set(num, { id: rec.id });
+              const rn = rec.record_number;
+              if (rn == null) continue;
+              const num = normalizeRecordNumber(String(rn));
+              if (num !== null) existingByRN.set(num, { id: rec.id });
             }
-        }
+          }
 
-        const createBulkChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
+          const createBulkChunk = async (
+            chunk: Array<{ row: number; payload: Record<string, any> }>,
+          ) => {
             try {
-                let createRes: Response | null = null;
-                let createData: any = {};
-                let lastErr: unknown = null;
+              let createRes: Response | null = null;
+              let createData: any = {};
+              let lastErr: unknown = null;
 
-                writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
+              writeProgress(
+                lastScannedForBulk,
+                summary.successful,
+                summary.failed,
+                records.length,
+                true,
+              );
 
-                for (let attempt = 0; attempt <= IMPORT_BULK_RETRIES; attempt++) {
-                    try {
-                        createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}/bulk-create`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${token}`,
-                            },
-                            body: JSON.stringify({
-                                items: chunk.map((c) => c.payload),
-                                maxBatch: bulkChunkSize,
-                            }),
-                        });
-                        createData = await createRes.json().catch(() => ({}));
-                        if (createRes.ok) break;
-                    } catch (err) {
-                        lastErr = err;
-                    }
+              for (let attempt = 0; attempt <= IMPORT_BULK_RETRIES; attempt++) {
+                try {
+                  createRes = await fetchWithTimeout(
+                    `${apiUrl}/api/${endpoint}/bulk-create`,
+                    {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({
+                        items: chunk.map((c) => c.payload),
+                        maxBatch: bulkChunkSize,
+                      }),
+                    },
+                  );
+                  createData = await createRes.json().catch(() => ({}));
+                  if (createRes.ok) break;
+                } catch (err) {
+                  lastErr = err;
                 }
+              }
 
-                if (!createRes || !createRes.ok) {
-                    const msg =
-                        (lastErr instanceof Error ? lastErr.message : undefined) ??
-                        createData?.message ??
-                        (typeof createData === 'string' ? createData : 'Bulk create failed');
-                    for (const c of chunk) {
-                        summary.failed++;
-                        summary.errors.push({ row: c.row, errors: [String(msg)] });
-                    }
-                    writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
-                    return;
-                }
-
-                const s = createData.summary as
-                    | {
-                          successful?: number;
-                          failed?: number;
-                          errors?: Array<{ rowIndex: number; errors: string[] }>;
-                      }
-                    | undefined;
-
-                if (s) {
-                    summary.successful += s.successful ?? 0;
-                    summary.failed += s.failed ?? 0;
-                    for (const e of s.errors ?? []) {
-                        const mapped = chunk[e.rowIndex];
-                        if (mapped) {
-                            summary.errors.push({
-                                row: mapped.row,
-                                errors: e.errors ?? ['Unknown error'],
-                            });
-                        }
-                    }
-                } else {
-                    for (const c of chunk) {
-                        summary.successful++;
-                    }
-                }
-            } catch (err) {
-                const msg = err instanceof Error ? err.message : 'Bulk create failed';
+              if (!createRes || !createRes.ok) {
+                const msg =
+                  (lastErr instanceof Error ? lastErr.message : undefined) ??
+                  createData?.message ??
+                  (typeof createData === "string"
+                    ? createData
+                    : "Bulk create failed");
                 for (const c of chunk) {
-                    summary.failed++;
-                    summary.errors.push({ row: c.row, errors: [msg] });
+                  summary.failed++;
+                  summary.errors.push({ row: c.row, errors: [String(msg)] });
                 }
-            }
-            writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
-        };
+                writeProgress(
+                  lastScannedForBulk,
+                  summary.successful,
+                  summary.failed,
+                  records.length,
+                  true,
+                );
+                return;
+              }
 
-        const flushBulkChunksConcurrently = async (
-            pending: Array<{ row: number; payload: Record<string, any> }>
-        ) => {
+              const s = createData.summary as
+                | {
+                    successful?: number;
+                    failed?: number;
+                    errors?: Array<{ rowIndex: number; errors: string[] }>;
+                  }
+                | undefined;
+
+              if (s) {
+                summary.successful += s.successful ?? 0;
+                summary.failed += s.failed ?? 0;
+                for (const e of s.errors ?? []) {
+                  const mapped = chunk[e.rowIndex];
+                  if (mapped) {
+                    summary.errors.push({
+                      row: mapped.row,
+                      errors: e.errors ?? ["Unknown error"],
+                    });
+                  }
+                }
+              } else {
+                for (const c of chunk) {
+                  summary.successful++;
+                }
+              }
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : "Bulk create failed";
+              for (const c of chunk) {
+                summary.failed++;
+                summary.errors.push({ row: c.row, errors: [msg] });
+              }
+            }
+            writeProgress(
+              lastScannedForBulk,
+              summary.successful,
+              summary.failed,
+              records.length,
+              true,
+            );
+          };
+
+          const flushBulkChunksConcurrently = async (
+            pending: Array<{ row: number; payload: Record<string, any> }>,
+          ) => {
             if (pending.length === 0) return;
-            writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
+            writeProgress(
+              lastScannedForBulk,
+              summary.successful,
+              summary.failed,
+              records.length,
+              true,
+            );
             const chunks = chunkArray(pending, bulkChunkSize);
             for (let i = 0; i < chunks.length; i += bulkConcurrency) {
-                throwIfAborted();
-                const batch = chunks.slice(i, i + bulkConcurrency);
-                writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
-                await Promise.all(batch.map((chunk) => createBulkChunk(chunk)));
+              throwIfAborted();
+              const batch = chunks.slice(i, i + bulkConcurrency);
+              writeProgress(
+                lastScannedForBulk,
+                summary.successful,
+                summary.failed,
+                records.length,
+                true,
+              );
+              await Promise.all(batch.map((chunk) => createBulkChunk(chunk)));
             }
-        };
+          };
 
-        const orgBulkPending: Array<{ row: number; payload: Record<string, any> }> = [];
-        const lookupFields = (fieldDefinitions as FieldDefinition[]).filter((fd) => {
-            const lt = fieldLookupType(fd);
-            return fd.field_name && lt && LOOKUP_TYPE_CONFIG[normalizeImportLookupType(lt)];
-        });
-        // Resolve Field_69 label from admin center/custom-field service once per import request.
-        const adminResolvedAutoDateLabel = await resolveFieldLabelByFieldName(
+          const orgBulkPending: Array<{
+            row: number;
+            payload: Record<string, any>;
+          }> = [];
+          const lookupFields = (fieldDefinitions as FieldDefinition[]).filter(
+            (fd) => {
+              const lt = fieldLookupType(fd);
+              return (
+                fd.field_name &&
+                lt &&
+                LOOKUP_TYPE_CONFIG[normalizeImportLookupType(lt)]
+              );
+            },
+          );
+          // Resolve Field_69 label from admin center/custom-field service once per import request.
+          const adminResolvedAutoDateLabel = await resolveFieldLabelByFieldName(
             apiUrl,
             token,
             entityType,
-            AUTO_DATE_FIELD_NAME
-        );
-        const autoDateFieldLabel =
+            AUTO_DATE_FIELD_NAME,
+          );
+          const autoDateFieldLabel =
             adminResolvedAutoDateLabel ??
-            (fieldDefinitions as FieldDefinition[]).find((fd) => fd.field_name === AUTO_DATE_FIELD_NAME)?.field_label ??
+            (fieldDefinitions as FieldDefinition[]).find(
+              (fd) => fd.field_name === AUTO_DATE_FIELD_NAME,
+            )?.field_label ??
             fieldNameToLabel[AUTO_DATE_FIELD_NAME] ??
             null;
 
-        await preResolveImportLookups(
+          await preResolveImportLookups(
             records,
             lookupFields,
             apiUrl,
@@ -672,85 +816,100 @@ export async function POST(request: NextRequest) {
             lookupCache,
             throwIfAborted,
             (resolved, total) => {
-                // Keep UI alive during lookup warm-up (scanned stays 0 until row loop).
-                writeProgress(0, 0, 0, records.length, true);
-                writeLine({
-                    type: 'progress',
-                    scanned: 0,
-                    totalInput: records.length,
-                    successful: 0,
-                    failed: 0,
-                    phase: 'lookups',
-                    lookupResolved: resolved,
-                    lookupTotal: total,
-                });
-            }
-        );
+              // Keep UI alive during lookup warm-up (scanned stays 0 until row loop).
+              writeProgress(0, 0, 0, records.length, true);
+              writeLine({
+                type: "progress",
+                scanned: 0,
+                totalInput: records.length,
+                successful: 0,
+                failed: 0,
+                phase: "lookups",
+                lookupResolved: resolved,
+                lookupTotal: total,
+              });
+            },
+          );
 
-        for (let i = 0; i < records.length; i++) {
+          for (let i = 0; i < records.length; i++) {
             throwIfAborted();
             const record = records[i];
             const rowNumber = i + 1;
             lastScannedForBulk = i + 1;
 
-            if (!record || Object.values(record).every(v => v === null || v === undefined || String(v).trim() === '')) {
-                summary.totalRows--;
+            if (
+              !record ||
+              Object.values(record).every(
+                (v) => v === null || v === undefined || String(v).trim() === "",
+              )
+            ) {
+              summary.totalRows--;
             } else {
-            try {
+              try {
                 // Build payload the same way individual add pages do
-                const payload = buildPayload(entityType, record, fieldNameToLabel, fieldDefByName);
+                const payload = buildPayload(
+                  entityType,
+                  record,
+                  fieldNameToLabel,
+                  fieldDefByName,
+                );
 
                 // ── Lookup type resolution (import-only) ─────────────────────────────
                 // For every field that has a lookup_type, extract the record_number from
                 // the CSV value, find the matching record's PK id, and replace the value
                 // in custom_fields (and top-level if applicable) with that id.
                 for (const fieldDef of lookupFields) {
-                    throwIfAborted();
-                    const fieldName = fieldDef.field_name;
-                    const rawValue = record[fieldName];
-                    if (!rawValue || String(rawValue).trim() === '') continue;
+                  throwIfAborted();
+                  const fieldName = fieldDef.field_name;
+                  const rawValue = record[fieldName];
+                  if (!rawValue || String(rawValue).trim() === "") continue;
 
-                    const lookupType = fieldLookupType(fieldDef)!;
+                  const lookupType = fieldLookupType(fieldDef)!;
 
-                    const recordNum = extractLookupRecordNumber(String(rawValue), lookupType);
-                    if (recordNum === null) continue;
+                  const recordNum = extractLookupRecordNumber(
+                    String(rawValue),
+                    lookupType,
+                  );
+                  if (recordNum === null) continue;
 
-                    const normalizedType = normalizeImportLookupType(lookupType);
-                    const resolved = lookupCache.get(normalizedType)?.get(recordNum);
+                  const normalizedType = normalizeImportLookupType(lookupType);
+                  const resolved = lookupCache
+                    .get(normalizedType)
+                    ?.get(recordNum);
 
-                    if (resolved) {
-                        const resolvedId = resolved.id;
-                        const label = fieldNameToLabel[fieldName] ?? fieldName;
-                        // Replace in custom_fields (lookup fields store the linked record PK id)
-                        payload.custom_fields[label] = resolvedId;
-                        // Mirror resolved ID to top-level column via stable field_name (not label).
-                        const backendCol = getLookupBackendColumn(
-                            entityType,
-                            fieldName,
-                            lookupType
-                        );
-                        if (backendCol) {
-                            payload[backendCol] = resolvedId;
-                            if (
-                                backendCol === 'organizationId' &&
-                                resolved.name &&
-                                !payload.organizationName
-                            ) {
-                                payload.organizationName = resolved.name;
-                            }
-                        }
-                    } else {
-                        // Keep original value in custom_fields; clear FK top-level so create
-                        // does not fail on a missing related record.
-                        const backendCol = getLookupBackendColumn(
-                            entityType,
-                            fieldName,
-                            lookupType
-                        );
-                        if (backendCol === 'organizationId') {
-                            delete payload.organizationId;
-                        }
+                  if (resolved) {
+                    const resolvedId = resolved.id;
+                    const label = fieldNameToLabel[fieldName] ?? fieldName;
+                    // Replace in custom_fields (lookup fields store the linked record PK id)
+                    payload.custom_fields[label] = resolvedId;
+                    // Mirror resolved ID to top-level column via stable field_name (not label).
+                    const backendCol = getLookupBackendColumn(
+                      entityType,
+                      fieldName,
+                      lookupType,
+                    );
+                    if (backendCol) {
+                      payload[backendCol] = resolvedId;
+                      if (
+                        backendCol === "organizationId" &&
+                        resolved.name &&
+                        !payload.organizationName
+                      ) {
+                        payload.organizationName = resolved.name;
+                      }
                     }
+                  } else {
+                    // Keep original value in custom_fields; clear FK top-level so create
+                    // does not fail on a missing related record.
+                    const backendCol = getLookupBackendColumn(
+                      entityType,
+                      fieldName,
+                      lookupType,
+                    );
+                    if (backendCol === "organizationId") {
+                      delete payload.organizationId;
+                    }
+                  }
                 }
 
                 // Ensure custom_fields is always a plain serialisable object
@@ -759,80 +918,106 @@ export async function POST(request: NextRequest) {
                 // Auto-populate Field_69 label if the column was not present in the file.
                 // Value source: incoming created_at timestamp when available, else import-time date.
                 if (autoDateFieldLabel) {
-                    const currentVal = payload.custom_fields[autoDateFieldLabel];
-                    const hasCurrentVal =
-                        currentVal != null && String(currentVal).trim() !== '';
-                    if (!hasCurrentVal) {
-                        const createdAtFromRow =
-                            record?.created_at ??
-                            record?.createdAt ??
-                            record?.['Created At'] ??
-                            record?.['created at'] ??
-                            record?.['Date Created'];
-                        const fallbackDate = new Date().toISOString().slice(0, 10);
-                        payload.custom_fields[autoDateFieldLabel] =
-                            toYmdDate(createdAtFromRow) ?? fallbackDate;
-                    }
+                  const currentVal = payload.custom_fields[autoDateFieldLabel];
+                  const hasCurrentVal =
+                    currentVal != null && String(currentVal).trim() !== "";
+                  if (!hasCurrentVal) {
+                    const createdAtFromRow =
+                      record?.created_at ??
+                      record?.createdAt ??
+                      record?.["Created At"] ??
+                      record?.["created at"] ??
+                      record?.["Date Created"];
+                    const fallbackDate = new Date().toISOString().slice(0, 10);
+                    payload.custom_fields[autoDateFieldLabel] =
+                      toYmdDate(createdAtFromRow) ?? fallbackDate;
+                  }
                 }
 
                 // ── Hiring manager model uses camelCase "customFields" not "custom_fields" ──
                 // Rename the key so the model picks it up correctly
-                if (entityType === 'hiring-managers' && payload.custom_fields) {
-                    payload.customFields = payload.custom_fields;
-                    delete payload.custom_fields;
+                if (entityType === "hiring-managers" && payload.custom_fields) {
+                  payload.customFields = payload.custom_fields;
+                  delete payload.custom_fields;
 
-                    // Ensure organization_id column is set from the stable org lookup field (Field_3),
-                    // regardless of what the admin renamed the label to.
-                    const orgFieldLabel =
-                        fieldNameToLabel[HM_ORGANIZATION_ID_FIELD_NAME] ?? HM_ORGANIZATION_ID_FIELD_NAME;
-                    const orgVal = payload.customFields[orgFieldLabel];
-                    if (
-                        orgVal != null &&
-                        String(orgVal).trim() !== '' &&
-                        /^\d+$/.test(String(orgVal).trim())
-                    ) {
-                        payload.organizationId = String(orgVal).trim();
-                    }
+                  // Ensure organization_id column is set from the stable org lookup field (Field_3),
+                  // regardless of what the admin renamed the label to.
+                  const orgFieldLabel =
+                    fieldNameToLabel[HM_ORGANIZATION_ID_FIELD_NAME] ??
+                    HM_ORGANIZATION_ID_FIELD_NAME;
+                  const orgVal = payload.customFields[orgFieldLabel];
+                  if (
+                    orgVal != null &&
+                    String(orgVal).trim() !== "" &&
+                    /^\d+$/.test(String(orgVal).trim())
+                  ) {
+                    payload.organizationId = String(orgVal).trim();
+                  }
                 }
 
                 // ── Preserve imported record numbers (create-only) ─────────────────
                 // Record number is used as a lookup key for updates, never overwritten.
                 const rawImportedRN = importRecordNumbers[i];
-                const importedRN = (rawImportedRN !== undefined && rawImportedRN !== null && rawImportedRN !== '')
+                const importedRN =
+                  rawImportedRN !== undefined &&
+                  rawImportedRN !== null &&
+                  rawImportedRN !== ""
                     ? normalizeRecordNumber(String(rawImportedRN))
                     : null;
                 if (importedRN !== null && importedRN > 0) {
-                    payload.recordNumber = importedRN;
+                  payload.recordNumber = importedRN;
                 }
 
                 // ── Entity-specific defaults / fallbacks ──────────────────────────────
 
-                if (entityType === 'organizations') {
-                    if (!payload.name || String(payload.name).trim() === '') {
-                        const fallback = getVal(payload, 'name', 'organization_name', 'company_name', 'company');
-                        payload.name = fallback || 'Unnamed Organization';
-                    }
-                    if (!payload.status) payload.status = 'Active';
-                    if (!payload.contract_on_file) payload.contract_on_file = 'No';
+                if (entityType === "organizations") {
+                  if (!payload.name || String(payload.name).trim() === "") {
+                    const fallback = getVal(
+                      payload,
+                      "name",
+                      "organization_name",
+                      "company_name",
+                      "company",
+                    );
+                    payload.name = fallback || "Unnamed Organization";
+                  }
+                  if (!payload.status) payload.status = "Active";
+                  if (!payload.contract_on_file)
+                    payload.contract_on_file = "No";
                 }
 
-                if (entityType === 'job-seekers') {
-                    if (!payload.firstName || !payload.lastName) {
-                        const full = getVal(payload, 'full_name', 'name', 'Full Name', 'Name');
-                        if (full) {
-                            const parts = full.trim().split(/\s+/);
-                            if (!payload.firstName) payload.firstName = parts[0] ?? '';
-                            if (!payload.lastName) payload.lastName = parts.slice(1).join(' ') || '';
-                        }
+                if (entityType === "job-seekers") {
+                  if (!payload.firstName || !payload.lastName) {
+                    const full = getVal(
+                      payload,
+                      "full_name",
+                      "name",
+                      "Full Name",
+                      "Name",
+                    );
+                    if (full) {
+                      const parts = full.trim().split(/\s+/);
+                      if (!payload.firstName)
+                        payload.firstName = parts[0] ?? "";
+                      if (!payload.lastName)
+                        payload.lastName = parts.slice(1).join(" ") || "";
                     }
-                    if (!payload.status) payload.status = 'Active';
+                  }
+                  if (!payload.status) payload.status = "Active";
                 }
 
-                if (entityType === 'jobs') {
-                    if (!payload.jobTitle) {
-                        const t = getVal(payload, 'jobTitle', 'job_title', 'title', 'Job Title', 'Title');
-                        if (t) payload.jobTitle = t;
-                    }
+                if (entityType === "jobs") {
+                  if (!payload.jobTitle) {
+                    const t = getVal(
+                      payload,
+                      "jobTitle",
+                      "job_title",
+                      "title",
+                      "Job Title",
+                      "Title",
+                    );
+                    if (t) payload.jobTitle = t;
+                  }
                 }
 
                 // ── Record Number duplicate detection & update ─────────────────────
@@ -840,103 +1025,146 @@ export async function POST(request: NextRequest) {
                 let foundDuplicate = false;
 
                 if (hasImportOption && importedRN !== null && existingByRN) {
-                    const match = existingByRN.get(importedRN);
-                    if (match) {
-                        foundDuplicate = true;
+                  const match = existingByRN.get(importedRN);
+                  if (match) {
+                    foundDuplicate = true;
 
-                        if (opts.updateExisting) {
-                            // Strip recordNumber so it is NEVER overwritten during update
-                            delete payload.recordNumber;
-                            const updateRes = await fetch(`${apiUrl}/api/${endpoint}/${match.id}`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                body: JSON.stringify(payload),
-                            });
-                            const updateData = await updateRes.json();
-                            if (!updateRes.ok) {
-                                summary.failed++;
-                                summary.errors.push({
-                                    row: rowNumber,
-                                    errors: [updateData.message ?? 'Failed to update record'],
-                                    links: [{ text: 'View Record', url: `/dashboard/${endpoint}/view/${match.id}` }],
-                                });
-                            } else {
-                                summary.successful++;
-                            }
-                        } else {
-                            // skipDuplicates or importNewOnly
-                            summary.failed++;
-                            summary.errors.push({
-                                row: rowNumber,
-                                errors: [`Record with record number #${importedRN} already exists in the system. Skipped as per import option.`],
-                                links: [{ text: 'View Record', url: `/dashboard/${endpoint}/view/${match.id}` }],
-                            });
-                        }
+                    if (opts.updateExisting) {
+                      // Strip recordNumber so it is NEVER overwritten during update
+                      delete payload.recordNumber;
+                      const updateRes = await fetch(
+                        `${apiUrl}/api/${endpoint}/${match.id}`,
+                        {
+                          method: "PUT",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify(payload),
+                        },
+                      );
+                      const updateData = await updateRes.json();
+                      if (!updateRes.ok) {
+                        summary.failed++;
+                        summary.errors.push({
+                          row: rowNumber,
+                          errors: [
+                            updateData.message ?? "Failed to update record",
+                          ],
+                          links: [
+                            {
+                              text: "View Record",
+                              url: `/dashboard/${endpoint}/view/${match.id}`,
+                            },
+                          ],
+                        });
+                      } else {
+                        summary.successful++;
+                      }
+                    } else {
+                      // skipDuplicates or importNewOnly
+                      summary.failed++;
+                      summary.errors.push({
+                        row: rowNumber,
+                        errors: [
+                          `Record with record number #${importedRN} already exists in the system. Skipped as per import option.`,
+                        ],
+                        links: [
+                          {
+                            text: "View Record",
+                            url: `/dashboard/${endpoint}/view/${match.id}`,
+                          },
+                        ],
+                      });
                     }
+                  }
                 }
 
                 if (!foundDuplicate) {
-                // ── Create new record (queued for bulk chunk flush) ─────────────────
-                throwIfAborted();
-                orgBulkPending.push({ row: rowNumber, payload });
-                if (orgBulkPending.length >= bulkFlushAt) {
-                    writeProgress(i + 1, summary.successful, summary.failed, records.length, true);
+                  // ── Create new record (queued for bulk chunk flush) ─────────────────
+                  throwIfAborted();
+                  orgBulkPending.push({ row: rowNumber, payload });
+                  if (orgBulkPending.length >= bulkFlushAt) {
+                    writeProgress(
+                      i + 1,
+                      summary.successful,
+                      summary.failed,
+                      records.length,
+                      true,
+                    );
                     const batchToFlush = orgBulkPending.splice(
-                        0,
-                        bulkChunkSize * bulkConcurrency
+                      0,
+                      bulkChunkSize * bulkConcurrency,
                     );
                     await flushBulkChunksConcurrently(batchToFlush);
+                  }
                 }
-                }
-            } catch (err) {
+              } catch (err) {
                 summary.failed++;
                 summary.errors.push({
-                    row: rowNumber,
-                    errors: [err instanceof Error ? err.message : 'Unknown error'],
+                  row: rowNumber,
+                  errors: [
+                    err instanceof Error ? err.message : "Unknown error",
+                  ],
                 });
-            }
+              }
             }
             // Force progress often so NDJSON isn't buffered as one silent block.
             writeProgress(
-                i + 1,
-                summary.successful,
-                summary.failed,
-                records.length,
-                (i + 1) % 10 === 0
+              i + 1,
+              summary.successful,
+              summary.failed,
+              records.length,
+              (i + 1) % 10 === 0,
             );
+          }
+
+          await flushBulkChunksConcurrently(
+            orgBulkPending.splice(0, orgBulkPending.length),
+          );
+
+          writeProgress(
+            records.length,
+            summary.successful,
+            summary.failed,
+            records.length,
+            true,
+          );
+          writeLine({ type: "done", success: true, summary });
+        } catch (streamErr) {
+          console.error("Import stream error:", streamErr);
+          writeLine({
+            type: "error",
+            success: false,
+            message:
+              streamErr instanceof Error
+                ? streamErr.message
+                : "Internal server error",
+          });
+        } finally {
+          clearImportCancellation(importId);
+          controller.close();
         }
+      },
+    });
 
-        await flushBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
-
-        writeProgress(records.length, summary.successful, summary.failed, records.length, true);
-                    writeLine({ type: 'done', success: true, summary });
-                } catch (streamErr) {
-                    console.error('Import stream error:', streamErr);
-                    writeLine({
-                        type: 'error',
-                        success: false,
-                        message: streamErr instanceof Error ? streamErr.message : 'Internal server error',
-                    });
-                } finally {
-                    clearImportCancellation(importId);
-                    controller.close();
-                }
-            },
-        });
-
-        return new Response(stream, {
-            headers: {
-                'Content-Type': 'application/x-ndjson; charset=utf-8',
-                'Cache-Control': 'no-store, no-cache, must-revalidate',
-                'X-Accel-Buffering': 'no',
-                'Content-Encoding': 'identity',
-            },
-        });
-    } catch (error) {
-        console.error('CSV import route setup error:', error);
-        return NextResponse.json(
-            { success: false, message: error instanceof Error ? error.message : 'Internal server error' },
-            { status: 500 }
-        );
-    }
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "X-Accel-Buffering": "no",
+        "Content-Encoding": "identity",
+      },
+    });
+  } catch (error) {
+    console.error("CSV import route setup error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Internal server error",
+      },
+      { status: 500 },
+    );
+  }
 }

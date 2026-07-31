@@ -1361,73 +1361,147 @@ export default function HiringManagerList() {
       </div>
 
       {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+      <div className="px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
+        <div>
+          {showTableSkeleton && !isAdvancedFullMode ? (
+            <p className="text-sm text-gray-500">Loading results…</p>
+          ) : (
+            <p className="text-sm text-gray-700">
+              Showing{" "}
+              <span className="font-medium">
+                {isAdvancedFullMode
+                  ? filteredAndSortedHiringManagers.length === 0
+                    ? 0
+                    : 1
+                  : totalHmCount === 0
+                    ? 0
+                    : (currentPage - 1) * pageSize + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium">
+                {isAdvancedFullMode
+                  ? filteredAndSortedHiringManagers.length
+                  : (currentPage - 1) * pageSize + hiringManagers.length}
+              </span>{" "}
+              of{" "}
+              {isAdvancedFullMode ? (
+                <span className="font-medium">
+                  {filteredAndSortedHiringManagers.length}
+                </span>
+              ) : totalHmCount != null ? (
+                <span className="font-medium">{totalHmCount}</span>
+              ) : (
+                <span className="font-medium">{hiringManagers.length}</span>
+              )}{" "}
+              hiring managers
+              {!isAdvancedFullMode &&
+              filteredAndSortedHiringManagers.length !==
+                hiringManagers.length ? (
+                <>
+                  {" "}
+                  (
+                  <span className="font-medium">
+                    {filteredAndSortedHiringManagers.length}
+                  </span>{" "}
+                  shown after filters)
+                </>
+              ) : null}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="hiring-managers-page-size"
+            className="text-sm text-gray-600"
+          >
+            Rows per page
+          </label>
+          <select
+            id="hiring-managers-page-size"
+            value={pageSize}
+            disabled={showTableSkeleton}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value));
+              setCurrentPage(1);
+              setSelectedHiringManagers([]);
+              setSelectAll(false);
+              hmQueryCacheRef.current.clear();
+            }}
+            className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCurrentPage(1)}
+            disabled={!canGoPrev}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            First
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              canGoPrev && setCurrentPage((p) => Math.max(1, p - 1))
+            }
+            disabled={!canGoPrev}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center gap-1"
+          >
+            <span aria-hidden="true">‹</span>
             Previous
           </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            {showTableSkeleton ? (
-              <p className="text-sm text-gray-500">Loading results…</p>
-            ) : (
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
-                of{" "}
-                <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
-                results
-              </p>
+          <div className="flex items-center gap-1">
+            {paginationItems.map((item, idx) =>
+              item === "..." ? (
+                <span
+                  key={`ellipsis-${idx}`}
+                  className="px-2 py-1 text-sm text-gray-500 select-none"
+                >
+                  ...
+                </span>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setCurrentPage(item)}
+                  disabled={
+                    isLoading || isPageLoading || item === currentPage
+                  }
+                  className={`min-w-[2.4rem] px-3 py-1.5 border rounded text-sm font-medium transition-colors ${
+                    item === currentPage
+                      ? "border-gray-300 bg-white text-gray-900 shadow-sm"
+                      : "border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+                  } disabled:cursor-not-allowed`}
+                  aria-current={item === currentPage ? "page" : undefined}
+                >
+                  {item}
+                </button>
+              ),
             )}
           </div>
-          {!showTableSkeleton && filteredAndSortedHiringManagers.length > 0 && (
-            <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => canGoNext && setCurrentPage((p) => p + 1)}
+            disabled={!canGoNext}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 flex items-center gap-1"
+          >
+            Next
+            <span aria-hidden="true">›</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => totalPages != null && setCurrentPage(totalPages)}
+            disabled={totalPages == null || !canGoNext}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            Last
+          </button>
         </div>
       </div>
       {/* Column Modal - uses universal SortableFieldsEditModal */}
