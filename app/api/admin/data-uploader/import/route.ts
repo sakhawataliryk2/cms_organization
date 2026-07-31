@@ -259,7 +259,8 @@ async function preResolveImportLookups(
     apiUrl: string,
     token: string,
     cache: Map<string, Map<number, LookupCacheEntry>>,
-    throwIfAborted: () => void
+    throwIfAborted: () => void,
+    onLookupProgress?: (resolved: number, total: number) => void
 ): Promise<void> {
     if (lookupFields.length === 0) return;
 
@@ -282,6 +283,8 @@ async function preResolveImportLookups(
         }
     }
 
+    onLookupProgress?.(0, pending.length);
+    let resolvedCount = 0;
     for (let i = 0; i < pending.length; i += LOOKUP_RESOLVE_CONCURRENCY) {
         throwIfAborted();
         const batch = pending.slice(i, i + LOOKUP_RESOLVE_CONCURRENCY);
@@ -290,6 +293,8 @@ async function preResolveImportLookups(
                 resolveLookupEntry(lookupType, recordNum, apiUrl, token, cache)
             )
         );
+        resolvedCount = Math.min(pending.length, i + batch.length);
+        onLookupProgress?.(resolvedCount, pending.length);
     }
 }
 
@@ -380,14 +385,14 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
     return '';
 }
 
-/** Records per backend bulk-create call (backend max is 500). */
+/** Organizations: large SQL bulk batches. */
 const ORG_BULK_CHUNK_SIZE = 500;
-/** Parallel bulk-create chunk uploads to improve throughput. */
 const ORG_BULK_CONCURRENCY = 6;
-/** Flush as soon as one chunk is ready so imports start writing immediately. */
-const ORG_BULK_FLUSH_AT = ORG_BULK_CHUNK_SIZE;
-/** Timeout for backend import requests. */
-const IMPORT_REQUEST_TIMEOUT_MS = 45_000;
+/** Other entities: smaller chunks so progress streams often and requests stay under timeout. */
+const DEFAULT_BULK_CHUNK_SIZE = 50;
+const DEFAULT_BULK_CONCURRENCY = 8;
+/** Timeout for backend bulk-create requests (jobs can be slow per row). */
+const IMPORT_REQUEST_TIMEOUT_MS = 180_000;
 /** Retry attempts for transient bulk failures. */
 const IMPORT_BULK_RETRIES = 1;
 
@@ -531,10 +536,16 @@ export async function POST(request: NextRequest) {
         const hasImportOption = !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
         // Creates always go through chunked bulk-create (same fast path as organizations).
         // Update/skip still handled per matching record number below.
+        const bulkChunkSize =
+            entityType === 'organizations' ? ORG_BULK_CHUNK_SIZE : DEFAULT_BULK_CHUNK_SIZE;
+        const bulkConcurrency =
+            entityType === 'organizations' ? ORG_BULK_CONCURRENCY : DEFAULT_BULK_CONCURRENCY;
+        const bulkFlushAt = bulkChunkSize;
 
         // Pre-build record-number → id map once (avoids rebuilding on every row).
         let existingByRN: Map<number, { id: string }> | null = null;
         if (hasImportOption) {
+            writeProgress(0, 0, 0, records.length, true);
             const allExisting = await getExistingRecords();
             existingByRN = new Map<number, { id: string }>();
             for (const rec of allExisting) {
@@ -551,6 +562,8 @@ export async function POST(request: NextRequest) {
                 let createData: any = {};
                 let lastErr: unknown = null;
 
+                writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
+
                 for (let attempt = 0; attempt <= IMPORT_BULK_RETRIES; attempt++) {
                     try {
                         createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}/bulk-create`, {
@@ -561,7 +574,7 @@ export async function POST(request: NextRequest) {
                             },
                             body: JSON.stringify({
                                 items: chunk.map((c) => c.payload),
-                                maxBatch: ORG_BULK_CHUNK_SIZE,
+                                maxBatch: bulkChunkSize,
                             }),
                         });
                         createData = await createRes.json().catch(() => ({}));
@@ -623,10 +636,12 @@ export async function POST(request: NextRequest) {
             pending: Array<{ row: number; payload: Record<string, any> }>
         ) => {
             if (pending.length === 0) return;
-            const chunks = chunkArray(pending, ORG_BULK_CHUNK_SIZE);
-            for (let i = 0; i < chunks.length; i += ORG_BULK_CONCURRENCY) {
+            writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
+            const chunks = chunkArray(pending, bulkChunkSize);
+            for (let i = 0; i < chunks.length; i += bulkConcurrency) {
                 throwIfAborted();
-                const batch = chunks.slice(i, i + ORG_BULK_CONCURRENCY);
+                const batch = chunks.slice(i, i + bulkConcurrency);
+                writeProgress(lastScannedForBulk, summary.successful, summary.failed, records.length, true);
                 await Promise.all(batch.map((chunk) => createBulkChunk(chunk)));
             }
         };
@@ -655,7 +670,21 @@ export async function POST(request: NextRequest) {
             apiUrl,
             token,
             lookupCache,
-            throwIfAborted
+            throwIfAborted,
+            (resolved, total) => {
+                // Keep UI alive during lookup warm-up (scanned stays 0 until row loop).
+                writeProgress(0, 0, 0, records.length, true);
+                writeLine({
+                    type: 'progress',
+                    scanned: 0,
+                    totalInput: records.length,
+                    successful: 0,
+                    failed: 0,
+                    phase: 'lookups',
+                    lookupResolved: resolved,
+                    lookupTotal: total,
+                });
+            }
         );
 
         for (let i = 0; i < records.length; i++) {
@@ -850,10 +879,11 @@ export async function POST(request: NextRequest) {
                 // ── Create new record (queued for bulk chunk flush) ─────────────────
                 throwIfAborted();
                 orgBulkPending.push({ row: rowNumber, payload });
-                if (orgBulkPending.length >= ORG_BULK_FLUSH_AT) {
+                if (orgBulkPending.length >= bulkFlushAt) {
+                    writeProgress(i + 1, summary.successful, summary.failed, records.length, true);
                     const batchToFlush = orgBulkPending.splice(
                         0,
-                        ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY
+                        bulkChunkSize * bulkConcurrency
                     );
                     await flushBulkChunksConcurrently(batchToFlush);
                 }
@@ -866,7 +896,14 @@ export async function POST(request: NextRequest) {
                 });
             }
             }
-            writeProgress(i + 1, summary.successful, summary.failed, records.length);
+            // Force progress often so NDJSON isn't buffered as one silent block.
+            writeProgress(
+                i + 1,
+                summary.successful,
+                summary.failed,
+                records.length,
+                (i + 1) % 10 === 0
+            );
         }
 
         await flushBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
@@ -890,7 +927,9 @@ export async function POST(request: NextRequest) {
         return new Response(stream, {
             headers: {
                 'Content-Type': 'application/x-ndjson; charset=utf-8',
-                'Cache-Control': 'no-store',
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+                'X-Accel-Buffering': 'no',
+                'Content-Encoding': 'identity',
             },
         });
     } catch (error) {

@@ -91,6 +91,9 @@ type ImportLiveProgress = {
     totalInput: number;
     successful: number;
     failed: number;
+    phase?: string;
+    lookupResolved?: number;
+    lookupTotal?: number;
 };
 
 async function consumeImportNdjsonStream(
@@ -106,9 +109,9 @@ async function consumeImportNdjsonStream(
     let buffer = '';
     let summary: ImportSummary | null = null;
     let lastUiMs = 0;
-    const maybeProgress = (p: ImportLiveProgress) => {
+    const maybeProgress = (p: ImportLiveProgress, force = false) => {
         const t = Date.now();
-        if (t - lastUiMs < 100) return;
+        if (!force && t - lastUiMs < 80) return;
         lastUiMs = t;
         onProgress(p);
     };
@@ -131,16 +134,25 @@ async function consumeImportNdjsonStream(
                 totalInput?: number;
                 successful?: number;
                 failed?: number;
+                phase?: string;
+                lookupResolved?: number;
+                lookupTotal?: number;
                 summary?: ImportSummary;
                 message?: string;
             };
             if (msg.type === 'progress') {
-                maybeProgress({
-                    scanned: msg.scanned ?? 0,
-                    totalInput: msg.totalInput ?? totalInputRows,
-                    successful: msg.successful ?? 0,
-                    failed: msg.failed ?? 0,
-                });
+                maybeProgress(
+                    {
+                        scanned: msg.scanned ?? 0,
+                        totalInput: msg.totalInput ?? totalInputRows,
+                        successful: msg.successful ?? 0,
+                        failed: msg.failed ?? 0,
+                        phase: msg.phase,
+                        lookupResolved: msg.lookupResolved,
+                        lookupTotal: msg.lookupTotal,
+                    },
+                    msg.phase === 'lookups' || (msg.successful ?? 0) > 0 || (msg.scanned ?? 0) > 0
+                );
             } else if (msg.type === 'done' && msg.summary) {
                 summary = msg.summary;
                 forceProgress({
@@ -316,7 +328,7 @@ export default function DataUploader() {
         const timer = window.setInterval(() => {
             if (!lastStreamProgressAt) return;
             const stalledMs = Date.now() - lastStreamProgressAt;
-            setIsLiveStreamPaused(stalledMs > 15000);
+            setIsLiveStreamPaused(stalledMs > 45000);
         }, 1000);
         return () => window.clearInterval(timer);
     }, [isImporting, lastStreamProgressAt]);
@@ -1875,19 +1887,34 @@ export default function DataUploader() {
                                         </p>
                                         {importLiveProgress && (
                                             <p className="text-sm text-blue-900 mt-2 tabular-nums">
-                                                Rows processed:{' '}
-                                                <span className="font-semibold">{importLiveProgress.scanned}</span>
-                                                {' / '}
-                                                <span className="font-semibold">{importLiveProgress.totalInput}</span>
-                                                {' · '}
-                                                <span className="text-green-800">OK {importLiveProgress.successful}</span>
-                                                {' · '}
-                                                <span className="text-red-800">Failed {importLiveProgress.failed}</span>
+                                                {importLiveProgress.phase === 'lookups' ? (
+                                                    <>
+                                                        Preparing lookups:{' '}
+                                                        <span className="font-semibold">
+                                                            {importLiveProgress.lookupResolved ?? 0}
+                                                        </span>
+                                                        {' / '}
+                                                        <span className="font-semibold">
+                                                            {importLiveProgress.lookupTotal ?? 0}
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        Rows processed:{' '}
+                                                        <span className="font-semibold">{importLiveProgress.scanned}</span>
+                                                        {' / '}
+                                                        <span className="font-semibold">{importLiveProgress.totalInput}</span>
+                                                        {' · '}
+                                                        <span className="text-green-800">OK {importLiveProgress.successful}</span>
+                                                        {' · '}
+                                                        <span className="text-red-800">Failed {importLiveProgress.failed}</span>
+                                                    </>
+                                                )}
                                             </p>
                                         )}
                                         {isLiveStreamPaused && (
                                             <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                                                Resuming from last known progress: parsed{' '}
+                                                Waiting on the next server batch (writes happen in chunks). Last seen:{' '}
                                                 <span className="font-semibold tabular-nums">
                                                     {importLiveProgress?.scanned ?? 0}
                                                 </span>
@@ -1895,11 +1922,15 @@ export default function DataUploader() {
                                                 <span className="font-semibold tabular-nums">
                                                     {importLiveProgress?.totalInput ?? csvRows.length}
                                                 </span>
-                                                . The import is still running and this view updates automatically when the next server chunk arrives.
+                                                {' · OK '}
+                                                <span className="font-semibold tabular-nums">
+                                                    {importLiveProgress?.successful ?? 0}
+                                                </span>
+                                                . This updates automatically when the next chunk finishes.
                                             </div>
                                         )}
                                         <p className="text-xs text-blue-800 mt-1">
-                                            Updates stream over the same request (lightly throttled for smooth UI). Bulk organization imports refresh OK/Failed after each batch is written.
+                                            Progress updates after each write batch (~50 rows for jobs). OK/Failed counts rise as batches complete.
                                         </p>
                                     </div>
                                 )}
