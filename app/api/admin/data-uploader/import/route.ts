@@ -380,10 +380,12 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
     return '';
 }
 
-/** Organizations per backend bulk-create call (backend max is 500). */
+/** Records per backend bulk-create call (backend max is 500). */
 const ORG_BULK_CHUNK_SIZE = 500;
-/** Parallel organization chunk uploads to improve throughput. */
-const ORG_BULK_CONCURRENCY = 3;
+/** Parallel bulk-create chunk uploads to improve throughput. */
+const ORG_BULK_CONCURRENCY = 6;
+/** Flush as soon as one chunk is ready so imports start writing immediately. */
+const ORG_BULK_FLUSH_AT = ORG_BULK_CHUNK_SIZE;
 /** Timeout for backend import requests. */
 const IMPORT_REQUEST_TIMEOUT_MS = 45_000;
 /** Retry attempts for transient bulk failures. */
@@ -527,7 +529,21 @@ export async function POST(request: NextRequest) {
 
         const opts = options ?? {};
         const hasImportOption = !!(opts.skipDuplicates || opts.importNewOnly || opts.updateExisting);
-        const useEntityBulkCreate = !hasImportOption;
+        // Creates always go through chunked bulk-create (same fast path as organizations).
+        // Update/skip still handled per matching record number below.
+
+        // Pre-build record-number → id map once (avoids rebuilding on every row).
+        let existingByRN: Map<number, { id: string }> | null = null;
+        if (hasImportOption) {
+            const allExisting = await getExistingRecords();
+            existingByRN = new Map<number, { id: string }>();
+            for (const rec of allExisting) {
+                const rn = rec.record_number;
+                if (rn == null) continue;
+                const num = normalizeRecordNumber(String(rn));
+                if (num !== null) existingByRN.set(num, { id: rec.id });
+            }
+        }
 
         const createBulkChunk = async (chunk: Array<{ row: number; payload: Record<string, any> }>) => {
             try {
@@ -694,8 +710,18 @@ export async function POST(request: NextRequest) {
                                 payload.organizationName = resolved.name;
                             }
                         }
+                    } else {
+                        // Keep original value in custom_fields; clear FK top-level so create
+                        // does not fail on a missing related record.
+                        const backendCol = getLookupBackendColumn(
+                            entityType,
+                            fieldName,
+                            lookupType
+                        );
+                        if (backendCol === 'organizationId') {
+                            delete payload.organizationId;
+                        }
                     }
-                    // If not found, leave the original value as fallback (already set by buildPayload)
                 }
 
                 // Ensure custom_fields is always a plain serialisable object
@@ -784,19 +810,7 @@ export async function POST(request: NextRequest) {
                 // Record Number is used as a lookup key only — NEVER overwritten during updates.
                 let foundDuplicate = false;
 
-                if (hasImportOption && importedRN !== null) {
-                    const allExisting = await getExistingRecords();
-                    const existingByRN = new Map<number, { id: string }>();
-                    for (const rec of allExisting) {
-                        const rn = rec.record_number;
-                        if (rn != null) {
-                            const num = normalizeRecordNumber(String(rn));
-                            if (num !== null) {
-                                existingByRN.set(num, { id: rec.id });
-                            }
-                        }
-                    }
-
+                if (hasImportOption && importedRN !== null && existingByRN) {
                     const match = existingByRN.get(importedRN);
                     if (match) {
                         foundDuplicate = true;
@@ -833,34 +847,15 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (!foundDuplicate) {
-                // ── Create new record ─────────────────────────────────────────────────
+                // ── Create new record (queued for bulk chunk flush) ─────────────────
                 throwIfAborted();
-                if (useEntityBulkCreate) {
-                    orgBulkPending.push({ row: rowNumber, payload });
-                    if (orgBulkPending.length >= ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY) {
-                        const batchToFlush = orgBulkPending.splice(0, ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY);
-                        await flushBulkChunksConcurrently(batchToFlush);
-                    }
-                } else {
-                    const createRes = await fetchWithTimeout(`${apiUrl}/api/${endpoint}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify(payload),
-                    });
-                    const createData = await createRes.json();
-
-                    if (!createRes.ok) {
-                        summary.failed++;
-                        summary.errors.push({
-                            row: rowNumber,
-                            errors: [createData.message ?? 'Failed to create record'],
-                        });
-                    } else {
-                        summary.successful++;
-                    }
+                orgBulkPending.push({ row: rowNumber, payload });
+                if (orgBulkPending.length >= ORG_BULK_FLUSH_AT) {
+                    const batchToFlush = orgBulkPending.splice(
+                        0,
+                        ORG_BULK_CHUNK_SIZE * ORG_BULK_CONCURRENCY
+                    );
+                    await flushBulkChunksConcurrently(batchToFlush);
                 }
                 }
             } catch (err) {
@@ -874,9 +869,7 @@ export async function POST(request: NextRequest) {
             writeProgress(i + 1, summary.successful, summary.failed, records.length);
         }
 
-        if (useEntityBulkCreate) {
-            await flushBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
-        }
+        await flushBulkChunksConcurrently(orgBulkPending.splice(0, orgBulkPending.length));
 
         writeProgress(records.length, summary.successful, summary.failed, records.length, true);
                     writeLine({ type: 'done', success: true, summary });
