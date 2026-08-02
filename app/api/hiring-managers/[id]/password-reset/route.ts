@@ -126,8 +126,8 @@ export async function POST(
       (req.url ? new URL(req.url).origin : "https://app.completestaffingsolutions.com");
     const loginUrl =
       process.env.HIRING_MANAGER_PORTAL_LOGIN_URL ||
-      `${origin}/dashboard` ||
-      `${origin}/login`;
+      process.env.PORTAL_LOGIN_URL ||
+      `${origin}/portal/login`;
 
     const emailBody = `
 <p><strong>Hiring Manager Login Credentials</strong></p>
