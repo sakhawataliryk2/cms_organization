@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function JobSeekerPortalIndex() {
-  redirect("/portal/jobseeker/home");
+  redirect("/portal/jobseeker/timesheets");
 }
-
