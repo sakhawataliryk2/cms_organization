@@ -216,7 +216,7 @@ export default function HiringTimecardsPage() {
             const weekStart = String(t.week_start_date || "").slice(0, 10);
             const days = resolveDayDetails(t);
             const notes = normalizeNotes(t.notes);
-            const isExpanded = expandedId === Number(t.id) || status === "submitted";
+            const isExpanded = expandedId === Number(t.id);
 
             return (
               <div
@@ -240,17 +240,13 @@ export default function HiringTimecardsPage() {
                     <p className={`text-[14px] font-semibold ${statusStyles(status)}`}>
                       {statusLabel(status)}
                     </p>
-                    {status !== "submitted" && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedId(isExpanded && expandedId === Number(t.id) ? null : Number(t.id))
-                        }
-                        className="text-[13px] font-semibold text-[#1a6bb5] hover:underline"
-                      >
-                        {isExpanded && expandedId === Number(t.id) ? "Hide details" : "View details"}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isExpanded ? null : Number(t.id))}
+                      className="text-[13px] font-semibold text-[#1a6bb5] hover:underline"
+                    >
+                      {isExpanded ? "Hide details" : "View details"}
+                    </button>
                   </div>
                 </div>
 
