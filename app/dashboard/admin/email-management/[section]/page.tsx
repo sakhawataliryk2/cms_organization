@@ -361,6 +361,7 @@ const SECTION_CONFIG: Record<
       { value: "HIRING_MANAGER_DELETE_REQUEST", label: "Hiring Manager - Delete Request (Payroll)" },
       { value: "HIRING_MANAGER_TRANSFER_REQUEST", label: "Hiring Manager - Transfer Request (Payroll)" },
       { value: "HIRING_MANAGER_UNARCHIVE_REQUEST", label: "Hiring Manager - Unarchive Request (Payroll)" },
+      { value: "HIRING_MANAGER_PORTAL_CREDENTIALS", label: "Hiring Manager - Portal Credentials" },
     ],
     placeholders: {
       HIRING_MANAGER_DELETE_REQUEST: [
@@ -397,11 +398,18 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      HIRING_MANAGER_PORTAL_CREDENTIALS: [
+        "{{hiringManagerName}}",
+        "{{email}}",
+        "{{tempPassword}}",
+        "{{portalUrl}}",
+      ],
     },
     required: {
       HIRING_MANAGER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       HIRING_MANAGER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       HIRING_MANAGER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      HIRING_MANAGER_PORTAL_CREDENTIALS: ["{{email}}", "{{tempPassword}}", "{{portalUrl}}"],
     },
     defaults: {
       HIRING_MANAGER_DELETE_REQUEST: {
@@ -454,6 +462,20 @@ const SECTION_CONFIG: Record<
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
           `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
+      HIRING_MANAGER_PORTAL_CREDENTIALS: {
+        template_name: "Hiring Manager Portal Credentials",
+        subject: "Hiring Manager Portal Login Credentials",
+        body:
+          `<div>` +
+          `<p><strong>Hiring Manager Portal Login Credentials</strong></p>` +
+          `<p>Hello {{hiringManagerName}},</p>` +
+          `<p>Use the credentials below to sign in to the Hiring Manager Portal. You will be prompted to change your password after first login.</p>` +
+          `<p><strong>Portal:</strong> <a href="{{portalUrl}}">{{portalUrl}}</a></p>` +
+          `<p><strong>Email:</strong> {{email}}</p>` +
+          `<p><strong>Temporary Password:</strong> {{tempPassword}}</p>` +
+          `<p>If you did not expect this email, contact your staffing team.</p>` +
           `</div>`,
       },
     },

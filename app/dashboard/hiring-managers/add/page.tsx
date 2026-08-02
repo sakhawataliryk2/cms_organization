@@ -11,6 +11,7 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
+import { toast } from "sonner";
 
 interface CustomFieldDefinition {
   id: string;
@@ -1222,6 +1223,14 @@ export default function AddHiringManager() {
       } else {
         // After save/update, always go to the Hiring Manager record page
         const id = isEditMode ? hiringManagerId : data.hiringManager.id;
+        if (!isEditMode && data?.portal_account && !data.portal_account.email_sent) {
+          const warn =
+            data.portal_account.warning ||
+            "Hiring manager saved, but portal login credentials were not emailed. Use Password Reset on the record.";
+          toast.warning(warn);
+        } else if (!isEditMode && data?.portal_account?.email_sent) {
+          toast.success("Hiring manager created. Portal login credentials were emailed.");
+        }
         router.push(`/dashboard/hiring-managers/view?id=${id}`);
       }
     } catch (err) {
