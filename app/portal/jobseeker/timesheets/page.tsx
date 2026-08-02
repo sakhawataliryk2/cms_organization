@@ -13,6 +13,7 @@ type Timecard = {
   total_hours: number;
   week_start_date: string;
   week_end_date?: string;
+  rejection_reason?: string | null;
 };
 
 function SummaryCard({
@@ -299,14 +300,52 @@ export default function TimesheetsDashboardPage() {
         )}
 
         {isRejected && (
-          <div className="mx-auto max-w-sm text-center">
+          <div className="mx-auto max-w-md text-center">
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#fdecec] text-[#d64545]">
               <FiAlertCircle size={30} strokeWidth={1.75} />
             </div>
             <h2 className="text-[22px] font-semibold text-[#1a1a1a]">Timesheet rejected</h2>
             <p className="mt-2 text-[14px] text-[#4a5560]">
-              Contact your hiring manager if you need to resubmit for {weekLabel}.
+              Your timesheet for {weekLabel} was rejected by your hiring manager.
             </p>
+            {timecard?.rejection_reason ? (
+              <div className="mt-4 rounded-md border border-[#f5c2c7] bg-[#fff5f5] px-4 py-3 text-left">
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#d64545]">
+                  Reason
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-[14px] text-[#1a1a1a]">
+                  {timecard.rejection_reason}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-[14px] text-[#4a5560]">No rejection reason was provided.</p>
+            )}
+            {timecard?.id && (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const res = await fetch(
+                      `/api/portal/jobseeker/timecards/${timecard.id}/reopen`,
+                      { method: "POST" }
+                    );
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || !data?.success) {
+                      toast.error(data?.message || "Could not reopen timesheet");
+                      return;
+                    }
+                    router.push(`/portal/jobseeker/timesheets/entry?id=${timecard.id}`);
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                className="mt-6 h-11 rounded-md bg-[#1a6bb5] px-8 text-[15px] font-semibold text-white hover:bg-[#155a99] disabled:opacity-50"
+              >
+                Revise timesheet
+              </button>
+            )}
           </div>
         )}
       </div>

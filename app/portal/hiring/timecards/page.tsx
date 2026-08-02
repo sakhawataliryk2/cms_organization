@@ -139,6 +139,9 @@ export default function HiringTimecardsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<TimecardRow | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const load = async (f: Filter) => {
     setLoading(true);
@@ -151,15 +154,27 @@ export default function HiringTimecardsPage() {
     setLoading(false);
   };
 
-  const review = async (id: number, action: "approve" | "reject") => {
+  const review = async (id: number, action: "approve" | "reject", reason?: string) => {
     setReviewingId(id);
+    setReviewError(null);
     try {
-      await fetch(`/api/portal/hiring/timecards/${id}/review`, {
+      const res = await fetch(`/api/portal/hiring/timecards/${id}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, reason: reason || undefined }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        setReviewError(data?.message || `Could not ${action} timecard`);
+        return false;
+      }
+      setRejectTarget(null);
+      setRejectReason("");
       await load(filter);
+      return true;
+    } catch {
+      setReviewError(`Could not ${action} timecard`);
+      return false;
     } finally {
       setReviewingId(null);
     }
@@ -178,6 +193,11 @@ export default function HiringTimecardsPage() {
         </p>
       </div>
 
+      {reviewError && (
+        <div className="rounded-md border border-[#f5c2c7] bg-[#fdecea] px-4 py-3 text-[13px] text-[#d64545]">
+          {reviewError}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {(["all", "submitted", "approved", "rejected"] as const).map((f) => (
           <button
@@ -342,7 +362,11 @@ export default function HiringTimecardsPage() {
                     <button
                       type="button"
                       disabled={reviewingId === Number(t.id)}
-                      onClick={() => review(Number(t.id), "reject")}
+                      onClick={() => {
+                        setReviewError(null);
+                        setRejectReason("");
+                        setRejectTarget(t);
+                      }}
                       className="inline-flex h-9 items-center gap-1.5 rounded border border-[#d64545] bg-white px-4 text-[13px] font-semibold text-[#d64545] hover:bg-[#fdecea] disabled:opacity-60"
                     >
                       <FiAlertCircle size={14} />
@@ -353,6 +377,49 @@ export default function HiringTimecardsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#2a3340]/45 p-4">
+          <div className="w-full max-w-[440px] rounded-xl bg-white px-6 py-6 shadow-xl">
+            <h2 className="text-[18px] font-semibold text-[#1a1a1a]">Reject timesheet?</h2>
+            <p className="mt-2 text-[14px] text-[#5a6570]">
+              {rejectTarget.first_name} {rejectTarget.last_name} · Week{" "}
+              {String(rejectTarget.week_start_date || "").slice(0, 10)}
+            </p>
+            <label className="mt-4 block text-[13px] font-semibold text-[#333]">
+              Rejection reason <span className="font-normal text-[#7a8490]">(optional)</span>
+            </label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+              placeholder="Explain why this timesheet is being rejected…"
+              className="mt-1.5 w-full resize-y rounded-md border border-[#c5ccd4] px-3 py-2 text-[14px] text-[#1a1a1a] outline-none focus:border-[#1a6bb5]"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={reviewingId === Number(rejectTarget.id)}
+                onClick={() => {
+                  setRejectTarget(null);
+                  setRejectReason("");
+                }}
+                className="h-10 rounded-md border border-[#c5ccd4] bg-white px-4 text-[14px] font-semibold text-[#5a6570] hover:bg-[#f7f8fa] disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reviewingId === Number(rejectTarget.id)}
+                onClick={() => review(Number(rejectTarget.id), "reject", rejectReason.trim())}
+                className="h-10 rounded-md bg-[#d64545] px-4 text-[14px] font-semibold text-white hover:bg-[#b93a3a] disabled:opacity-60"
+              >
+                Confirm reject
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
