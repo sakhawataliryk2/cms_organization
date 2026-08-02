@@ -9,7 +9,7 @@ function ForgotPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRole = useMemo(() => {
-    const r = searchParams.get("role");
+    const r = searchParams?.get("role");
     return r === "HIRING_MANAGER" ? "HIRING_MANAGER" : "JOB_SEEKER";
   }, [searchParams]);
 
