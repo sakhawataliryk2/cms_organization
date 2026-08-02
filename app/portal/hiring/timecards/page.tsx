@@ -112,8 +112,8 @@ export default function HiringTimecardsPage() {
                       Week: {String(t.week_start_date || "").slice(0, 10)}
                     </p>
                     <p className="text-[13px] text-[#5a6570]">
-                      Hours: {Number(t.total_hours || 0).toFixed(2)} · Rate: $
-                      {Number(t.rate_per_hour || t.rate || 0).toFixed(2)}/hr
+                      Hours: {Number(t.total_hours || 0).toFixed(2)} · Pay Rate: $
+                      {Number(t.pay_rate || t.rate_per_hour || t.rate || 0).toFixed(2)}/hr
                     </p>
                   </div>
                   <p className={`text-[14px] font-semibold ${statusStyles(status)}`}>

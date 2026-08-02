@@ -111,7 +111,11 @@ export default function TimesheetsDashboardPage() {
 
   const status = timecard?.status || "not_created";
   const totalHours = status === "not_created" ? null : Number(timecard?.total_hours ?? 0);
-  const expenses = status === "not_created" ? null : 0;
+  const payRate = Number(activePlacement?.rate_per_hour ?? 0);
+  const expenses =
+    status === "not_created" || totalHours == null
+      ? null
+      : Number((totalHours * (Number.isFinite(payRate) ? payRate : 0)).toFixed(2));
 
   const onYesWorked = async () => {
     if (!activePlacement?.id) return;
