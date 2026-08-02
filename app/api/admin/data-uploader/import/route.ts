@@ -627,14 +627,15 @@ export async function POST(request: NextRequest) {
           );
           // Creates always go through chunked bulk-create (same fast path as organizations).
           // Update/skip still handled per matching record number below.
-          const bulkChunkSize =
-            entityType === "organizations"
-              ? ORG_BULK_CHUNK_SIZE
-              : DEFAULT_BULK_CHUNK_SIZE;
-          const bulkConcurrency =
-            entityType === "organizations"
-              ? ORG_BULK_CONCURRENCY
-              : DEFAULT_BULK_CONCURRENCY;
+          // Jobs now use true SQL bulk insert like organizations, so use large chunks.
+          const useLargeBulkChunks =
+            entityType === "organizations" || entityType === "jobs";
+          const bulkChunkSize = useLargeBulkChunks
+            ? ORG_BULK_CHUNK_SIZE
+            : DEFAULT_BULK_CHUNK_SIZE;
+          const bulkConcurrency = useLargeBulkChunks
+            ? ORG_BULK_CONCURRENCY
+            : DEFAULT_BULK_CONCURRENCY;
           const bulkFlushAt = bulkChunkSize;
 
           // Pre-build record-number → id map once (avoids rebuilding on every row).
