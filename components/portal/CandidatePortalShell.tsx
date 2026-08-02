@@ -6,13 +6,14 @@ import { useRouter } from "nextjs-toploader/app";
 import { useEffect, useRef, useState } from "react";
 import { FiChevronRight, FiHelpCircle, FiLogOut, FiUser } from "react-icons/fi";
 import CandidateHelpGuide from "@/components/portal/CandidateHelpGuide";
+import TimecardRejectionNotice from "@/components/portal/TimecardRejectionNotice";
 import { useCandidatePortal } from "@/components/portal/CandidatePortalContext";
 import { confirmTimesheetLeave } from "@/lib/timesheetLeaveGuard";
 
 const TABS = [
   { label: "Timesheets", href: "/portal/jobseeker/timesheets" },
   { label: "Documents", href: "/portal/jobseeker/documents" },
-  { label: "Reports", href: "/portal/jobseeker/reports" },
+  { label: "History", href: "/portal/jobseeker/reports" },
 ];
 
 function placementLabel(p: { job_title?: string; organization_name?: string } | null) {
@@ -153,6 +154,7 @@ export default function CandidatePortalShell({ children }: { children: React.Rea
       <main className="mx-auto max-w-[1100px] px-5 py-6">{children}</main>
 
       <CandidateHelpGuide open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <TimecardRejectionNotice />
     </div>
   );
 }
