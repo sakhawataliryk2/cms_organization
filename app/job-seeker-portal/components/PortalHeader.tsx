@@ -43,7 +43,7 @@ export default function PortalHeader({ userName }: PortalHeaderProps) {
 
           <button
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-            onClick={() => (window.location.href = "/job-seeker-portal/login")}
+            onClick={() => (window.location.href = "/portal/login")}
           >
             <FiLogOut size={18} />
           </button>
