@@ -568,7 +568,9 @@ export default function OnboardingApprovalsPage() {
     setIsViewDialogOpen(true);
   };
 
-  const canTakeActionOnSelected = (selectedApproval?.status || "") === "SENT";
+  const selectedStatus = (selectedApproval?.status || "").toUpperCase();
+  const canTakeActionOnSelected =
+    selectedStatus === "SUBMITTED" || selectedStatus === "PENDING_ADMIN_REVIEW";
 
   return (
     <div className="bg-gray-200 min-h-screen p-8">
@@ -795,7 +797,13 @@ export default function OnboardingApprovalsPage() {
                 </>
               ) : (
                 <div className="text-sm text-gray-500 font-medium">
-                  Actions are only available while status is SENT.
+                  {selectedStatus === "SENT" || selectedStatus === "IN_PROGRESS" || selectedStatus === "PENDING_JOBSEEKER"
+                    ? "Waiting for the job seeker to submit this document before you can approve or reject."
+                    : selectedStatus === "APPROVED" || selectedStatus === "COMPLETED"
+                      ? "This document is already approved."
+                      : selectedStatus === "REJECTED"
+                        ? "This document was rejected. The job seeker must resubmit before you can take action again."
+                        : "Approve and Reject are only available when status is Submitted or Pending Admin Review."}
                 </div>
               )}
             </div>
