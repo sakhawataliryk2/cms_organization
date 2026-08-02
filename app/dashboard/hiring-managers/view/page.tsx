@@ -28,6 +28,7 @@ import {
 } from "@/lib/googleCalendar";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
+import { getCustomFieldLabel } from '@/lib/getCustomFieldLabel';
 import LookupEntityDetailsGrid from '@/components/LookupEntityDetailsGrid';
 import { HM_ORGANIZATION_ID_FIELD_NAME } from '@/lib/entitySummaryFieldMaps';
 import RequestActionModal from '@/components/RequestActionModal';
@@ -1149,13 +1150,22 @@ out.sort((a, b) => {
       return hiringManager.organization?.name || "-";
     }
 
+    // Email is Field_7 in custom_fields (core email column is often empty)
+    if (rawKey === "email") {
+      const core = formatHeaderValue(hiringManager.email);
+      if (core && core !== "(Not provided)" && core !== "No email provided") {
+        return core;
+      }
+      const fromField7 = getCustomFieldValue("Field_7");
+      if (fromField7) return fromField7;
+      return "-";
+    }
+
     const standardValue = formatHeaderValue((hiringManager as Record<string, unknown>)[rawKey]);
     if (standardValue) return standardValue;
 
     const customFallback = getCustomFieldValue(rawKey);
-    if (customFallback) return customFallback;
-
-    return "-";
+    return customFallback ?? "-";
   };
 
   const getHeaderFieldInfo = (key: string) => {
@@ -1544,6 +1554,27 @@ out.sort((a, b) => {
 
       // Format the hiring manager data for display
       const hm = data.hiringManager;
+      const customFields =
+        hm.custom_fields && typeof hm.custom_fields === "object"
+          ? hm.custom_fields
+          : {};
+
+      // Primary email lives in Field_7 custom field (same pattern as job seeker Field_8)
+      let primaryEmail = typeof hm.email === "string" ? hm.email.trim() : "";
+      try {
+        const field7Label = await getCustomFieldLabel("hiring-managers", "Field_7");
+        if (field7Label) {
+          const fromCustom = customFields?.[field7Label];
+          if (fromCustom != null && String(fromCustom).trim() !== "") {
+            primaryEmail = String(fromCustom).trim();
+          } else if (customFields?.Field_7 != null && String(customFields.Field_7).trim() !== "") {
+            primaryEmail = String(customFields.Field_7).trim();
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to resolve Field_7 email label:", e);
+      }
+
       const formattedHiringManager = {
         id: hm.id || "Unknown ID",
         record_number: hm.record_number,
@@ -1554,7 +1585,7 @@ out.sort((a, b) => {
         phone: hm.phone || "(Not provided)",
         mobilePhone: hm.mobile_phone || "(Not provided)",
         directLine: hm.direct_line || "(Not provided)",
-        email: hm.email || "(Not provided)",
+        email: primaryEmail || "(Not provided)",
         email2: hm.email2 || "",
         organization: {
           id: hm.organization_id,
@@ -1578,7 +1609,7 @@ out.sort((a, b) => {
             ? new Date(hm.created_at).toLocaleDateString()
             : "Unknown",
         address: hm.address || "No address provided",
-        customFields: hm.custom_fields || {},
+        customFields,
         archived_at: hm.archived_at,
         archive_reason: hm.archive_reason || null,
       };
@@ -5522,7 +5553,12 @@ out.sort((a, b) => {
                   {hiringManager?.firstName} {hiringManager?.lastName}
                 </p>
                 <p>
-                  <strong>Email:</strong> {hiringManager?.email || "Field_7 on record"}
+                  <strong>Email:</strong>{" "}
+                  {hiringManager?.email &&
+                  hiringManager.email !== "(Not provided)" &&
+                  hiringManager.email !== "No email provided"
+                    ? hiringManager.email
+                    : "Not found on Field_7 — add Primary Email on the record first"}
                 </p>
               </div>
               <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
