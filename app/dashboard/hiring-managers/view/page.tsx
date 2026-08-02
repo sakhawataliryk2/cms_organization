@@ -1265,6 +1265,8 @@ out.sort((a, b) => {
     sendEmail: true,
   });
   const [isSubmittingPasswordReset, setIsSubmittingPasswordReset] = useState(false);
+  const [showSendCredentialsModal, setShowSendCredentialsModal] = useState(false);
+  const [isSubmittingSendCredentials, setIsSubmittingSendCredentials] = useState(false);
 
   // Calendar appointment modal state
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -3037,6 +3039,44 @@ out.sort((a, b) => {
     }
   };
 
+  const handleSendNewCredentials = async () => {
+    if (!hiringManagerId) {
+      toast.error("Hiring Manager ID is missing");
+      return;
+    }
+
+    setIsSubmittingSendCredentials(true);
+    try {
+      const response = await fetch(
+        `/api/hiring-managers/${hiringManagerId}/send-credentials`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(data.message || "Failed to send credentials");
+      }
+      toast.success(
+        data.message ||
+          `Credentials emailed to ${data.email || "the hiring manager"}.`
+      );
+      setShowSendCredentialsModal(false);
+    } catch (err) {
+      console.error("Error sending HM credentials:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to send credentials. Please try again."
+      );
+    } finally {
+      setIsSubmittingSendCredentials(false);
+    }
+  };
+
   // Print handler: ensure Summary tab is active when printing
   const handlePrint = () => {
     const printContent = document.getElementById("printable-summary");
@@ -3325,6 +3365,8 @@ out.sort((a, b) => {
         sendEmail: true,
       });
       setShowPasswordResetModal(true);
+    } else if (action === "send-credentials") {
+      setShowSendCredentialsModal(true);
     } else if (action === "transfer") {
       setShowTransferModal(true);
     }
@@ -3468,6 +3510,7 @@ out.sort((a, b) => {
       { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
       { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
       { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+      { label: "Send New Credentials", action: () => handleActionSelected("send-credentials") },
       { label: "Transfer", action: () => handleActionSelected("transfer") },
       { label: "Delete", action: () => handleActionSelected("delete") },
     ];
@@ -5448,6 +5491,65 @@ out.sort((a, b) => {
           </div>
         )
       }
+
+      {/* Send New Credentials Modal */}
+      {showSendCredentialsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-md rounded bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 p-4">
+              <h2 className="text-lg font-semibold">Send New Credentials</h2>
+              <button
+                type="button"
+                onClick={() => setShowSendCredentialsModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+                aria-label="Close"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="space-y-4 p-6">
+              <div className="rounded border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                <p className="mb-2 font-medium">This will:</p>
+                <ul className="list-inside list-disc space-y-1 text-xs">
+                  <li>Create a portal account if the hiring manager is not registered yet</li>
+                  <li>Or reset the temporary password if they already have an account</li>
+                  <li>Email new login credentials to their Field_7 (primary) email</li>
+                </ul>
+              </div>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>
+                  <strong>Hiring Manager:</strong>{" "}
+                  {hiringManager?.firstName} {hiringManager?.lastName}
+                </p>
+                <p>
+                  <strong>Email:</strong> {hiringManager?.email || "Field_7 on record"}
+                </p>
+              </div>
+              <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <strong>Important:</strong> They must change the temporary password after first login.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 p-4">
+              <button
+                type="button"
+                onClick={() => setShowSendCredentialsModal(false)}
+                disabled={isSubmittingSendCredentials}
+                className="rounded bg-gray-200 px-4 py-2 font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={handleSendNewCredentials}
+                disabled={isSubmittingSendCredentials}
+                className="rounded bg-blue-500 px-4 py-2 font-medium text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-400"
+              >
+                {isSubmittingSendCredentials ? "Sending..." : "Send Credentials"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddNote && hiringManager && (
         <AddNoteModal

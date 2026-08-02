@@ -94,7 +94,7 @@ function splitDayLabel(weekStart: string, dayIndex: number) {
 function EntryInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const id = Number(searchParams.get("id") || 0);
+  const id = Number(searchParams?.get("id") || 0);
 
   const [loading, setLoading] = useState(true);
   const [timecard, setTimecard] = useState<Timecard | null>(null);
