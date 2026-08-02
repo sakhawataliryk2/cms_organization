@@ -43,8 +43,8 @@ export default function PortalLoginPage() {
         return;
       }
 
-      if (role === "JOB_SEEKER") router.push("/portal/jobseeker/home");
-      else router.push("/portal/hiring/home");
+      if (role === "JOB_SEEKER") router.push("/portal/jobseeker/timesheets");
+      else router.push("/portal/hiring/timecards");
     } catch {
       setError("Server error. Please try again.");
     } finally {

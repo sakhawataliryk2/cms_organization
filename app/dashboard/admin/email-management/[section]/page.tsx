@@ -22,23 +22,56 @@ const SECTION_CONFIG: Record<
     types: { value: string; label: string }[];
     placeholders: Record<string, string[]>;
     required: Record<string, string[]>;
-    defaults: Record<string, { template_name: string; subject: string; body: string }>;
+    defaults: Record<
+      string,
+      { template_name: string; subject: string; body: string }
+    >;
   }
 > = {
   "job-seeker": {
     types: [
-      { value: "ONBOARDING_INTERNAL_SENT", label: "Onboarding - Internal Notification" },
-      { value: "ONBOARDING_JOBSEEKER_FIRST_TIME", label: "Onboarding - Job Seeker (First Time)" },
-      { value: "ONBOARDING_JOBSEEKER_REPEAT", label: "Onboarding - Job Seeker (Repeat)" },
-      { value: "JOB_SEEKER_DELETE_REQUEST", label: "Job Seeker - Delete Request (Payroll)" },
-      { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
-      { value: "JOB_SEEKER_UNARCHIVE_REQUEST", label: "Job Seeker - Unarchive Request (Onboarding)" },
-      { value: "JOB_SEEKER_APPLICATION_SUBMISSION", label: "Application Submission Template" },
-      { value: "CLIENT_SUBMISSION_EMAIL", label: "Client Submission Email Template" },
+      {
+        value: "ONBOARDING_INTERNAL_SENT",
+        label: "Onboarding - Internal Notification",
+      },
+      {
+        value: "ONBOARDING_JOBSEEKER_FIRST_TIME",
+        label: "Onboarding - Job Seeker (First Time)",
+      },
+      {
+        value: "ONBOARDING_JOBSEEKER_REPEAT",
+        label: "Onboarding - Job Seeker (Repeat)",
+      },
+      {
+        value: "JOB_SEEKER_DELETE_REQUEST",
+        label: "Job Seeker - Delete Request (Payroll)",
+      },
+      {
+        value: "JOB_SEEKER_TRANSFER_REQUEST",
+        label: "Job Seeker - Transfer Request (Payroll)",
+      },
+      {
+        value: "JOB_SEEKER_UNARCHIVE_REQUEST",
+        label: "Job Seeker - Unarchive Request (Onboarding)",
+      },
+      {
+        value: "JOB_SEEKER_APPLICATION_SUBMISSION",
+        label: "Application Submission Template",
+      },
+      {
+        value: "CLIENT_SUBMISSION_EMAIL",
+        label: "Client Submission Email Template",
+      },
       { value: "DUPLICATE_CHECK_REPORT", label: "Duplicate Check Report" },
     ],
     placeholders: {
-      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}", "{{jobTitle}}", "{{noteText}}"],
+      ONBOARDING_INTERNAL_SENT: [
+        "{{jobSeekerName}}",
+        "{{sentBy}}",
+        "{{docsList}}",
+        "{{jobTitle}}",
+        "{{noteText}}",
+      ],
       ONBOARDING_JOBSEEKER_FIRST_TIME: [
         "{{packetUrl}}",
         "{{portalUrl}}",
@@ -105,17 +138,32 @@ const SECTION_CONFIG: Record<
         "{{comments}}",
         "{{candidateUrl}}",
       ],
-      DUPLICATE_CHECK_REPORT: ["{{generatedAt}}", "{{totalDuplicates}}", "{{reportTable}}"],
+      DUPLICATE_CHECK_REPORT: [
+        "{{generatedAt}}",
+        "{{totalDuplicates}}",
+        "{{reportTable}}",
+      ],
     },
     required: {
-      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
+      ONBOARDING_INTERNAL_SENT: [
+        "{{jobSeekerName}}",
+        "{{sentBy}}",
+        "{{docsList}}",
+      ],
       ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{packetUrl}}"],
       ONBOARDING_JOBSEEKER_REPEAT: ["{{packetUrl}}"],
       JOB_SEEKER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
-      JOB_SEEKER_APPLICATION_SUBMISSION: ["{{candidateNameLink}}", "{{viewCandidateUrl}}"],
-      CLIENT_SUBMISSION_EMAIL: ["{{candidateName}}", "{{jobTitle}}", "{{candidateUrl}}"],
+      JOB_SEEKER_APPLICATION_SUBMISSION: [
+        "{{candidateNameLink}}",
+        "{{viewCandidateUrl}}",
+      ],
+      CLIENT_SUBMISSION_EMAIL: [
+        "{{candidateName}}",
+        "{{jobTitle}}",
+        "{{candidateUrl}}",
+      ],
       DUPLICATE_CHECK_REPORT: ["{{reportTable}}"],
     },
     defaults: {
@@ -178,7 +226,8 @@ const SECTION_CONFIG: Record<
       },
       JOB_SEEKER_TRANSFER_REQUEST: {
         template_name: "Job Seeker Transfer Request",
-        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        subject:
+          "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
         body:
           `<div>` +
           `<h2>Job Seeker Transfer Request</h2>` +
@@ -256,9 +305,18 @@ const SECTION_CONFIG: Record<
   },
   organization: {
     types: [
-      { value: "ORGANIZATION_DELETE_REQUEST", label: "Organization - Delete Request (Payroll)" },
-      { value: "ORGANIZATION_TRANSFER_REQUEST", label: "Organization - Transfer Request (Payroll)" },
-      { value: "ORGANIZATION_UNARCHIVE_REQUEST", label: "Organization - Unarchive Request (Payroll)" },
+      {
+        value: "ORGANIZATION_DELETE_REQUEST",
+        label: "Organization - Delete Request (Payroll)",
+      },
+      {
+        value: "ORGANIZATION_TRANSFER_REQUEST",
+        label: "Organization - Transfer Request (Payroll)",
+      },
+      {
+        value: "ORGANIZATION_UNARCHIVE_REQUEST",
+        label: "Organization - Unarchive Request (Payroll)",
+      },
     ],
     placeholders: {
       ORGANIZATION_DELETE_REQUEST: [
@@ -324,7 +382,8 @@ const SECTION_CONFIG: Record<
       },
       ORGANIZATION_TRANSFER_REQUEST: {
         template_name: "Organization Transfer Request",
-        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        subject:
+          "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
         body:
           `<div>` +
           `<h2>Organization Transfer Request</h2>` +
@@ -358,10 +417,22 @@ const SECTION_CONFIG: Record<
   },
   "hiring-manager": {
     types: [
-      { value: "HIRING_MANAGER_DELETE_REQUEST", label: "Hiring Manager - Delete Request (Payroll)" },
-      { value: "HIRING_MANAGER_TRANSFER_REQUEST", label: "Hiring Manager - Transfer Request (Payroll)" },
-      { value: "HIRING_MANAGER_UNARCHIVE_REQUEST", label: "Hiring Manager - Unarchive Request (Payroll)" },
-      { value: "HIRING_MANAGER_PORTAL_CREDENTIALS", label: "Hiring Manager - Portal Credentials" },
+      {
+        value: "HIRING_MANAGER_DELETE_REQUEST",
+        label: "Hiring Manager - Delete Request (Payroll)",
+      },
+      {
+        value: "HIRING_MANAGER_TRANSFER_REQUEST",
+        label: "Hiring Manager - Transfer Request (Payroll)",
+      },
+      {
+        value: "HIRING_MANAGER_UNARCHIVE_REQUEST",
+        label: "Hiring Manager - Unarchive Request (Payroll)",
+      },
+      {
+        value: "HIRING_MANAGER_PORTAL_CREDENTIALS",
+        label: "Hiring Manager - Portal Credentials",
+      },
     ],
     placeholders: {
       HIRING_MANAGER_DELETE_REQUEST: [
@@ -409,7 +480,11 @@ const SECTION_CONFIG: Record<
       HIRING_MANAGER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       HIRING_MANAGER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       HIRING_MANAGER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
-      HIRING_MANAGER_PORTAL_CREDENTIALS: ["{{email}}", "{{tempPassword}}", "{{portalUrl}}"],
+      HIRING_MANAGER_PORTAL_CREDENTIALS: [
+        "{{email}}",
+        "{{tempPassword}}",
+        "{{portalUrl}}",
+      ],
     },
     defaults: {
       HIRING_MANAGER_DELETE_REQUEST: {
@@ -434,7 +509,8 @@ const SECTION_CONFIG: Record<
       },
       HIRING_MANAGER_TRANSFER_REQUEST: {
         template_name: "Hiring Manager Transfer Request",
-        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        subject:
+          "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
         body:
           `<div>` +
           `<h2>Hiring Manager / Organization Transfer Request</h2>` +
@@ -483,8 +559,14 @@ const SECTION_CONFIG: Record<
   jobs: {
     types: [
       { value: "JOB_DELETE_REQUEST", label: "Job - Delete Request (Payroll)" },
-      { value: "JOB_UNARCHIVE_REQUEST", label: "Job - Unarchive Request (Payroll)" },
-      { value: "JOB_DISTRIBUTION", label: "Job - Distribution email (send job to distribution list)" },
+      {
+        value: "JOB_UNARCHIVE_REQUEST",
+        label: "Job - Unarchive Request (Payroll)",
+      },
+      {
+        value: "JOB_DISTRIBUTION",
+        label: "Job - Distribution email (send job to distribution list)",
+      },
     ],
     placeholders: {
       JOB_DISTRIBUTION: [
@@ -496,7 +578,7 @@ const SECTION_CONFIG: Record<
         "{{status}}",
         "{{employmentType}}",
         "{{createdByName}}",
-          "{{jobDescription}}",
+        "{{jobDescription}}",
       ],
       JOB_DELETE_REQUEST: [
         "{{requestedBy}}",
@@ -540,8 +622,8 @@ const SECTION_CONFIG: Record<
           `<p><strong>Status:</strong> {{status}}</p>` +
           `<p><strong>Employment Type:</strong> {{employmentType}}</p>` +
           `<p><strong>Created by:</strong> {{createdByName}}</p>` +
-            `<p><strong>Job Description:</strong></p>` +
-            `<p>{{jobDescription}}</p>` +
+          `<p><strong>Job Description:</strong></p>` +
+          `<p>{{jobDescription}}</p>` +
           `<p><a href="{{jobLink}}">View job</a></p>` +
           `</div>`,
       },
@@ -584,8 +666,14 @@ const SECTION_CONFIG: Record<
   },
   leads: {
     types: [
-      { value: "LEAD_DELETE_REQUEST", label: "Lead - Delete Request (Payroll)" },
-      { value: "LEAD_UNARCHIVE_REQUEST", label: "Lead - Unarchive Request (Payroll)" },
+      {
+        value: "LEAD_DELETE_REQUEST",
+        label: "Lead - Delete Request (Payroll)",
+      },
+      {
+        value: "LEAD_UNARCHIVE_REQUEST",
+        label: "Lead - Unarchive Request (Payroll)",
+      },
     ],
     placeholders: {
       LEAD_DELETE_REQUEST: [
@@ -657,8 +745,14 @@ const SECTION_CONFIG: Record<
   tasks: {
     types: [
       { value: "TASK_REMINDER", label: "Task Reminder" },
-      { value: "TASK_DELETE_REQUEST", label: "Task - Delete Request (Payroll)" },
-      { value: "TASK_UNARCHIVE_REQUEST", label: "Task - Unarchive Request (Payroll)" },
+      {
+        value: "TASK_DELETE_REQUEST",
+        label: "Task - Delete Request (Payroll)",
+      },
+      {
+        value: "TASK_UNARCHIVE_REQUEST",
+        label: "Task - Unarchive Request (Payroll)",
+      },
     ],
     placeholders: {
       TASK_REMINDER: [
@@ -760,8 +854,14 @@ const SECTION_CONFIG: Record<
   },
   placements: {
     types: [
-      { value: "PLACEMENT_DELETE_REQUEST", label: "Placement - Delete Request (Payroll)" },
-      { value: "PLACEMENT_UNARCHIVE_REQUEST", label: "Placement - Unarchive Request (Payroll)" },
+      {
+        value: "PLACEMENT_DELETE_REQUEST",
+        label: "Placement - Delete Request (Payroll)",
+      },
+      {
+        value: "PLACEMENT_UNARCHIVE_REQUEST",
+        label: "Placement - Unarchive Request (Payroll)",
+      },
     ],
     placeholders: {
       PLACEMENT_DELETE_REQUEST: [
@@ -833,13 +933,27 @@ const SECTION_CONFIG: Record<
   authentication: {
     types: [
       { value: "AUTH_2FA_EMAIL", label: "2FA Email Template" },
-      { value: "AUTH_RESET_PASSWORD_EMAIL", label: "Password Reset OTP Template" },
+      {
+        value: "AUTH_RESET_PASSWORD_EMAIL",
+        label: "Password Reset OTP Template",
+      },
       { value: "WELCOME_EMAIL", label: "Welcome Email Template" },
     ],
     placeholders: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
-      AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
-      WELCOME_EMAIL: ["{{userName}}", "{{email}}", "{{userType}}", "{{portalUrl}}", "{{password}}"],
+      AUTH_RESET_PASSWORD_EMAIL: [
+        "{{userName}}",
+        "{{email}}",
+        "{{otp}}",
+        "{{expiresAt}}",
+      ],
+      WELCOME_EMAIL: [
+        "{{userName}}",
+        "{{email}}",
+        "{{userType}}",
+        "{{portalUrl}}",
+        "{{password}}",
+      ],
     },
     required: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
@@ -897,7 +1011,10 @@ const SECTION_CONFIG: Record<
   },
   planner: {
     types: [
-      { value: "PLANNER_APPOINTMENT_INVITE", label: "Planner – Appointment Invite" },
+      {
+        value: "PLANNER_APPOINTMENT_INVITE",
+        label: "Planner – Appointment Invite",
+      },
     ],
     placeholders: {
       PLANNER_APPOINTMENT_INVITE: [
@@ -911,12 +1028,17 @@ const SECTION_CONFIG: Record<
       ],
     },
     required: {
-      PLANNER_APPOINTMENT_INVITE: ["{{appointmentType}}", "{{appointmentDate}}", "{{appointmentTime}}"],
+      PLANNER_APPOINTMENT_INVITE: [
+        "{{appointmentType}}",
+        "{{appointmentDate}}",
+        "{{appointmentTime}}",
+      ],
     },
     defaults: {
       PLANNER_APPOINTMENT_INVITE: {
         template_name: "Planner Appointment Invite",
-        subject: "Calendar invite: {{appointmentType}} on {{appointmentDate}} at {{appointmentTime}}",
+        subject:
+          "Calendar invite: {{appointmentType}} on {{appointmentDate}} at {{appointmentTime}}",
         body:
           `<div>` +
           `<h2>Appointment Invitation</h2>` +
@@ -956,13 +1078,15 @@ export default function EmailManagementSectionPage() {
 
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
 
   const config = SECTION_CONFIG[section];
   const sectionTypes = useMemo(
     () => config?.types?.map((t) => t.value) || [],
-    [config]
+    [config],
   );
 
   const [formData, setFormData] = useState<FormData>({
@@ -978,7 +1102,9 @@ export default function EmailManagementSectionPage() {
       .then((res) => res.json())
       .then((data) => {
         const all = data.templates || [];
-        setTemplates(all.filter((t: EmailTemplate) => sectionTypes.includes(t.type)));
+        setTemplates(
+          all.filter((t: EmailTemplate) => sectionTypes.includes(t.type)),
+        );
       })
       .catch((err) => console.error("Error fetching templates:", err));
   }, [section, config, sectionTypes]);
@@ -1021,11 +1147,14 @@ export default function EmailManagementSectionPage() {
   };
 
   const insertAtCursor = (text: string) => {
-    const el = document.getElementById("bodyField") as HTMLTextAreaElement | null;
+    const el = document.getElementById(
+      "bodyField",
+    ) as HTMLTextAreaElement | null;
     if (!el) return;
     const start = el.selectionStart ?? formData.body.length;
     const end = el.selectionEnd ?? formData.body.length;
-    const next = formData.body.slice(0, start) + text + formData.body.slice(end);
+    const next =
+      formData.body.slice(0, start) + text + formData.body.slice(end);
     setFormData((p) => ({ ...p, body: next }));
     requestAnimationFrame(() => {
       el.focus();
@@ -1047,7 +1176,7 @@ export default function EmailManagementSectionPage() {
   const usedTypes = useMemo(() => templates.map((t) => t.type), [templates]);
   const availableTypes = useMemo(
     () => sectionTypes.filter((t) => !usedTypes.includes(t)),
-    [sectionTypes, usedTypes]
+    [sectionTypes, usedTypes],
   );
 
   const required = config?.required?.[formData.type] || [];
@@ -1077,7 +1206,7 @@ export default function EmailManagementSectionPage() {
       setTemplates((prev) =>
         editingTemplate
           ? prev.map((t) => (t.id === data.template.id ? data.template : t))
-          : [...prev, data.template]
+          : [...prev, data.template],
       );
       setShowModal(false);
     } finally {
@@ -1116,11 +1245,14 @@ export default function EmailManagementSectionPage() {
 
       <div className="flex items-center justify-between mb-4">
         <p className="text-gray-600 text-sm">
-          Use <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code> and{" "}
-          <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code> anywhere in the body—they render as full Approve/Deny buttons.
+          Use{" "}
+          <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code>{" "}
+          and <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code>{" "}
+          anywhere in the body—they render as full Approve/Deny buttons.
           {sectionTypes.length > 0 && (
             <span className="block mt-1">
-              One template per type (e.g. one Delete Request, one Transfer Request per section).
+              One template per type (e.g. one Delete Request, one Transfer
+              Request per section).
             </span>
           )}
         </p>
@@ -1132,7 +1264,9 @@ export default function EmailManagementSectionPage() {
             Create New Template
           </button>
         ) : (
-          <span className="text-sm text-gray-500">All types in this section have a template. Edit existing to change.</span>
+          <span className="text-sm text-gray-500">
+            All types in this section have a template. Edit existing to change.
+          </span>
         )}
       </div>
 
@@ -1175,7 +1309,10 @@ export default function EmailManagementSectionPage() {
           ))}
           {templates.length === 0 && (
             <tr>
-              <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={4}>
+              <td
+                className="px-4 py-6 text-center text-sm text-gray-500"
+                colSpan={4}
+              >
                 No templates in this section. Create one to get started.
               </td>
             </tr>
@@ -1210,63 +1347,92 @@ export default function EmailManagementSectionPage() {
 
             {missing.length > 0 && (
               <div className="mb-5 p-3 rounded border border-yellow-300 bg-yellow-50 text-sm text-yellow-900">
-                Missing placeholders: {missing.join(", ")}. Email may send without dynamic data.
+                Missing placeholders: {missing.join(", ")}. Email may send
+                without dynamic data.
               </div>
             )}
 
             <div className="mb-5">
-              <label className="block text-sm font-medium mb-2 text-gray-700">Type</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">
+                Type
+              </label>
               <select
                 className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                 value={formData.type}
-                onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, type: e.target.value }))
+                }
                 disabled={!!editingTemplate}
               >
-                {(editingTemplate ? config.types : config.types.filter((o) => availableTypes.includes(o.value))).map((o) => (
+                {(editingTemplate
+                  ? config.types
+                  : config.types.filter((o) => availableTypes.includes(o.value))
+                ).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
               </select>
               {editingTemplate && (
-                <p className="mt-1 text-xs text-gray-500">Type cannot be changed; one template per type.</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Type cannot be changed; one template per type.
+                </p>
               )}
-              {(formData.type.includes("DELETE_REQUEST") || formData.type.includes("TRANSFER_REQUEST")) && (
+              {(formData.type.includes("DELETE_REQUEST") ||
+                formData.type.includes("TRANSFER_REQUEST")) && (
                 <div className="mt-2 text-xs text-gray-600">
-                  Use <strong>{`{{approvalUrl}}`}</strong> and <strong>{`{{denyUrl}}`}</strong> anywhere in the body—they render as full Approve/Deny buttons. In the subject they remain plain URLs.
+                  Use <strong>{`{{approvalUrl}}`}</strong> and{" "}
+                  <strong>{`{{denyUrl}}`}</strong> anywhere in the body—they
+                  render as full Approve/Deny buttons. In the subject they
+                  remain plain URLs.
                 </div>
               )}
             </div>
 
             <div className="grid grid-cols-1 gap-4 mb-5">
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Template Name</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">
+                  Template Name
+                </label>
                 <input
                   type="text"
                   className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.template_name}
-                  onChange={(e) => setFormData((p) => ({ ...p, template_name: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((p) => ({
+                      ...p,
+                      template_name: e.target.value,
+                    }))
+                  }
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Subject</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">
+                  Subject
+                </label>
                 <input
                   type="text"
                   className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.subject}
-                  onChange={(e) => setFormData((p) => ({ ...p, subject: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, subject: e.target.value }))
+                  }
                 />
               </div>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700">Body</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">
+                Body
+              </label>
               <textarea
                 id="bodyField"
                 className="p-3 border rounded w-full h-[220px] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Write your email content here..."
                 value={formData.body}
-                onChange={(e) => setFormData((p) => ({ ...p, body: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, body: e.target.value }))
+                }
               />
             </div>
 
@@ -1297,7 +1463,9 @@ export default function EmailManagementSectionPage() {
               </button>
               <button
                 className={`text-white px-5 py-2 rounded-lg shadow transition ${
-                  saving ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                  saving
+                    ? "bg-blue-300 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700"
                 }`}
                 onClick={handleSave}
                 type="button"
