@@ -31,12 +31,12 @@ export default function JobSeekerProfilePage() {
   const initials = [profile.first_name?.[0], profile.last_name?.[0]].filter(Boolean).join("").toUpperCase();
 
   return (
-    <div className="space-y-4 pb-10">
-      <h1 className="text-2xl font-semibold text-slate-900">Profile</h1>
+    <div className="space-y-4 pb-6">
+      <h1 className="text-xl font-semibold text-slate-900">Profile</h1>
 
       {/* Header card */}
-      <div className="rounded-lg overflow-hidden border border-slate-200 bg-white">
-        <div className="bg-[#1d2945] p-6 text-white">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="bg-[#0b1f3a] p-6 text-white">
           <div className="flex items-center gap-5">
             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-2xl font-bold">
               {initials || <FiUser size={24} />}
