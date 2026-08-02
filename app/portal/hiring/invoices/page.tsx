@@ -88,8 +88,8 @@ export default function HiringInvoicesPage() {
                 Week: {String(inv.week_start_date || "").slice(0, 10)}
               </p>
               <p className="text-[13px] text-[#5a6570]">
-                Hours: {Number(inv.hours || inv.total_hours || 0).toFixed(2)} · Rate: $
-                {Number(inv.rate || inv.rate_per_hour || 0).toFixed(2)}
+                Hours: {Number(inv.hours || inv.total_hours || 0).toFixed(2)} · Bill Rate: $
+                {Number(inv.bill_rate || inv.rate || inv.rate_per_hour || 0).toFixed(2)}
               </p>
               <p className="mt-2 text-[15px] font-semibold text-[#1a1a1a]">
                 Total: ${Number(inv.total || inv.total_amount || 0).toFixed(2)}
