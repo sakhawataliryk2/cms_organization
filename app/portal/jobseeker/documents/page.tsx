@@ -6,7 +6,7 @@ import SignatureCanvas from "react-signature-canvas";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { toast } from "sonner";
-import { FiUpload, FiEdit, FiEye, FiRefreshCw } from "react-icons/fi";
+import { FiUpload, FiEdit, FiEye, FiRefreshCw, FiFileText } from "react-icons/fi";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
@@ -442,102 +442,117 @@ export default function JobSeekerDocumentsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      <div className="flex items-center justify-center py-24">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#1a6bb5] border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Documents</h1>
-          <p className="mt-1 text-sm text-slate-600">Review, sign, and submit your onboarding paperwork.</p>
-        </div>
-        <button type="button" onClick={handleRefresh} disabled={refreshing}
-          className="flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-          <FiRefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-          {refreshing ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-
-      {/* Filter tabs */}
-      <div className="flex flex-wrap gap-2">
-        {(["all", "pending", "done"] as const).map((f) => (
-          <button key={f} type="button" onClick={() => setDocFilter(f)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${docFilter === f ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-700 hover:bg-slate-50"
-              }`}>
-            {f === "done" ? "Completed" : f}
-          </button>
-        ))}
-      </div>
-
-      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-      {/* Two-column layout: card list + viewer */}
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
-        {/* Left: document cards */}
-        <div className="space-y-3">
-          {visiblePending.length > 0 && (
-            <>
-              <h2 className="text-sm font-semibold text-slate-700">Needs your signature</h2>
-              {visiblePending.map((doc) => (
-                <DocumentCard
-                  key={doc.id}
-                  doc={doc}
-                  isSelected={selectedDoc?.id === doc.id}
-                  onView={() => setSelectedDoc(doc)}
-                  onAttach={() => setAttachDoc(doc)}
-                  onCreateAndSubmit={() => setSelectedDoc(doc)}
-                />
-              ))}
-            </>
-          )}
-
-          {visibleCompleted.length > 0 && (
-            <>
-              <h2 className="text-sm font-semibold text-slate-700 mt-4">Submitted / Approved</h2>
-              {visibleCompleted.map((doc) => (
-                <DocumentCard
-                  key={doc.id}
-                  doc={doc}
-                  isSelected={selectedDoc?.id === doc.id}
-                  onView={() => setSelectedDoc(doc)}
-                  onAttach={() => setAttachDoc(doc)}
-                  onCreateAndSubmit={() => setSelectedDoc(doc)}
-                />
-              ))}
-            </>
-          )}
-
-          {docs.length === 0 && (
-            <div className="rounded-md border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-              No onboarding documents found for this account.
+    <div className="space-y-4 pb-6">
+      {docs.length === 0 && !error ? (
+        <div className="rounded-lg border border-[#d8dde3] bg-white px-6 py-20">
+          <div className="mx-auto max-w-md text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#e8f1fb] text-[#1a6bb5]">
+              <FiFileText size={30} strokeWidth={1.5} />
             </div>
-          )}
+            <h2 className="text-[18px] font-semibold text-[#1a1a1a]">
+              No Documents currently connected
+            </h2>
+            <p className="mt-2 text-[14px] text-[#7a8490]">
+              Documents that are shared or uploaded will appear here.
+            </p>
+          </div>
         </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <h1 className="text-[20px] font-semibold text-[#1a1a1a]">Documents</h1>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-1.5 rounded border border-[#c5ccd4] bg-white px-3 py-1.5 text-[13px] text-[#5a6570] hover:bg-[#f7f8fa] disabled:opacity-50"
+            >
+              <FiRefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
 
-        {/* Right: PDF viewer */}
-        <div className="bg-white rounded-lg border border-gray-200 min-h-[520px] overflow-hidden flex flex-col">
-          {selectedDoc ? (
-            <DocumentViewer
-              ref={viewerRef}
-              doc={selectedDoc}
-              jobseekerData={selectedDoc.jobseekerData || {}}
-              jobSeekerId={profile?.id}
-              onClose={() => setSelectedDoc(null)}
-              onSubmitted={handleRefresh}
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
-              Select a document to view and sign.
+          <div className="flex flex-wrap gap-2">
+            {(["all", "pending", "done"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setDocFilter(f)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                  docFilter === f
+                    ? "border-[#1a6bb5] bg-[#e8f1fb] text-[#1a6bb5]"
+                    : "border-[#c5ccd4] bg-white text-[#5a6570] hover:bg-[#f7f8fa]"
+                }`}
+              >
+                {f === "done" ? "Completed" : f}
+              </button>
+            ))}
+          </div>
+
+          {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+            <div className="space-y-3">
+              {visiblePending.length > 0 && (
+                <>
+                  <h2 className="text-sm font-semibold text-[#4a5560]">Needs your signature</h2>
+                  {visiblePending.map((doc) => (
+                    <DocumentCard
+                      key={doc.id}
+                      doc={doc}
+                      isSelected={selectedDoc?.id === doc.id}
+                      onView={() => setSelectedDoc(doc)}
+                      onAttach={() => setAttachDoc(doc)}
+                      onCreateAndSubmit={() => setSelectedDoc(doc)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {visibleCompleted.length > 0 && (
+                <>
+                  <h2 className="mt-4 text-sm font-semibold text-[#4a5560]">Submitted / Approved</h2>
+                  {visibleCompleted.map((doc) => (
+                    <DocumentCard
+                      key={doc.id}
+                      doc={doc}
+                      isSelected={selectedDoc?.id === doc.id}
+                      onView={() => setSelectedDoc(doc)}
+                      onAttach={() => setAttachDoc(doc)}
+                      onCreateAndSubmit={() => setSelectedDoc(doc)}
+                    />
+                  ))}
+                </>
+              )}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Attach modal */}
+            <div className="flex min-h-[520px] flex-col overflow-hidden rounded-lg border border-[#d8dde3] bg-white">
+              {selectedDoc ? (
+                <DocumentViewer
+                  ref={viewerRef}
+                  doc={selectedDoc}
+                  jobseekerData={selectedDoc.jobseekerData || {}}
+                  jobSeekerId={profile?.id}
+                  onClose={() => setSelectedDoc(null)}
+                  onSubmitted={handleRefresh}
+                />
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm text-[#9aa3ad]">
+                  Select a document to view and sign.
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {attachDoc && (
         <AttachModal
           doc={attachDoc}

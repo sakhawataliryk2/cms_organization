@@ -69,6 +69,7 @@ import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import AddNoteModal from "@/components/AddNoteModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import { resolvePlacementHmEmails } from "@/lib/placementContactEmails";
 
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
@@ -2690,19 +2691,32 @@ export default function PlacementView() {
   };
 
   const handleEmailBillingContacts = async () => {
-    const jobId = placement?.jobId;
-    if (!jobId) {
-      toast.error("Job not available for this placement.");
-      return;
-    }
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
     try {
-      const token = document.cookie.replace(
-        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-        "$1"
-      );
+      // Priority 1: Hiring Manager (billing contact) linked on the placement
+      const hmEmails = await resolvePlacementHmEmails({
+        placement,
+        linkFieldName: PLACEMENT_LINK_FIELD_NAMES.billingContactId,
+        headers,
+      });
+      if (hmEmails.length > 0) {
+        window.location.href = `mailto:${hmEmails.join(";")}`;
+        return;
+      }
+
+      const jobId = placement?.jobId;
+      if (!jobId) {
+        toast.error("Billing contact email(s) not available");
+        return;
+      }
+
       const response = await fetch(`/api/jobs/${jobId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers,
       });
 
       // Handle non-JSON responses
@@ -2838,19 +2852,32 @@ export default function PlacementView() {
   };
 
   const handleEmailTimeCardApprovers = async () => {
-    const jobId = placement?.jobId;
-    if (!jobId) {
-      toast.error("Job not available for this placement.");
-      return;
-    }
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
     try {
-      const token = document.cookie.replace(
-        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-        "$1"
-      );
+      // Priority 1: Hiring Manager (time card approver) linked on the placement
+      const hmEmails = await resolvePlacementHmEmails({
+        placement,
+        linkFieldName: PLACEMENT_LINK_FIELD_NAMES.timecardApproverId,
+        headers,
+      });
+      if (hmEmails.length > 0) {
+        window.location.href = `mailto:${hmEmails.join(";")}`;
+        return;
+      }
+
+      const jobId = placement?.jobId;
+      if (!jobId) {
+        toast.error("Timecard approver email(s) not available");
+        return;
+      }
+
       const response = await fetch(`/api/jobs/${jobId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers,
       });
 
       // Handle non-JSON responses

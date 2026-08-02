@@ -38,6 +38,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 import EntityDeleteModal from "@/components/EntityDeleteModal";
 import EntityBulkDeleteModal from "@/components/EntityBulkDeleteModal";
 import EntityBulkArchiveModal from "@/components/EntityBulkArchiveModal";
+import { resolvePlacementHmEmails } from "@/lib/placementContactEmails";
 
 type PlacementFavorite = {
   id: string;
@@ -696,17 +697,29 @@ export default function PlacementList() {
 
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
       const response = await fetch(`/api/placements/${placementId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
 
+      // Priority 1: Hiring Manager (billing contact) linked on the placement
+      const hmEmails = await resolvePlacementHmEmails({
+        placement,
+        linkFieldName: "Field_3",
+        headers,
+      });
+      if (hmEmails.length > 0) {
+        window.location.href = `mailto:${hmEmails.join(";")}`;
+        return;
+      }
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
@@ -764,17 +777,29 @@ export default function PlacementList() {
 
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
       const response = await fetch(`/api/placements/${placementId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        headers,
       });
       const data = await response.json();
       const placement = data?.placement || data;
       const jobId = placement?.jobId || placement?.job_id;
 
+      // Priority 1: Hiring Manager (time card approver) linked on the placement
+      const hmEmails = await resolvePlacementHmEmails({
+        placement,
+        linkFieldName: "Field_20",
+        headers,
+      });
+      if (hmEmails.length > 0) {
+        window.location.href = `mailto:${hmEmails.join(";")}`;
+        return;
+      }
+
       if (jobId) {
         const jobResponse = await fetch(`/api/jobs/${jobId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers,
         });
         const jobData = await jobResponse.json();
         const job = jobData?.job || jobData;
