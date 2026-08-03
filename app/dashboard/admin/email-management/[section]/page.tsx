@@ -336,7 +336,8 @@ const SECTION_CONFIG: Record<
       },
       ONBOARDING_MISSING_REPORT_JS_OWNER: {
         template_name: "Onboarding Missing Report - Job Seeker Owner",
-        subject: "Onboarding Missing Documents (Your Job Seekers) — {{rowCount}}",
+        subject:
+          "Onboarding Missing Documents (Your Job Seekers) — {{rowCount}} — {{generatedAt}}",
         body:
           `<div>` +
           `<p>Hello {{recipientName}},</p>` +
@@ -348,7 +349,8 @@ const SECTION_CONFIG: Record<
       },
       ONBOARDING_MISSING_REPORT_JOB_OWNER: {
         template_name: "Onboarding Missing Report - Job Owner",
-        subject: "Onboarding Missing Documents (Your Jobs) — {{rowCount}}",
+        subject:
+          "Onboarding Missing Documents (Your Jobs) — {{rowCount}} — {{generatedAt}}",
         body:
           `<div>` +
           `<p>Hello {{recipientName}},</p>` +
@@ -360,7 +362,8 @@ const SECTION_CONFIG: Record<
       },
       ONBOARDING_MISSING_REPORT_FULL: {
         template_name: "Onboarding Missing Report - Full",
-        subject: "Onboarding Missing Documents Report — {{rowCount}}",
+        subject:
+          "Onboarding Missing Documents Report — {{rowCount}} — {{generatedAt}}",
         body:
           `<div>` +
           `<p>Hello {{recipientName}},</p>` +
@@ -1164,6 +1167,8 @@ export default function EmailManagementSectionPage() {
     body: "",
     type: "",
   });
+  /** Which field Quick Insert targets (subject or body). */
+  const [insertTarget, setInsertTarget] = useState<"subject" | "body">("body");
 
   useEffect(() => {
     if (!section || !config) return;
@@ -1216,10 +1221,32 @@ export default function EmailManagementSectionPage() {
   };
 
   const insertAtCursor = (text: string) => {
+    // HTML table placeholder is body-only
+    const target = text === "{{reportTable}}" ? "body" : insertTarget;
+
+    if (target === "subject") {
+      const el = document.getElementById(
+        "subjectField",
+      ) as HTMLInputElement | null;
+      const value = formData.subject || "";
+      const start = el?.selectionStart ?? value.length;
+      const end = el?.selectionEnd ?? value.length;
+      const next = value.slice(0, start) + text + value.slice(end);
+      setFormData((p) => ({ ...p, subject: next }));
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(start + text.length, start + text.length);
+      });
+      return;
+    }
+
     const el = document.getElementById(
       "bodyField",
     ) as HTMLTextAreaElement | null;
-    if (!el) return;
+    if (!el) {
+      setFormData((p) => ({ ...p, body: (p.body || "") + text }));
+      return;
+    }
     const start = el.selectionStart ?? formData.body.length;
     const end = el.selectionEnd ?? formData.body.length;
     const next =
@@ -1480,13 +1507,23 @@ export default function EmailManagementSectionPage() {
                   Subject
                 </label>
                 <input
+                  id="subjectField"
                   type="text"
                   className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.subject}
+                  onFocus={() => setInsertTarget("subject")}
                   onChange={(e) =>
                     setFormData((p) => ({ ...p, subject: e.target.value }))
                   }
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Placeholders like{" "}
+                  <code className="text-[11px]">{"{{rowCount}}"}</code>,{" "}
+                  <code className="text-[11px]">{"{{generatedAt}}"}</code>,{" "}
+                  <code className="text-[11px]">{"{{recipientName}}"}</code>{" "}
+                  work in the subject. Click a Quick insert chip while this
+                  field is focused.
+                </p>
               </div>
             </div>
 
@@ -1499,6 +1536,7 @@ export default function EmailManagementSectionPage() {
                 className="p-3 border rounded w-full h-[220px] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Write your email content here..."
                 value={formData.body}
+                onFocus={() => setInsertTarget("body")}
                 onChange={(e) =>
                   setFormData((p) => ({ ...p, body: e.target.value }))
                 }
@@ -1506,13 +1544,23 @@ export default function EmailManagementSectionPage() {
             </div>
 
             <div className="mb-6 text-xs text-gray-600">
-              <div className="font-semibold mb-2">Quick insert:</div>
+              <div className="mb-2 flex flex-wrap items-center gap-2 font-semibold">
+                <span>Quick insert:</span>
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-800">
+                  into {insertTarget === "subject" ? "Subject" : "Body"}
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {placeholders.map((p) => (
                   <button
                     key={p}
                     type="button"
                     className="px-2 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+                    title={
+                      p === "{{reportTable}}" && insertTarget === "subject"
+                        ? "reportTable always inserts into Body"
+                        : `Insert into ${insertTarget}`
+                    }
                     onClick={() => insertAtCursor(p)}
                   >
                     {p}

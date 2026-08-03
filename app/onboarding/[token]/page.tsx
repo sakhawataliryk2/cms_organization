@@ -71,10 +71,14 @@ export default function PublicOnboardingPacketPage() {
   const [seekerName, setSeekerName] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
 
   const [numPages, setNumPages] = useState(1);
-  const [pageDims, setPageDims] = useState<Record<number, { w: number; h: number }>>({});
+  const [pageDims, setPageDims] = useState<
+    Record<number, { w: number; h: number }>
+  >({});
   const [renderWidth, setRenderWidth] = useState(780);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
@@ -100,9 +104,12 @@ export default function PublicOnboardingPacketPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/onboarding/public/${encodeURIComponent(token)}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/onboarding/public/${encodeURIComponent(token)}`,
+        {
+          cache: "no-store",
+        },
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
         setErrorCode(data?.code || null);
@@ -110,7 +117,9 @@ export default function PublicOnboardingPacketPage() {
         return;
       }
       setDocuments(Array.isArray(data.documents) ? data.documents : []);
-      setValues(data.values && typeof data.values === "object" ? data.values : {});
+      setValues(
+        data.values && typeof data.values === "object" ? data.values : {},
+      );
       setExpiresAt(data.expires_at || null);
       const fn = data.job_seeker?.first_name || "";
       const ln = data.job_seeker?.last_name || "";
@@ -143,7 +152,9 @@ export default function PublicOnboardingPacketPage() {
     let cancelled = false;
     const controller = new AbortController();
     const proxyUrl = `/api/onboarding/public/${encodeURIComponent(token)}/document/${activeDoc.item_id}`;
-    const directUrl = activeDoc.file_url ? String(activeDoc.file_url).trim() : "";
+    const directUrl = activeDoc.file_url
+      ? String(activeDoc.file_url).trim()
+      : "";
 
     const loadFromResponse = async (res: Response, label: string) => {
       const contentType = res.headers.get("content-type") || "";
@@ -152,7 +163,7 @@ export default function PublicOnboardingPacketPage() {
           ? await res.json().catch(() => ({}))
           : {};
         throw new Error(
-          data?.message || `Failed to load PDF via ${label} (${res.status})`
+          data?.message || `Failed to load PDF via ${label} (${res.status})`,
         );
       }
       const blob = await res.blob();
@@ -194,7 +205,10 @@ export default function PublicOnboardingPacketPage() {
           } catch (e) {
             lastError = e;
             if (e instanceof DOMException && e.name === "AbortError") throw e;
-            console.warn("[onboarding] direct PDF fetch failed, trying proxy", e);
+            console.warn(
+              "[onboarding] direct PDF fetch failed, trying proxy",
+              e,
+            );
           }
         }
 
@@ -215,20 +229,22 @@ export default function PublicOnboardingPacketPage() {
         if (cancelled) return;
         if (!objectUrl) {
           const msg =
-            lastError instanceof Error ? lastError.message : "Failed to load PDF";
-          const blocked = /Failed to fetch|NetworkError|blocked|ERR_BLOCKED/i.test(
-            msg
-          );
+            lastError instanceof Error
+              ? lastError.message
+              : "Failed to load PDF";
+          const blocked =
+            /Failed to fetch|NetworkError|blocked|ERR_BLOCKED/i.test(msg);
           throw new Error(
             blocked
               ? "Could not load the PDF. Disable ad blockers/privacy extensions for this site and refresh."
-              : msg
+              : msg,
           );
         }
 
         setPdfObjectUrl(objectUrl);
       } catch (e: unknown) {
-        if (cancelled || (e instanceof DOMException && e.name === "AbortError")) return;
+        if (cancelled || (e instanceof DOMException && e.name === "AbortError"))
+          return;
         const msg = e instanceof Error ? e.message : "Failed to load PDF";
         setPdfError(msg);
       } finally {
@@ -264,11 +280,14 @@ export default function PublicOnboardingPacketPage() {
     const handle = window.setTimeout(async () => {
       setSaveState("saving");
       try {
-        await fetch(`/api/onboarding/public/${encodeURIComponent(token)}/draft`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values: valuesRef.current }),
-        });
+        await fetch(
+          `/api/onboarding/public/${encodeURIComponent(token)}/draft`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ values: valuesRef.current }),
+          },
+        );
         setSaveState("saved");
       } catch {
         setSaveState("idle");
@@ -278,7 +297,9 @@ export default function PublicOnboardingPacketPage() {
   }, [values, token, submitted, error]);
 
   const fieldsByPage = useMemo(() => {
-    return (activeDoc?.mapped_fields || []).reduce<Record<number, MappedField[]>>((acc, f) => {
+    return (activeDoc?.mapped_fields || []).reduce<
+      Record<number, MappedField[]>
+    >((acc, f) => {
       const pn = f.page_number || f.page || 1;
       (acc[pn] = acc[pn] || []).push(f);
       return acc;
@@ -316,11 +337,14 @@ export default function PublicOnboardingPacketPage() {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/onboarding/public/${encodeURIComponent(token)}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values }),
-      });
+      const res = await fetch(
+        `/api/onboarding/public/${encodeURIComponent(token)}/submit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values }),
+        },
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
         if (Array.isArray(data?.missing) && data.missing.length) {
@@ -328,7 +352,7 @@ export default function PublicOnboardingPacketPage() {
             `Missing: ${data.missing
               .slice(0, 3)
               .map((m: { field_label?: string }) => m.field_label)
-              .join(", ")}`
+              .join(", ")}`,
           );
         } else {
           toast.error(data?.message || "Submit failed");
@@ -354,10 +378,14 @@ export default function PublicOnboardingPacketPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <div className="max-w-md w-full bg-white border rounded-lg p-6 shadow-sm">
-          <h1 className="text-lg font-semibold text-slate-900 mb-2">Link unavailable</h1>
+          <h1 className="text-lg font-semibold text-slate-900 mb-2">
+            Link unavailable
+          </h1>
           <p className="text-sm text-slate-600">{error}</p>
           {errorCode && (
-            <p className="text-xs text-slate-400 mt-3 uppercase tracking-wide">{errorCode}</p>
+            <p className="text-xs text-slate-400 mt-3 uppercase tracking-wide">
+              {errorCode}
+            </p>
           )}
         </div>
       </div>
@@ -368,9 +396,12 @@ export default function PublicOnboardingPacketPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <div className="max-w-md w-full bg-white border rounded-lg p-6 shadow-sm text-center">
-          <h1 className="text-xl font-semibold text-slate-900 mb-2">Thank you</h1>
+          <h1 className="text-xl font-semibold text-slate-900 mb-2">
+            Thank you
+          </h1>
           <p className="text-sm text-slate-600">
-            Your onboarding packet has been submitted. You can close this window.
+            Your onboarding packet has been submitted. You can close this
+            window.
           </p>
         </div>
       </div>
@@ -382,11 +413,15 @@ export default function PublicOnboardingPacketPage() {
       <header className="sticky top-0 z-20 bg-white border-b shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">Onboarding Packet</h1>
+            <h1 className="text-lg font-semibold text-slate-900">
+              Onboarding Packet
+            </h1>
             <p className="text-xs text-slate-500">
               {seekerName ? `${seekerName} · ` : ""}
               No login required
-              {expiresAt ? ` · Link expires ${new Date(expiresAt).toLocaleDateString()}` : ""}
+              {expiresAt
+                ? ` · Link expires ${new Date(expiresAt).toLocaleDateString()}`
+                : ""}
               {saveState === "saving"
                 ? " · Saving…"
                 : saveState === "saved"
@@ -440,7 +475,8 @@ export default function PublicOnboardingPacketPage() {
                   {activeDoc.document_name}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Fields with the same name sync across all documents in this packet.
+                  Fields with the same name sync across all documents in this
+                  packet.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -455,7 +491,9 @@ export default function PublicOnboardingPacketPage() {
                 <button
                   type="button"
                   disabled={activeIdx >= documents.length - 1}
-                  onClick={() => setActiveIdx((i) => Math.min(documents.length - 1, i + 1))}
+                  onClick={() =>
+                    setActiveIdx((i) => Math.min(documents.length - 1, i + 1))
+                  }
                   className="border px-3 py-1.5 rounded text-sm disabled:opacity-40"
                 >
                   Next
@@ -463,7 +501,10 @@ export default function PublicOnboardingPacketPage() {
               </div>
             </div>
 
-            <div ref={wrapRef} className="bg-gray-200 rounded-lg p-3 overflow-auto">
+            <div
+              ref={wrapRef}
+              className="bg-gray-200 rounded-lg p-3 overflow-auto"
+            >
               <div className="mx-auto w-full max-w-[950px]">
                 {pdfLoading && (
                   <div className="p-10 text-center text-sm text-gray-500 bg-white rounded border">
@@ -483,99 +524,117 @@ export default function PublicOnboardingPacketPage() {
                   </div>
                 )}
                 {!pdfLoading && !pdfError && pdfObjectUrl && (
-                <Document
-                  file={pdfObjectUrl}
-                  onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-                  loading={
-                    <div className="p-10 text-center text-sm text-gray-500 bg-white rounded border">
-                      Rendering PDF…
-                    </div>
-                  }
-                  error={
-                    <div className="p-10 text-center text-sm text-red-600 bg-white rounded border">
-                      Failed to render PDF.
-                    </div>
-                  }
-                >
-                  {Array.from({ length: numPages }, (_, i) => {
-                    const pn = i + 1;
-                    const dim = pageDims[pn];
-                    const scaleX = dim ? renderWidth / dim.w : 1;
-                    const renderHeight = dim ? dim.h * scaleX : 0;
-                    const scaleY = dim && renderHeight ? renderHeight / dim.h : scaleX;
-                    return (
-                      <div key={pn} className="mb-6 bg-white shadow rounded overflow-hidden">
-                        <div className="relative">
-                          <Page
-                            pageNumber={pn}
-                            width={renderWidth}
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
-                            onLoadSuccess={(page) =>
-                              setPageDims((p) => ({
-                                ...p,
-                                [pn]: { w: page.originalWidth, h: page.originalHeight },
-                              }))
-                            }
-                          />
-                          {dim &&
-                            (fieldsByPage[pn] || []).map((field, idx) => {
-                              const key = fieldValueKey(field);
-                              const val = values[key] || "";
-                              return (
-                                <div
-                                  key={`${key}-${idx}`}
-                                  style={{
-                                    position: "absolute",
-                                    left: field.x * scaleX,
-                                    top: field.y * scaleY,
-                                    width: field.w * scaleX,
-                                    height: field.h * scaleY,
-                                  }}
-                                >
-                                  {isSignatureField(field) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => openSignature(field)}
-                                      className="w-full h-full border border-blue-500 bg-blue-50/40 text-xs flex items-center justify-center"
-                                    >
-                                      {val ? (
-                                        val.startsWith("data:image") ? (
-                                          // eslint-disable-next-line @next/next/no-img-element
-                                          <img
-                                            src={val}
-                                            alt="signature"
-                                            className="w-full h-full object-contain"
-                                          />
-                                        ) : val.startsWith("text:") ? (
-                                          <span style={{ fontFamily: "cursive", fontSize: 18 }}>
-                                            {val.replace("text:", "")}
-                                          </span>
-                                        ) : (
-                                          "Signed"
-                                        )
-                                      ) : (
-                                        "Click to Sign"
-                                      )}
-                                    </button>
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      value={val}
-                                      onChange={(e) => setFieldValue(field, e.target.value)}
-                                      className="w-full h-full text-xs border border-blue-500 bg-blue-50/40 focus:bg-white outline-none px-1"
-                                      title={field.field_label || field.field_name}
-                                      placeholder={field.field_label || field.field_name}
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
+                  <Document
+                    file={pdfObjectUrl}
+                    onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+                    loading={
+                      <div className="p-10 text-center text-sm text-gray-500 bg-white rounded border">
+                        Rendering PDF…
                       </div>
-                    );
-                  })}
-                </Document>
+                    }
+                    error={
+                      <div className="p-10 text-center text-sm text-red-600 bg-white rounded border">
+                        Failed to render PDF.
+                      </div>
+                    }
+                  >
+                    {Array.from({ length: numPages }, (_, i) => {
+                      const pn = i + 1;
+                      const dim = pageDims[pn];
+                      const scaleX = dim ? renderWidth / dim.w : 1;
+                      const renderHeight = dim ? dim.h * scaleX : 0;
+                      const scaleY =
+                        dim && renderHeight ? renderHeight / dim.h : scaleX;
+                      return (
+                        <div
+                          key={pn}
+                          className="mb-6 bg-white shadow rounded overflow-hidden"
+                        >
+                          <div className="relative">
+                            <Page
+                              pageNumber={pn}
+                              width={renderWidth}
+                              renderTextLayer={false}
+                              renderAnnotationLayer={false}
+                              onLoadSuccess={(page) =>
+                                setPageDims((p) => ({
+                                  ...p,
+                                  [pn]: {
+                                    w: page.originalWidth,
+                                    h: page.originalHeight,
+                                  },
+                                }))
+                              }
+                            />
+                            {dim &&
+                              (fieldsByPage[pn] || []).map((field, idx) => {
+                                const key = fieldValueKey(field);
+                                const val = values[key] || "";
+                                return (
+                                  <div
+                                    key={`${key}-${idx}`}
+                                    style={{
+                                      position: "absolute",
+                                      left: field.x * scaleX,
+                                      top: field.y * scaleY,
+                                      width: field.w * scaleX,
+                                      height: field.h * scaleY,
+                                    }}
+                                  >
+                                    {isSignatureField(field) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openSignature(field)}
+                                        className="w-full h-full border border-blue-500 bg-blue-50/40 text-xs flex items-center justify-center"
+                                      >
+                                        {val ? (
+                                          val.startsWith("data:image") ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={val}
+                                              alt="signature"
+                                              className="w-full h-full object-contain"
+                                            />
+                                          ) : val.startsWith("text:") ? (
+                                            <span
+                                              style={{
+                                                fontFamily: "cursive",
+                                                fontSize: 18,
+                                              }}
+                                            >
+                                              {val.replace("text:", "")}
+                                            </span>
+                                          ) : (
+                                            "Signed"
+                                          )
+                                        ) : (
+                                          "Click to Sign"
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={val}
+                                        onChange={(e) =>
+                                          setFieldValue(field, e.target.value)
+                                        }
+                                        className="w-full h-full text-xs border border-blue-500 bg-blue-50/40 focus:bg-white outline-none px-1"
+                                        title={
+                                          field.field_label || field.field_name
+                                        }
+                                        placeholder={
+                                          field.field_label || field.field_name
+                                        }
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Document>
                 )}
               </div>
             </div>
