@@ -108,7 +108,10 @@ export function statusLabel(status: string | null | undefined): string {
   if (s === "not_created") return "Not Created";
   if (s === "draft") return "Draft";
   if (s === "submitted") return "Submitted";
+  if (s === "resubmitted") return "Resubmitted";
   if (s === "approved") return "Approved";
   if (s === "rejected") return "Rejected";
+  if (s === "late") return "Late";
+  if (s === "missing") return "Missing";
   return status || "Not Created";
 }

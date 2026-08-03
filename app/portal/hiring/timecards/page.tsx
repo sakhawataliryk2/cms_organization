@@ -13,7 +13,7 @@ import {
   formatWeekRange,
 } from "@/lib/timesheetWeek";
 
-type Filter = "all" | "submitted" | "approved" | "rejected";
+type Filter = "all" | "submitted" | "resubmitted" | "approved" | "rejected" | "late" | "missing";
 
 type TimesheetNote = {
   id: string;
@@ -41,20 +41,30 @@ type TimecardRow = {
   sat?: number;
   sun?: number;
   rejection_reason?: string | null;
+  payroll_eligible?: boolean;
 };
 
 function statusStyles(status: string) {
   const s = status.toLowerCase();
   if (s === "approved") return "text-[#1f9d57]";
-  if (s === "rejected") return "text-[#d64545]";
-  if (s === "submitted") return "text-[#e0891a]";
+  if (s === "rejected" || s === "missing") return "text-[#d64545]";
+  if (s === "submitted" || s === "resubmitted") return "text-[#e0891a]";
+  if (s === "late") return "text-[#b45309]";
   return "text-[#1a1a1a]";
 }
 
 function statusLabel(status: string) {
   const s = String(status || "").toLowerCase();
   if (!s) return "—";
+  if (s === "resubmitted") return "Resubmitted";
+  if (s === "late") return "Late";
+  if (s === "missing") return "Missing";
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function isReviewable(status: string) {
+  const s = status.toLowerCase();
+  return s === "submitted" || s === "resubmitted" || s === "late";
 }
 
 function splitDayLabel(weekStart: string, dayIndex: number) {
@@ -199,7 +209,9 @@ export default function HiringTimecardsPage() {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        {(["all", "submitted", "approved", "rejected"] as const).map((f) => (
+        {(
+          ["all", "submitted", "resubmitted", "approved", "rejected", "late", "missing"] as const
+        ).map((f) => (
           <button
             key={f}
             type="button"
@@ -254,6 +266,7 @@ export default function HiringTimecardsPage() {
                     <p className="text-[13px] text-[#5a6570]">
                       Hours: {Number(t.total_hours || 0).toFixed(2)} · Pay Rate: $
                       {Number(t.pay_rate || t.rate_per_hour || t.rate || 0).toFixed(2)}/hr
+                      {t.payroll_eligible === false ? " · No payroll" : ""}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -348,7 +361,7 @@ export default function HiringTimecardsPage() {
                   </p>
                 )}
 
-                {status === "submitted" && (
+                {isReviewable(status) && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
