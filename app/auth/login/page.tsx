@@ -40,7 +40,8 @@ export default function Login() {
     setCookie("token", data.token, {
       maxAge: 60 * 60 * 24 * 7,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      // lax: allow cookie on top-level navigations from email links
+      sameSite: "lax",
       path: "/",
     });
 
@@ -55,7 +56,7 @@ export default function Login() {
     setCookie("user", JSON.stringify(userData), {
       maxAge: 60 * 60 * 24 * 7,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       path: "/",
     });
 
