@@ -14,6 +14,9 @@ type Timecard = {
   week_start_date: string;
   week_end_date?: string;
   rejection_reason?: string | null;
+  payroll_eligible?: boolean;
+  submission_deadline?: string | null;
+  past_deadline?: boolean;
 };
 
 function SummaryCard({
@@ -44,9 +47,11 @@ function SummaryCard({
             className={`mt-1.5 text-[15px] font-semibold ${
               status === "approved"
                 ? "text-[#1f9d57]"
-                : status === "rejected"
+                : status === "rejected" || status === "missing"
                   ? "text-[#d64545]"
-                  : "text-[#1a1a1a]"
+                  : status === "late"
+                    ? "text-[#b45309]"
+                    : "text-[#1a1a1a]"
             }`}
           >
             {statusLabel(status)}
@@ -113,10 +118,16 @@ export default function TimesheetsDashboardPage() {
   const status = timecard?.status || "not_created";
   const totalHours = status === "not_created" ? null : Number(timecard?.total_hours ?? 0);
   const payRate = Number(activePlacement?.rate_per_hour ?? 0);
+  const payrollEligible =
+    timecard?.payroll_eligible !== false &&
+    status !== "late" &&
+    status !== "missing";
   const expenses =
     status === "not_created" || totalHours == null
       ? null
-      : Number((totalHours * (Number.isFinite(payRate) ? payRate : 0)).toFixed(2));
+      : payrollEligible
+        ? Number((totalHours * (Number.isFinite(payRate) ? payRate : 0)).toFixed(2))
+        : 0;
 
   const onYesWorked = async () => {
     if (!activePlacement?.id) return;
@@ -133,6 +144,11 @@ export default function TimesheetsDashboardPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success || !data?.timecard?.id) {
         toast.error(data?.message || "Could not start timesheet");
+        return;
+      }
+      if (String(data.timecard.status || "").toLowerCase() === "missing") {
+        toast.error("The Monday 5:00 PM deadline has passed for this week.");
+        setTimecard(data.timecard);
         return;
       }
       router.push(`/portal/jobseeker/timesheets/entry?id=${data.timecard.id}`);
@@ -195,9 +211,11 @@ export default function TimesheetsDashboardPage() {
   const isApprovedZero = status === "approved" && Number(timecard?.total_hours || 0) === 0;
   const isNotCreated = status === "not_created";
   const canContinueDraft = status === "draft";
-  const isSubmitted = status === "submitted";
+  const isSubmitted = status === "submitted" || status === "resubmitted";
   const isApproved = status === "approved";
   const isRejected = status === "rejected";
+  const isLate = status === "late";
+  const isMissing = status === "missing";
 
   return (
     <div className="space-y-4">
@@ -292,9 +310,37 @@ export default function TimesheetsDashboardPage() {
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#fff6e8] text-[#e0891a]">
               <FiAlertCircle size={30} strokeWidth={1.75} />
             </div>
-            <h2 className="text-[22px] font-semibold text-[#1a1a1a]">Timesheet submitted</h2>
+            <h2 className="text-[22px] font-semibold text-[#1a1a1a]">
+              {status === "resubmitted" ? "Timesheet resubmitted" : "Timesheet submitted"}
+            </h2>
             <p className="mt-2 text-[14px] text-[#4a5560]">
               Pending review · {Number(timecard?.total_hours || 0).toFixed(2)} hours · {weekLabel}
+            </p>
+          </div>
+        )}
+
+        {isLate && (
+          <div className="mx-auto max-w-md text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#fff7ed] text-[#b45309]">
+              <FiAlertCircle size={30} strokeWidth={1.75} />
+            </div>
+            <h2 className="text-[22px] font-semibold text-[#1a1a1a]">Timesheet submitted late</h2>
+            <p className="mt-2 text-[14px] text-[#4a5560]">
+              Submitted after the Monday 5:00 PM deadline for {weekLabel}. This week is not eligible
+              for payroll.
+            </p>
+          </div>
+        )}
+
+        {isMissing && (
+          <div className="mx-auto max-w-md text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#fdecec] text-[#d64545]">
+              <FiAlertCircle size={30} strokeWidth={1.75} />
+            </div>
+            <h2 className="text-[22px] font-semibold text-[#1a1a1a]">Timesheet missing</h2>
+            <p className="mt-2 text-[14px] text-[#4a5560]">
+              No timesheet was submitted by Monday 5:00 PM for {weekLabel}. This week is not eligible
+              for payroll.
             </p>
           </div>
         )}

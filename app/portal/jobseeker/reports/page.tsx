@@ -10,6 +10,7 @@ type HistoryRow = {
   week_start_date?: string;
   total_hours?: number;
   rejection_reason?: string | null;
+  payroll_eligible?: boolean;
   placement?: {
     job_title?: string;
     organization_name?: string;
@@ -19,8 +20,9 @@ type HistoryRow = {
 function statusColor(status: string) {
   const s = status.toLowerCase();
   if (s === "approved") return "text-[#1f9d57]";
-  if (s === "rejected") return "text-[#d64545]";
-  if (s === "submitted") return "text-[#e0891a]";
+  if (s === "rejected" || s === "missing") return "text-[#d64545]";
+  if (s === "submitted" || s === "resubmitted") return "text-[#e0891a]";
+  if (s === "late") return "text-[#b45309]";
   return "text-[#1a1a1a]";
 }
 
@@ -86,12 +88,32 @@ export default function TimesheetHistoryPage() {
                     </p>
                     <p className="text-[13px] text-[#5a6570]">
                       Hours: {Number(t.total_hours || 0).toFixed(2)}
+                      {t.payroll_eligible === false ||
+                      status.toLowerCase() === "late" ||
+                      status.toLowerCase() === "missing"
+                        ? " · No payroll"
+                        : ""}
                     </p>
                   </div>
                   <p className={`text-[14px] font-semibold ${statusColor(status)}`}>
                     {statusLabel(status)}
                   </p>
                 </div>
+                {(status.toLowerCase() === "late" || status.toLowerCase() === "missing") && (
+                  <div className="mt-3 rounded-md border border-[#f5c2c7] bg-[#fff5f5] px-3 py-2.5">
+                    <p className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-[#d64545]">
+                      <FiAlertCircle size={13} />
+                      Payroll
+                    </p>
+                    <p className="mt-1 text-[13px] text-[#1a1a1a]">
+                      This week is not eligible for payroll because the timesheet was{" "}
+                      {status.toLowerCase() === "missing"
+                        ? "not submitted by the Monday 5:00 PM deadline"
+                        : "submitted after the Monday 5:00 PM deadline"}
+                      .
+                    </p>
+                  </div>
+                )}
                 {status.toLowerCase() === "rejected" && (
                   <div className="mt-3 rounded-md border border-[#f5c2c7] bg-[#fff5f5] px-3 py-2.5">
                     <p className="inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-[#d64545]">
