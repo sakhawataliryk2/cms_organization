@@ -94,8 +94,33 @@ export default function Login() {
         (url.includes("/transfer/") &&
           (url.includes("/approve") || url.includes("/deny"))) ||
         (url.includes("/delete/") &&
+          (url.includes("/approve") || url.includes("/deny"))) ||
+        (url.includes("/unarchive/") &&
           (url.includes("/approve") || url.includes("/deny")))
       );
+    };
+
+    const shouldPreserveRedirect = (url: string): boolean => {
+      if (isActionPage(url)) return true;
+      try {
+        const path = url.startsWith("/")
+          ? url
+          : new URL(url, window.location.origin).pathname +
+            new URL(url, window.location.origin).search;
+        return path.startsWith("/dashboard");
+      } catch {
+        return false;
+      }
+    };
+
+    const toInternalPath = (url: string): string => {
+      if (url.startsWith("/")) return url;
+      try {
+        const u = new URL(url, window.location.origin);
+        return `${u.pathname}${u.search}${u.hash}`;
+      } catch {
+        return url;
+      }
     };
 
     // If backend indicates a mandatory password change (first login with temp password),
@@ -109,8 +134,8 @@ export default function Login() {
       const decodedUrl = decodeURIComponent(redirectUrl);
 
       if (isSameSite(decodedUrl)) {
-        if (isActionPage(decodedUrl)) {
-          router.push(decodedUrl);
+        if (shouldPreserveRedirect(decodedUrl)) {
+          router.push(toInternalPath(decodedUrl));
         } else {
           router.push("/home");
         }
