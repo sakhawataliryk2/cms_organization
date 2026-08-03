@@ -63,6 +63,18 @@ const SECTION_CONFIG: Record<
         label: "Client Submission Email Template",
       },
       { value: "DUPLICATE_CHECK_REPORT", label: "Duplicate Check Report" },
+      {
+        value: "ONBOARDING_MISSING_REPORT_JS_OWNER",
+        label: "Onboarding Missing Report - Job Seeker Owner",
+      },
+      {
+        value: "ONBOARDING_MISSING_REPORT_JOB_OWNER",
+        label: "Onboarding Missing Report - Job Owner",
+      },
+      {
+        value: "ONBOARDING_MISSING_REPORT_FULL",
+        label: "Onboarding Missing Report - Full (Onboarding Team)",
+      },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: [
@@ -143,6 +155,24 @@ const SECTION_CONFIG: Record<
         "{{totalDuplicates}}",
         "{{reportTable}}",
       ],
+      ONBOARDING_MISSING_REPORT_JS_OWNER: [
+        "{{recipientName}}",
+        "{{generatedAt}}",
+        "{{rowCount}}",
+        "{{reportTable}}",
+      ],
+      ONBOARDING_MISSING_REPORT_JOB_OWNER: [
+        "{{recipientName}}",
+        "{{generatedAt}}",
+        "{{rowCount}}",
+        "{{reportTable}}",
+      ],
+      ONBOARDING_MISSING_REPORT_FULL: [
+        "{{recipientName}}",
+        "{{generatedAt}}",
+        "{{rowCount}}",
+        "{{reportTable}}",
+      ],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: [
@@ -165,6 +195,9 @@ const SECTION_CONFIG: Record<
         "{{candidateUrl}}",
       ],
       DUPLICATE_CHECK_REPORT: ["{{reportTable}}"],
+      ONBOARDING_MISSING_REPORT_JS_OWNER: ["{{reportTable}}"],
+      ONBOARDING_MISSING_REPORT_JOB_OWNER: ["{{reportTable}}"],
+      ONBOARDING_MISSING_REPORT_FULL: ["{{reportTable}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -298,6 +331,42 @@ const SECTION_CONFIG: Record<
           `<div>` +
           `<p><strong>Generated At:</strong> {{generatedAt}}</p>` +
           `<p><strong>Total Duplicate Entries:</strong> {{totalDuplicates}}</p>` +
+          `<p>{{reportTable}}</p>` +
+          `</div>`,
+      },
+      ONBOARDING_MISSING_REPORT_JS_OWNER: {
+        template_name: "Onboarding Missing Report - Job Seeker Owner",
+        subject: "Onboarding Missing Documents (Your Job Seekers) — {{rowCount}}",
+        body:
+          `<div>` +
+          `<p>Hello {{recipientName}},</p>` +
+          `<p>Below are incomplete onboarding documents for job seekers you own.</p>` +
+          `<p><strong>Generated At:</strong> {{generatedAt}}</p>` +
+          `<p><strong>Rows:</strong> {{rowCount}}</p>` +
+          `<p>{{reportTable}}</p>` +
+          `</div>`,
+      },
+      ONBOARDING_MISSING_REPORT_JOB_OWNER: {
+        template_name: "Onboarding Missing Report - Job Owner",
+        subject: "Onboarding Missing Documents (Your Jobs) — {{rowCount}}",
+        body:
+          `<div>` +
+          `<p>Hello {{recipientName}},</p>` +
+          `<p>Below are incomplete onboarding documents for job seekers tagged to jobs you own.</p>` +
+          `<p><strong>Generated At:</strong> {{generatedAt}}</p>` +
+          `<p><strong>Rows:</strong> {{rowCount}}</p>` +
+          `<p>{{reportTable}}</p>` +
+          `</div>`,
+      },
+      ONBOARDING_MISSING_REPORT_FULL: {
+        template_name: "Onboarding Missing Report - Full",
+        subject: "Onboarding Missing Documents Report — {{rowCount}}",
+        body:
+          `<div>` +
+          `<p>Hello {{recipientName}},</p>` +
+          `<p>Below is the full list of incomplete onboarding documents.</p>` +
+          `<p><strong>Generated At:</strong> {{generatedAt}}</p>` +
+          `<p><strong>Rows:</strong> {{rowCount}}</p>` +
           `<p>{{reportTable}}</p>` +
           `</div>`,
       },
