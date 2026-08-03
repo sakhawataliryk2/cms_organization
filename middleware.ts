@@ -62,6 +62,29 @@ export async function middleware(request: NextRequest) {
       (url.includes('/unarchive/') && (url.includes('/approve') || url.includes('/deny')));
   };
 
+  // Preserve post-login redirects for email deep links (e.g. job seeker Onboarding tab)
+  const shouldPreserveRedirect = (url: string): boolean => {
+    if (isActionPage(url)) return true;
+    try {
+      const path = url.startsWith("/")
+        ? url
+        : new URL(url, request.nextUrl).pathname + new URL(url, request.nextUrl).search;
+      return path.startsWith("/dashboard");
+    } catch {
+      return false;
+    }
+  };
+
+  const toInternalPath = (url: string): string => {
+    if (url.startsWith("/")) return url;
+    try {
+      const u = new URL(url, request.nextUrl);
+      return `${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return url;
+    }
+  };
+
   // If the path is public and user is logged in, check for redirect param
   // This prevents logged-in users from accessing login/signup pages
   if (isPublicPath && token) {
@@ -71,14 +94,12 @@ export async function middleware(request: NextRequest) {
       const redirectUrl = decodeURIComponent(redirectParam);
 
       if (isSameSite(redirectUrl, request.nextUrl)) {
-        // Same site: check if it's an action page (approve/deny)
-        if (isActionPage(redirectUrl)) {
-          // Action pages: redirect back to the page itself
-          return NextResponse.redirect(new URL(redirectUrl, request.url));
-        } else {
-          // Other same-site pages: redirect to home page
-          return NextResponse.redirect(new URL("/home", request.url));
+        if (shouldPreserveRedirect(redirectUrl)) {
+          return NextResponse.redirect(
+            new URL(toInternalPath(redirectUrl), request.url),
+          );
         }
+        return NextResponse.redirect(new URL("/home", request.url));
       } else {
         // External site: redirect to that URL
         try {
