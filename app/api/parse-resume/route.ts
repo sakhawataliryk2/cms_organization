@@ -18,8 +18,8 @@ export const runtime = "nodejs";
 const MODEL = "openai/gpt-oss-20b:floor";
 /** Cap input to cut prompt tokens; contact + recent roles usually fit early. */
 const MAX_RESUME_CHARS = 6000;
-/** Cap completion size — resume JSON rarely needs more. */
-const MAX_OUTPUT_TOKENS = 2048;
+/** Cap completion size — room for JSON after any residual reasoning. */
+const MAX_OUTPUT_TOKENS = 4096;
 
 // Enable debug mode with RESUME_PARSER_DEBUG=true in .env
 const DEBUG = process.env.RESUME_PARSER_DEBUG === "true";
@@ -221,6 +221,8 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
       model: MODEL,
       temperature: 0,
       max_tokens: MAX_OUTPUT_TOKENS,
+      // gpt-oss is a reasoning model — default reasoning eats the token budget and returns empty content
+      reasoning: { effort: "low", exclude: true },
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -232,7 +234,10 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
   });
 
   const data = (await res.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{
+      message?: { content?: string | null; reasoning?: string | null };
+      finish_reason?: string;
+    }>;
     error?: { message?: string; metadata?: { raw?: string }; code?: number | string };
   };
 
@@ -245,8 +250,19 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
     throw new Error(typeof detail === "string" ? detail.slice(0, 500) : "OpenRouter provider error");
   }
 
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("OpenRouter returned no content");
+  const message = data?.choices?.[0]?.message;
+  const content = (message?.content ?? "").trim();
+  if (!content) {
+    console.error(
+      "[RESUME-PARSER] Empty content from OpenRouter:",
+      JSON.stringify({
+        finish_reason: data?.choices?.[0]?.finish_reason,
+        has_reasoning: Boolean(message?.reasoning),
+        message_keys: message ? Object.keys(message) : [],
+      })
+    );
+    throw new Error("OpenRouter returned no content");
+  }
 
   debugLog("Raw AI Response", content);
   return content;
