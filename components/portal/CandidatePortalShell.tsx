@@ -63,13 +63,29 @@ export default function CandidatePortalShell({ children }: { children: React.Rea
             <button
               type="button"
               onClick={() => placements.length > 1 && setPlacementOpen((v) => !v)}
-              className="inline-flex max-w-[min(92vw,420px)] items-center gap-1.5 truncate text-[14px] text-white"
+              className={`inline-flex max-w-[min(92vw,420px)] items-center gap-1.5 truncate text-[14px] text-white ${
+                placements.length > 1 ? "cursor-pointer hover:opacity-90" : "cursor-default"
+              }`}
               aria-haspopup={placements.length > 1 ? "listbox" : undefined}
               aria-expanded={placementOpen}
+              title={
+                placements.length > 1
+                  ? "Switch active placement"
+                  : placementLabel(activePlacement)
+              }
             >
               <span className="whitespace-nowrap font-normal">Active Placement</span>
-              <FiChevronRight size={14} className="shrink-0 opacity-90" />
+              {placements.length > 1 ? (
+                <span className="shrink-0 text-[10px] opacity-90">▼</span>
+              ) : (
+                <FiChevronRight size={14} className="shrink-0 opacity-90" />
+              )}
               <span className="truncate font-normal">{placementLabel(activePlacement)}</span>
+              {placements.length > 1 && (
+                <span className="ml-1 shrink-0 rounded bg-white/15 px-1.5 py-0.5 text-[11px] font-medium">
+                  {placements.length}
+                </span>
+              )}
             </button>
             {placementOpen && placements.length > 1 && (
               <div className="absolute left-1/2 z-50 mt-2 w-[min(100vw-2rem,360px)] -translate-x-1/2 rounded-md border border-[#d8dde3] bg-white py-1 text-left shadow-lg">
