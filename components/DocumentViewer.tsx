@@ -44,11 +44,27 @@ function isDocx(mime: string, name: string): boolean {
   );
 }
 
-function isImage(mime: string): boolean {
-  return mime.toLowerCase().startsWith("image/");
+function isImage(mime: string, name: string = ""): boolean {
+  if (mime.toLowerCase().startsWith("image/")) return true;
+  const n = name.toLowerCase();
+  return (
+    n.endsWith(".jpg") ||
+    n.endsWith(".jpeg") ||
+    n.endsWith(".png") ||
+    n.endsWith(".gif") ||
+    n.endsWith(".webp") ||
+    n.endsWith(".bmp") ||
+    n.endsWith(".svg")
+  );
 }
 
 const LOAD_TIMEOUT_MS = 3000;
+
+/** Preview pane: one scroll owner; height capped so the modal stays within the viewport. */
+const previewPaneClass =
+  "min-h-0 overflow-auto bg-gray-100 rounded border max-h-[calc(90vh-11rem)]";
+const previewPaneFillClass =
+  "h-[calc(90vh-11rem)] min-h-0 overflow-auto bg-gray-100 rounded border";
 
 export default function DocumentViewer({
   filePath,
@@ -73,7 +89,7 @@ export default function DocumentViewer({
 
   const pdf = isPdf(mime, name) && isAbsoluteUrl;
   const docx = isDocx(mime, name) && isAbsoluteUrl;
-  const image = isImage(mime) && isAbsoluteUrl;
+  const image = isImage(mime, name) && isAbsoluteUrl;
   const useIframe = !pdf && !docx && !image;
 
   const fileProp = useMemo(
@@ -100,7 +116,7 @@ export default function DocumentViewer({
 
   const ActionBar = () =>
     onOpenInNewTab ? (
-      <div className="p-2 bg-gray-50 border-t flex justify-end gap-2">
+      <div className="p-2 bg-gray-50 border-t flex justify-end gap-2 shrink-0">
         <button
           type="button"
           onClick={onOpenInNewTab}
@@ -139,15 +155,17 @@ export default function DocumentViewer({
     };
   }, [docx, proxyUrl, useFallback]);
 
+  const rootClass = `flex flex-col min-h-0 ${className}`.trim();
+
   if (pdf) {
     if (useFallback) {
       return (
-        <div className={`flex flex-col ${className}`}>
-          <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+        <div className={rootClass}>
+          <div className={`${previewPaneFillClass} overflow-hidden`}>
             <iframe
               src={googleViewerUrl}
               title={documentName || "Document"}
-              className="w-full h-full min-h-[60vh] border-0"
+              className="w-full h-full border-0"
             />
           </div>
           <ActionBar />
@@ -156,8 +174,8 @@ export default function DocumentViewer({
     }
 
     return (
-      <div className={`flex flex-col ${className}`}>
-        <div className="flex-1 min-h-[50vh] overflow-auto bg-gray-100 rounded border">
+      <div className={rootClass}>
+        <div className={previewPaneFillClass}>
           {fileProp && (
             <Document
               file={fileProp}
@@ -207,12 +225,12 @@ export default function DocumentViewer({
   if (docx) {
     if (useFallback) {
       return (
-        <div className={`flex flex-col ${className}`}>
-          <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+        <div className={rootClass}>
+          <div className={`${previewPaneFillClass} overflow-hidden`}>
             <iframe
               src={googleViewerUrl}
               title={documentName || "Document"}
-              className="w-full h-full min-h-[60vh] border-0"
+              className="w-full h-full border-0"
             />
           </div>
           <ActionBar />
@@ -221,9 +239,9 @@ export default function DocumentViewer({
     }
 
     return (
-      <div className={`flex flex-col ${className}`}>
+      <div className={rootClass}>
         {status === "loading" && (
-          <div className="flex items-center justify-center p-8 min-h-[40vh]">
+          <div className="flex items-center justify-center p-8">
             <span className="animate-pulse text-gray-500">
               Loading document…
             </span>
@@ -234,7 +252,7 @@ export default function DocumentViewer({
         )}
         <div
           ref={docxContainerRef}
-          className={`flex-1 min-h-[50vh] overflow-auto bg-white p-4 border rounded docx-wrapper ${
+          className={`${previewPaneFillClass} bg-white p-4 docx-wrapper ${
             status === "loading" ? "hidden" : ""
           }`}
         />
@@ -245,18 +263,26 @@ export default function DocumentViewer({
 
   if (image) {
     return (
-      <div className={`flex flex-col ${className}`}>
-        <div className="flex-1 min-h-[50vh] overflow-auto bg-gray-100 rounded border flex items-center justify-center p-4">
-          <img
-            src={proxyUrl}
-            alt={documentName || "Document"}
-            className="max-w-full max-h-[70vh] object-contain"
-            onLoad={() => setStatus("ready")}
-            onError={() => {
-              setErrorMsg("Failed to load image");
-              setStatus("error");
-            }}
-          />
+      <div className={rootClass}>
+        <div
+          className={`${previewPaneClass} flex items-center justify-center p-4`}
+        >
+          {status === "error" ? (
+            <span className="text-red-600 text-sm">
+              {errorMsg || "Failed to load image"}
+            </span>
+          ) : (
+            <img
+              src={proxyUrl}
+              alt={documentName || "Document"}
+              className="max-w-full max-h-[calc(90vh-12rem)] w-auto h-auto object-contain"
+              onLoad={() => setStatus("ready")}
+              onError={() => {
+                setErrorMsg("Failed to load image");
+                setStatus("error");
+              }}
+            />
+          )}
         </div>
         <ActionBar />
       </div>
@@ -266,12 +292,12 @@ export default function DocumentViewer({
   if (useIframe) {
     const src = isAbsoluteUrl ? proxyUrl : filePath;
     return (
-      <div className={`flex flex-col ${className}`}>
-        <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+      <div className={rootClass}>
+        <div className={`${previewPaneFillClass} overflow-hidden`}>
           <iframe
             src={src}
             title={documentName || "Document"}
-            className="w-full h-full min-h-[60vh] border-0"
+            className="w-full h-full border-0"
           />
         </div>
         <ActionBar />
