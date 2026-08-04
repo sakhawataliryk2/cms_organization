@@ -1008,7 +1008,7 @@ export default function DashboardNav() {
                       onClick={openTbiQuickTab}
                       title="T.B.I"
                     >
-                      <div className="sd-tab-desc"><span className="sd-tab-letter-num">A1</span> T.B.I</div>
+                      <div className="sd-tab-desc">T.B.I</div>
                       <span
                         className="sd-tab-icon sd-tab-close"
                         onClick={(e) => {
