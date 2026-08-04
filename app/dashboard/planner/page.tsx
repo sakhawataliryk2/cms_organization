@@ -3177,7 +3177,7 @@ const Planners = () => {
 
       {/* Document Viewer Modal */}
       {documentViewer && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center p-4 z-[999]">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
               <h3 className="text-lg font-semibold text-gray-800 truncate">
