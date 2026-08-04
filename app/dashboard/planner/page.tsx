@@ -3177,25 +3177,26 @@ const Planners = () => {
 
       {/* Document Viewer Modal */}
       {documentViewer && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center px-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
               <h3 className="text-lg font-semibold text-gray-800 truncate">
                 {documentViewer.name || "Document"}
               </h3>
               <button
                 type="button"
                 onClick={() => setDocumentViewer(null)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-gray-700 shrink-0"
                 aria-label="Close document viewer"
               >
                 <FiX size={20} />
               </button>
             </div>
-            <div className="p-4 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-hidden p-4 flex flex-col">
               <DocumentViewer
                 filePath={documentViewer.url}
                 documentName={documentViewer.name || ""}
+                className="h-full min-h-0"
                 onOpenInNewTab={() => window.open(documentViewer.url, "_blank")}
               />
             </div>

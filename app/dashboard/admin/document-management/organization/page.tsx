@@ -326,26 +326,26 @@ export default function DocumentManagementOrganizationPage() {
 
       {showPdfViewer && welcomeDefault?.file_url && (
         <div className="fixed inset-0 z-[999] bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl flex flex-col w-full max-w-4xl max-h-[90vh]">
+          <div className="bg-white rounded-lg shadow-xl flex flex-col w-full max-w-4xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 border-b bg-gray-50 shrink-0">
-              <span className="text-sm font-medium text-gray-800">
+              <span className="text-sm font-medium text-gray-800 truncate">
                 {displayName}
               </span>
               <button
                 type="button"
                 onClick={() => setShowPdfViewer(false)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded"
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded shrink-0"
                 aria-label="Close"
               >
                 <FiX className="w-5 h-5" />
               </button>
             </div>
-            <div className="overflow-y-auto flex-1 min-h-[60vh]">
+            <div className="flex-1 min-h-0 overflow-hidden p-4 flex flex-col">
               <DocumentViewer
                 filePath={welcomeDefault.file_url}
                 mimeType={welcomeDefault.mime_type || "application/pdf"}
                 documentName={displayName}
-                className="min-h-[60vh]"
+                className="h-full min-h-0"
                 onOpenInNewTab={() =>
                   window.open(welcomeDefault.file_url ?? "", "_blank")
                 }

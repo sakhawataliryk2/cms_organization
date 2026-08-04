@@ -60,7 +60,7 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
-import DocumentViewer from "@/components/DocumentViewer";
+import DocumentViewerModal from "@/components/DocumentViewerModal";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import CountdownTimer from "@/components/CountdownTimer";
@@ -5449,41 +5449,10 @@ out.sort((a, b) => {
         )}
 
         {selectedDocument && (
-          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
-              <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
-                <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
-                <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
-                  <span className="text-2xl font-bold">×</span>
-                </button>
-              </div>
-              <div className="p-4 flex-1 min-h-0 flex flex-col">
-                <div className="mb-2">
-                  <p className="text-sm text-gray-600">
-                    Created by {selectedDocument.created_by_name || "System"} on{" "}
-                    {new Date(selectedDocument.created_at).toLocaleString()}
-                  </p>
-                </div>
-                {selectedDocument.file_path ? (
-                  <div className="overflow-y-auto flex-1 min-h-[60vh] flex flex-col">
-                    <DocumentViewer
-                      filePath={selectedDocument.file_path}
-                      mimeType={selectedDocument.mime_type}
-                      documentName={selectedDocument.document_name}
-                      className="flex-1"
-                      onOpenInNewTab={() =>
-                        window.open(selectedDocument.file_path, "_blank")
-                      }
-                    />
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
-                    {selectedDocument.content || "No content available"}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <DocumentViewerModal
+            document={selectedDocument}
+            onClose={() => setSelectedDocument(null)}
+          />
         )}
       </div>
     );
