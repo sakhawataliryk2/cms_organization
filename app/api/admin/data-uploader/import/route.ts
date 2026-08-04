@@ -7,6 +7,9 @@ import {
 } from "@/lib/entitySummaryFieldMaps";
 import { clearImportCancellation, isImportCancelled } from "./state";
 
+// Large CSV imports (e.g. 10K rows) can run for a long time.
+export const maxDuration = 300;
+
 // Mirror the exact same label→backend-column mappings used by the individual add pages.
 // Every field ALWAYS goes into custom_fields (keyed by field_label).
 // Fields whose label appears here ALSO get set at the top-level column for API compatibility.
