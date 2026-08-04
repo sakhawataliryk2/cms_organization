@@ -267,6 +267,11 @@ export default function HiringManagerView() {
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
 
+  // CRM invoices (from approved timecards)
+  const [invoices, setInvoices] = useState<Array<any>>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+
   // Note sorting & filtering state (match Organization Notes design)
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
@@ -1302,6 +1307,12 @@ out.sort((a, b) => {
     }
   }, [hiringManagerId]);
 
+  useEffect(() => {
+    if (hiringManagerId && activeTab === "invoices") {
+      fetchInvoices(hiringManagerId);
+    }
+  }, [hiringManagerId, activeTab]);
+
   // Fetch available fields and organization field definitions after hiring manager is loaded
   useEffect(() => {
     if (hiringManager && hiringManagerId) {
@@ -1659,6 +1670,41 @@ out.sort((a, b) => {
       setNoteError(err instanceof Error ? err.message : "An error occurred while fetching notes");
     } finally {
       setIsLoadingNotes(false);
+    }
+  };
+
+  const fetchInvoices = async (id: string) => {
+    setIsLoadingInvoices(true);
+    setInvoicesError(null);
+    try {
+      const response = await fetch(
+        `/api/hiring-managers/${id}/invoices?limit=200`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch invoices");
+      }
+      const data = await response.json();
+      const list = data.invoices ?? [];
+      setInvoices(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Error fetching invoices:", err);
+      setInvoicesError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching invoices"
+      );
+      setInvoices([]);
+    } finally {
+      setIsLoadingInvoices(false);
     }
   };
 
@@ -4709,7 +4755,63 @@ out.sort((a, b) => {
             <div className="col-span-2">
               <div className="bg-white p-4 rounded shadow-sm">
                 <h2 className="text-lg font-semibold mb-4">Invoices</h2>
-                <p className="text-gray-500 italic">No invoices available</p>
+                {isLoadingInvoices ? (
+                  <div className="flex justify-center py-6">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : invoicesError ? (
+                  <p className="text-red-500">{invoicesError}</p>
+                ) : invoices.length === 0 ? (
+                  <p className="text-gray-500 italic">No invoices available</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border border-gray-200 text-sm">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left px-3 py-2 font-medium">Invoice #</th>
+                          <th className="text-left px-3 py-2 font-medium">Job Seeker</th>
+                          <th className="text-left px-3 py-2 font-medium">Organization</th>
+                          <th className="text-left px-3 py-2 font-medium">Weekend Date</th>
+                          <th className="text-left px-3 py-2 font-medium">Hours</th>
+                          <th className="text-left px-3 py-2 font-medium">Invoice Amount</th>
+                          <th className="text-left px-3 py-2 font-medium">Pay Amount</th>
+                          <th className="text-left px-3 py-2 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoices.map((inv: any, idx: number) => (
+                          <tr
+                            key={`${inv.InvoiceNumber || inv.crm_invoice_id || idx}`}
+                            className="hover:bg-gray-50 border-b"
+                          >
+                            <td className="px-3 py-2">{inv.InvoiceNumber || "—"}</td>
+                            <td className="px-3 py-2">{inv.job_seeker_name || "—"}</td>
+                            <td className="px-3 py-2">
+                              {inv.CustomerName || inv.CustomerId || "—"}
+                            </td>
+                            <td className="px-3 py-2">{inv.WeekendDate || "—"}</td>
+                            <td className="px-3 py-2">
+                              {inv.hours != null
+                                ? Number(inv.hours).toFixed(2)
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {inv.InvoiceAmount != null
+                                ? `$${Number(inv.InvoiceAmount).toFixed(2)}`
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              {inv.PayAmount != null
+                                ? `$${Number(inv.PayAmount).toFixed(2)}`
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2">{inv.InvoiceStatus || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
