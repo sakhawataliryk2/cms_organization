@@ -29,7 +29,7 @@ export default function DocumentViewerModal({
   document: doc,
   onClose,
   showType = false,
-  zIndexClassName = "z-50",
+  zIndexClassName = "z-[999]",
 }: DocumentViewerModalProps) {
   const title =
     doc.document_name || doc.name || "Untitled Document";
