@@ -11,11 +11,15 @@ import {
   normalizeOptions,
   normalizeStr,
 } from "@/lib/aiParsing";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
-const MODEL = "gemini-2.5-flash";
+/** Cheap paid OpenRouter model (~$0.01 in / $0.03 out per 1M tokens). `:floor` = cheapest provider. */
+const MODEL = "inclusionai/ling-2.6-flash:floor";
+/** Cap input to cut prompt tokens; contact + recent roles usually fit early. */
+const MAX_RESUME_CHARS = 6000;
+/** Cap completion size — resume JSON rarely needs more. */
+const MAX_OUTPUT_TOKENS = 2048;
 
 // Enable debug mode with RESUME_PARSER_DEBUG=true in .env
 const DEBUG = process.env.RESUME_PARSER_DEBUG === "true";
@@ -200,37 +204,48 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
   }
 }
 
-// ---------------- Call Google Gemini AI ----------------
-async function callGemini(extractedText: string, systemPrompt: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set.");
+// ---------------- Call OpenRouter (cheap paid model) ----------------
+async function callOpenRouter(extractedText: string, systemPrompt: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set.");
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: MODEL,
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
+      "X-Title": "CMS Resume Parser",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `Extract structured information from the resume text below. Return ONLY valid JSON matching the schema.\n\nRESUME TEXT:\n${extractedText}`,
+        },
+      ],
+    }),
   });
 
-  const parts = [
-    { text: `SYSTEM INSTRUCTION:\n${systemPrompt}\n\nUSER REQUEST:\nExtract structured information from the following resume text. Output strictly valid JSON without any markdown formatting.\n\nRESUME TEXT:\n${extractedText}` }
-  ];
+  const data = (await res.json().catch(() => ({}))) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    error?: { message?: string };
+  };
 
-  try {
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-      }
-    });
-
-    const content = result.response.text();
-    if (!content) throw new Error("Gemini returned no content");
-
-    debugLog("Raw AI Response", content);
-    return content;
-  } catch (e: any) {
-    throw e;
+  if (!res.ok) {
+    const msg = data?.error?.message || `OpenRouter error (${res.status})`;
+    throw new Error(msg);
   }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("OpenRouter returned no content");
+
+  debugLog("Raw AI Response", content);
+  return content;
 }
 
 
@@ -257,19 +272,19 @@ export async function POST(request: NextRequest) {
       .replace(/\s+/g, " ") // collapse spaces
       .replace(/[^\x00-\x7F]/g, "") // remove weird unicode
       .trim()
-      .slice(0, 8000);
+      .slice(0, MAX_RESUME_CHARS);
 
     const customFields = await fetchEntityCustomFields("job-seekers", token);
     const { customFieldNames, selectFieldMeta } = buildCustomFieldMeta(customFields);
     const systemPrompt = buildSystemPrompt(customFields);
 
-    let rawContent = await callGemini(text, systemPrompt);
+    let rawContent = await callOpenRouter(text, systemPrompt);
     let parsed = parseAiJson(rawContent, customFieldNames, selectFieldMeta);
 
     // Retry once if parse failed
     if (!parsed) {
       debugLog("Retrying AI call due to invalid JSON");
-      rawContent = await callGemini(text, systemPrompt);
+      rawContent = await callOpenRouter(text, systemPrompt);
       parsed = parseAiJson(rawContent, customFieldNames, selectFieldMeta);
     }
 
