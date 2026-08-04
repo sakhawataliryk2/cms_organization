@@ -639,6 +639,10 @@ const SECTION_CONFIG: Record<
         value: "JOB_DISTRIBUTION",
         label: "Job - Distribution email (send job to distribution list)",
       },
+      {
+        value: "JOB_FEED_APPLICATION",
+        label: "Job - Jobs Feed Site application (notify job owner)",
+      },
     ],
     placeholders: {
       JOB_DISTRIBUTION: [
@@ -651,6 +655,26 @@ const SECTION_CONFIG: Record<
         "{{employmentType}}",
         "{{createdByName}}",
         "{{jobDescription}}",
+      ],
+      JOB_FEED_APPLICATION: [
+        "{{jobTitle}}",
+        "{{jobTitleLink}}",
+        "{{jobRecordNumber}}",
+        "{{jobLink}}",
+        "{{organizationName}}",
+        "{{seekerName}}",
+        "{{seekerEmail}}",
+        "{{seekerPhone}}",
+        "{{seekerAddress}}",
+        "{{seekerCity}}",
+        "{{seekerState}}",
+        "{{seekerZip}}",
+        "{{seekerRecordNumber}}",
+        "{{seekerLink}}",
+        "{{notes}}",
+        "{{resumeFileName}}",
+        "{{resumeUrl}}",
+        "{{applicationId}}",
       ],
       JOB_DELETE_REQUEST: [
         "{{requestedBy}}",
@@ -680,6 +704,7 @@ const SECTION_CONFIG: Record<
       JOB_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_DISTRIBUTION: [],
+      JOB_FEED_APPLICATION: [],
     },
     defaults: {
       JOB_DISTRIBUTION: {
@@ -697,6 +722,30 @@ const SECTION_CONFIG: Record<
           `<p><strong>Job Description:</strong></p>` +
           `<p>{{jobDescription}}</p>` +
           `<p><a href="{{jobLink}}">View job</a></p>` +
+          `</div>`,
+      },
+      JOB_FEED_APPLICATION: {
+        template_name: "Jobs Feed Application — Owner Notify",
+        subject: "New application for {{jobTitle}} (J{{jobRecordNumber}})",
+        body:
+          `<div>` +
+          `<h2>New Jobs Feed application</h2>` +
+          `<p>A candidate applied online to a job you own.</p>` +
+          `<p><strong>Job:</strong> {{jobTitleLink}}</p>` +
+          `<p><strong>Job record #:</strong> J{{jobRecordNumber}}</p>` +
+          `<p><strong>Organization:</strong> {{organizationName}}</p>` +
+          `<hr>` +
+          `<h3>Applicant</h3>` +
+          `<p><strong>Name:</strong> {{seekerName}}</p>` +
+          `<p><strong>Email:</strong> {{seekerEmail}}</p>` +
+          `<p><strong>Phone:</strong> {{seekerPhone}}</p>` +
+          `<p><strong>Address:</strong> {{seekerAddress}}</p>` +
+          `<p><strong>City / State / ZIP:</strong> {{seekerCity}}, {{seekerState}} {{seekerZip}}</p>` +
+          `<p><strong>Job seeker #:</strong> {{seekerRecordNumber}}</p>` +
+          `<p><strong>Resume:</strong> {{resumeFileName}}` +
+          ` — <a href="{{resumeUrl}}">Download resume</a></p>` +
+          `<p><strong>Notes:</strong> {{notes}}</p>` +
+          `<p><a href="{{seekerLink}}">Open job seeker in CRM</a> | <a href="{{jobLink}}">Open job</a></p>` +
           `</div>`,
       },
       JOB_DELETE_REQUEST: {
