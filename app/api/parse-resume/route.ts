@@ -14,8 +14,8 @@ import {
 
 export const runtime = "nodejs";
 
-/** Cheap paid OpenRouter model (~$0.01 in / $0.03 out per 1M tokens). `:floor` = cheapest provider. */
-const MODEL = "inclusionai/ling-2.6-flash:floor";
+/** Cheap paid OpenRouter model (~$0.03 in / $0.13 out per 1M tokens). `:floor` = cheapest provider. */
+const MODEL = "openai/gpt-oss-20b:floor";
 /** Cap input to cut prompt tokens; contact + recent roles usually fit early. */
 const MAX_RESUME_CHARS = 6000;
 /** Cap completion size — resume JSON rarely needs more. */
@@ -233,12 +233,16 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
 
   const data = (await res.json().catch(() => ({}))) as {
     choices?: Array<{ message?: { content?: string } }>;
-    error?: { message?: string };
+    error?: { message?: string; metadata?: { raw?: string }; code?: number | string };
   };
 
   if (!res.ok) {
-    const msg = data?.error?.message || `OpenRouter error (${res.status})`;
-    throw new Error(msg);
+    const detail =
+      data?.error?.metadata?.raw ||
+      data?.error?.message ||
+      `OpenRouter error (${res.status})`;
+    console.error("[RESUME-PARSER] OpenRouter error:", JSON.stringify(data?.error ?? data));
+    throw new Error(typeof detail === "string" ? detail.slice(0, 500) : "OpenRouter provider error");
   }
 
   const content = data?.choices?.[0]?.message?.content;
