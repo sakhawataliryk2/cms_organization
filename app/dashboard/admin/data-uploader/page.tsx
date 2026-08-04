@@ -96,10 +96,103 @@ type ImportLiveProgress = {
   lookupTotal?: number;
 };
 
+/** Vercel serverless request body hard-cap is ~4.5MB; stay under it with headroom. */
+const IMPORT_BATCH_MAX_BYTES = Math.floor(3.5 * 1024 * 1024);
+
+function estimateJsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+type ImportBatch = {
+  records: Record<string, unknown>[];
+  importRecordNumbers: string[];
+  /** 0-based index of the first row in the full import */
+  rowOffset: number;
+};
+
+/**
+ * Split records into POST bodies that stay under Vercel's ~4.5MB limit.
+ * Shared fields (mappings, options, etc.) are counted in every batch.
+ */
+function buildImportBatches(
+  records: Record<string, unknown>[],
+  importRecordNumbers: string[],
+  sharedPayload: Record<string, unknown>,
+  maxBytes = IMPORT_BATCH_MAX_BYTES,
+): ImportBatch[] {
+  if (records.length === 0) return [];
+
+  const sharedBytes = estimateJsonBytes({
+    ...sharedPayload,
+    records: [],
+    importRecordNumbers: [],
+  });
+
+  const batches: ImportBatch[] = [];
+  let start = 0;
+
+  while (start < records.length) {
+    let size = sharedBytes;
+    let end = start;
+
+    while (end < records.length) {
+      // +2 approximates commas between array elements
+      const nextBytes =
+        estimateJsonBytes(records[end]) +
+        estimateJsonBytes(importRecordNumbers[end] ?? "") +
+        2;
+      if (end > start && size + nextBytes > maxBytes) break;
+      size += nextBytes;
+      end += 1;
+      // Always include at least one row even if oversized (rare).
+      if (end === start + 1 && size > maxBytes) break;
+    }
+
+    batches.push({
+      records: records.slice(start, end),
+      importRecordNumbers: importRecordNumbers.slice(start, end),
+      rowOffset: start,
+    });
+    start = end;
+  }
+
+  return batches;
+}
+
+function mergeImportSummaries(
+  summaries: Array<{ summary: ImportSummary; rowOffset: number }>,
+): ImportSummary {
+  const merged: ImportSummary = {
+    totalRows: 0,
+    successful: 0,
+    failed: 0,
+    errors: [],
+  };
+  for (const { summary, rowOffset } of summaries) {
+    merged.totalRows += summary.totalRows;
+    merged.successful += summary.successful;
+    merged.failed += summary.failed;
+    for (const err of summary.errors) {
+      merged.errors.push({
+        ...err,
+        row: err.row + rowOffset,
+      });
+    }
+  }
+  return merged;
+}
+
 async function consumeImportNdjsonStream(
   response: Response,
   totalInputRows: number,
   onProgress: (p: ImportLiveProgress) => void,
+  progressOffset: {
+    scanned: number;
+    successful: number;
+    failed: number;
+    /** Rows in this request (for final scanned after batch completes) */
+    batchSize: number;
+  } = { scanned: 0, successful: 0, failed: 0, batchSize: totalInputRows },
 ): Promise<ImportSummary> {
   if (!response.body) {
     throw new Error("No response body from import");
@@ -119,6 +212,22 @@ async function consumeImportNdjsonStream(
     lastUiMs = Date.now();
     onProgress(p);
   };
+  const withOffset = (p: {
+    scanned?: number;
+    successful?: number;
+    failed?: number;
+    phase?: string;
+    lookupResolved?: number;
+    lookupTotal?: number;
+  }): ImportLiveProgress => ({
+    scanned: (p.scanned ?? 0) + progressOffset.scanned,
+    totalInput: totalInputRows,
+    successful: (p.successful ?? 0) + progressOffset.successful,
+    failed: (p.failed ?? 0) + progressOffset.failed,
+    phase: p.phase,
+    lookupResolved: p.lookupResolved,
+    lookupTotal: p.lookupTotal,
+  });
 
   while (true) {
     const { done, value } = await reader.read();
@@ -142,27 +251,20 @@ async function consumeImportNdjsonStream(
       };
       if (msg.type === "progress") {
         maybeProgress(
-          {
-            scanned: msg.scanned ?? 0,
-            totalInput: msg.totalInput ?? totalInputRows,
-            successful: msg.successful ?? 0,
-            failed: msg.failed ?? 0,
-            phase: msg.phase,
-            lookupResolved: msg.lookupResolved,
-            lookupTotal: msg.lookupTotal,
-          },
+          withOffset(msg),
           msg.phase === "lookups" ||
             (msg.successful ?? 0) > 0 ||
             (msg.scanned ?? 0) > 0,
         );
       } else if (msg.type === "done" && msg.summary) {
         summary = msg.summary;
-        forceProgress({
-          scanned: totalInputRows,
-          totalInput: totalInputRows,
-          successful: msg.summary.successful,
-          failed: msg.summary.failed,
-        });
+        forceProgress(
+          withOffset({
+            scanned: progressOffset.batchSize,
+            successful: msg.summary.successful,
+            failed: msg.summary.failed,
+          }),
+        );
       } else if (msg.type === "error") {
         throw new Error(msg.message || "Import failed");
       }
@@ -178,12 +280,13 @@ async function consumeImportNdjsonStream(
     };
     if (msg.type === "done" && msg.summary) {
       summary = msg.summary;
-      forceProgress({
-        scanned: totalInputRows,
-        totalInput: totalInputRows,
-        successful: msg.summary.successful,
-        failed: msg.summary.failed,
-      });
+      forceProgress(
+        withOffset({
+          scanned: progressOffset.batchSize,
+          successful: msg.summary.successful,
+          failed: msg.summary.failed,
+        }),
+      );
     } else if (msg.type === "error") {
       throw new Error(msg.message || "Import failed");
     }
@@ -1127,8 +1230,7 @@ export default function DataUploader() {
   const handleImport = async () => {
     setIsImporting(true);
     importAbortControllerRef.current = new AbortController();
-    const importId = crypto.randomUUID();
-    currentImportIdRef.current = importId;
+    currentImportIdRef.current = null;
     setIsLiveStreamPaused(false);
     setLastStreamProgressAt(Date.now());
     const startedAt = Date.now();
@@ -1195,38 +1297,83 @@ export default function DataUploader() {
         console.error("Initial history create failed:", historyErr);
       }
 
-      const response = await fetch("/api/admin/data-uploader/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        signal: importAbortControllerRef.current.signal,
-        body: JSON.stringify({
-          entityType,
-          records: importData,
-          importId,
-          options: importOptions,
-          fieldNameToLabel,
-          fieldDefinitions,
-          importRecordNumbers,
-        }),
-      });
+      // Vercel caps request bodies at ~4.5MB — split into safe-sized batches.
+      const sharedPayload = {
+        entityType,
+        options: importOptions,
+        fieldNameToLabel,
+        fieldDefinitions,
+      };
+      const batches = buildImportBatches(
+        importData,
+        importRecordNumbers,
+        sharedPayload,
+      );
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || "Import failed");
+      const batchResults: Array<{ summary: ImportSummary; rowOffset: number }> =
+        [];
+      let completedSuccessful = 0;
+      let completedFailed = 0;
+
+      for (const batch of batches) {
+        if (importAbortControllerRef.current?.signal.aborted) {
+          throw new DOMException("Import aborted", "AbortError");
+        }
+
+        const importId = crypto.randomUUID();
+        currentImportIdRef.current = importId;
+
+        const response = await fetch("/api/admin/data-uploader/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          signal: importAbortControllerRef.current.signal,
+          body: JSON.stringify({
+            ...sharedPayload,
+            records: batch.records,
+            importRecordNumbers: batch.importRecordNumbers,
+            importId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          const statusHint =
+            response.status === 413
+              ? " Request too large for the host (try fewer columns or split the file)."
+              : "";
+          throw new Error(
+            (errData.message || "Import failed") + statusHint,
+          );
+        }
+
+        const batchSummary = await consumeImportNdjsonStream(
+          response,
+          importData.length,
+          (progress) => {
+            setImportLiveProgress(progress);
+            setLastStreamProgressAt(Date.now());
+            setIsLiveStreamPaused(false);
+          },
+          {
+            scanned: batch.rowOffset,
+            successful: completedSuccessful,
+            failed: completedFailed,
+            batchSize: batch.records.length,
+          },
+        );
+
+        batchResults.push({
+          summary: batchSummary,
+          rowOffset: batch.rowOffset,
+        });
+        completedSuccessful += batchSummary.successful;
+        completedFailed += batchSummary.failed;
       }
 
-      const summary = await consumeImportNdjsonStream(
-        response,
-        importData.length,
-        (progress) => {
-          setImportLiveProgress(progress);
-          setLastStreamProgressAt(Date.now());
-          setIsLiveStreamPaused(false);
-        },
-      );
+      const summary = mergeImportSummaries(batchResults);
 
       const durationMs = Date.now() - startedAt;
       setLastImportDurationMs(durationMs);
