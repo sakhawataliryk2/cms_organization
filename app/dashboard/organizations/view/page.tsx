@@ -6413,134 +6413,78 @@ export default function OrganizationView() {
               </div>
             ) : invoicesError ? (
               <p className="text-red-500">{invoicesError}</p>
+            ) : invoices.length === 0 ? (
+              <p className="text-gray-500 italic">No invoices available</p>
             ) : (
-              <>
-                <div className="mb-4">
-                  <input
-                    type="text"
-                    placeholder="Search invoices..."
-                    value={invoiceSearchTerm}
-                    onChange={(e) => setInvoiceSearchTerm(e.target.value)}
-                    className="w-full max-w-md px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="overflow-x-auto">
-                  <DndContext collisionDetection={closestCenter} onDragEnd={handleInvoiceColumnDragEnd}>
-                    <table className="min-w-full border border-gray-200">
-                      <thead>
-                        <tr className="bg-gray-100 border-b">
-                          <th className="text-left px-6 py-3 font-medium">Actions</th>
-                          <SortableContext
-                            items={invoiceColumnFields}
-                            strategy={horizontalListSortingStrategy}
-                          >
-                            {invoiceColumnFields.map((key) => {
-                              const labels: Record<string, string> = {
-                                invoiceNumber: "Invoice #",
-                                customerName: "Customer",
-                                customerId: "Customer ID",
-                                invoiceDate: "Invoice Date",
-                                weekendDate: "Weekend Date",
-                                invoiceAmount: "Invoice Amount",
-                                payAmount: "Pay Amount",
-                                balanceAmount: "Balance Amount",
-                                invoiceStatus: "Status",
-                                masterInvoice: "Master Invoice",
-                                document: "Document",
-                              };
-                              const filterType: "text" | "select" | "number" =
-                                key === "invoiceAmount" || key === "payAmount" || key === "balanceAmount"
-                                  ? "number"
-                                  : key === "invoiceStatus"
-                                    ? "select"
-                                    : "text";
-                              return (
-                                <SortableColumnHeader
-                                  key={key}
-                                  id={key}
-                                  columnKey={key}
-                                  label={labels[key] || key}
-                                  sortState={invoiceColumnSorts[key] || null}
-                                  filterValue={invoiceColumnFilters[key] || null}
-                                  onSort={() => handleInvoiceColumnSort(key)}
-                                  onFilterChange={(value) => handleInvoiceColumnFilter(key, value)}
-                                  filterType={filterType}
-                                  filterOptions={key === "invoiceStatus" ? invoiceStatusOptions : undefined}
-                                />
-                              );
-                            })}
-                          </SortableContext>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAndSortedInvoices.length > 0 ? (
-                          filteredAndSortedInvoices.map((inv: any, idx: number) => (
-                            <tr key={`${inv.InvoiceNumber || "inv"}-${idx}`} className="hover:bg-gray-50">
-                              <td className="px-6 py-3 border">
-                                <ActionDropdown
-                                  label="Actions"
-                                  options={[
-                                    {
-                                      label: "View",
-                                      action: () =>
-                                        inv.docUrl &&
-                                        setSelectedDocument({
-                                          document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
-                                          document_type: "Invoice",
-                                          file_path: inv.docUrl,
-                                          mime_type: "application/pdf",
-                                          created_by_name: "OASIS",
-                                          created_at: inv.InvoiceDate || new Date().toISOString(),
-                                        }),
-                                    },
-                                    {
-                                      label: "Open in new tab",
-                                      action: () => inv.docUrl && window.open(inv.docUrl, "_blank"),
-                                    },
-                                  ]}
-                                />
-                              </td>
-                              {invoiceColumnFields.map((key) => (
-                                <td key={key} className="px-3 py-2 border">
-                                  {key === "document" ? (
-                                    inv.docUrl ? (
-                                      <button
-                                        onClick={() =>
-                                          setSelectedDocument({
-                                            document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
-                                            document_type: "Invoice",
-                                            file_path: inv.docUrl,
-                                            mime_type: "application/pdf",
-                                            created_by_name: "OASIS",
-                                            created_at: inv.InvoiceDate || new Date().toISOString(),
-                                          })
-                                        }
-                                        className="text-blue-600 hover:underline font-medium"
-                                      >
-                                        View
-                                      </button>
-                                    ) : (
-                                      "—"
-                                    )
-                                  ) : (
-                                    getInvoiceColumnValue(inv, key)
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={invoiceColumnFields.length + 1} className="px-3 py-6 border text-center text-gray-500 italic">
-                              No invoices available
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </DndContext>
-                </div>
-              </>
+              <div className="overflow-x-auto">
+                <table className="min-w-full border border-gray-200 text-sm">
+                  <thead>
+                    <tr className="bg-gray-100 border-b">
+                      <th className="text-left px-3 py-2 font-medium">Invoice #</th>
+                      <th className="text-left px-3 py-2 font-medium">Job Seeker</th>
+                      <th className="text-left px-3 py-2 font-medium">Organization</th>
+                      <th className="text-left px-3 py-2 font-medium">Weekend Date</th>
+                      <th className="text-left px-3 py-2 font-medium">Hours</th>
+                      <th className="text-left px-3 py-2 font-medium">Invoice Amount</th>
+                      <th className="text-left px-3 py-2 font-medium">Pay Amount</th>
+                      <th className="text-left px-3 py-2 font-medium">Status</th>
+                      <th className="text-left px-3 py-2 font-medium">Document</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map((inv: any, idx: number) => (
+                      <tr
+                        key={`${inv.InvoiceNumber || inv.crm_invoice_id || idx}`}
+                        className="hover:bg-gray-50 border-b"
+                      >
+                        <td className="px-3 py-2">{inv.InvoiceNumber || "—"}</td>
+                        <td className="px-3 py-2">{inv.job_seeker_name || "—"}</td>
+                        <td className="px-3 py-2 text-[#9a3412]">
+                          {inv.CustomerName || inv.CustomerId || "—"}
+                        </td>
+                        <td className="px-3 py-2">{inv.WeekendDate || "—"}</td>
+                        <td className="px-3 py-2">
+                          {inv.hours != null ? Number(inv.hours).toFixed(2) : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {inv.InvoiceAmount != null
+                            ? `$${Number(inv.InvoiceAmount).toFixed(2)}`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {inv.PayAmount != null
+                            ? `$${Number(inv.PayAmount).toFixed(2)}`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2">{inv.InvoiceStatus || "—"}</td>
+                        <td className="px-3 py-2">
+                          {inv.docUrl ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedDocument({
+                                  document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
+                                  document_type: "Invoice",
+                                  file_path: inv.docUrl,
+                                  mime_type: "application/pdf",
+                                  created_by_name: "System",
+                                  created_at:
+                                    inv.InvoiceDate || new Date().toISOString(),
+                                })
+                              }
+                              className="text-blue-600 hover:underline font-medium"
+                            >
+                              View
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
