@@ -4709,9 +4709,9 @@ out.sort((a, b) => {
             </div>
           )}
 
-          {/* Document Viewer Modal (shared by Docs and Quotes tabs) */}
+          {/* Document Viewer Modal (shared by Docs, Quotes, and Invoices tabs) */}
           {selectedDocument && (
-            <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-999">
               <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
                 <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
                   <div>
