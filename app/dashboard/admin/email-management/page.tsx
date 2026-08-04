@@ -29,7 +29,8 @@ const SECTIONS: Section[] = [
   {
     id: "jobs",
     name: "Jobs",
-    description: "Job delete request emails for payroll",
+    description:
+      "Job delete/unarchive, distribution list, and Jobs Feed application owner notify templates",
   },
   {
     id: "leads",
