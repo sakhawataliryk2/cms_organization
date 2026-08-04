@@ -4776,6 +4776,7 @@ out.sort((a, b) => {
                           <th className="text-left px-3 py-2 font-medium">Invoice Amount</th>
                           <th className="text-left px-3 py-2 font-medium">Pay Amount</th>
                           <th className="text-left px-3 py-2 font-medium">Status</th>
+                          <th className="text-left px-3 py-2 font-medium">Document</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4787,7 +4788,16 @@ out.sort((a, b) => {
                             <td className="px-3 py-2">{inv.InvoiceNumber || "—"}</td>
                             <td className="px-3 py-2">{inv.job_seeker_name || "—"}</td>
                             <td className="px-3 py-2">
-                              {inv.CustomerName || inv.CustomerId || "—"}
+                              {inv.CustomerId ? (
+                                <a
+                                  href={`/dashboard/organizations/view?id=${inv.CustomerId}`}
+                                  className="text-[#9a3412] hover:underline"
+                                >
+                                  {inv.CustomerName || inv.CustomerId}
+                                </a>
+                              ) : (
+                                inv.CustomerName || "—"
+                              )}
                             </td>
                             <td className="px-3 py-2">{inv.WeekendDate || "—"}</td>
                             <td className="px-3 py-2">
@@ -4806,6 +4816,29 @@ out.sort((a, b) => {
                                 : "—"}
                             </td>
                             <td className="px-3 py-2">{inv.InvoiceStatus || "—"}</td>
+                            <td className="px-3 py-2">
+                              {inv.docUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedDocument({
+                                      document_name: `Invoice ${inv.InvoiceNumber || ""}`.trim(),
+                                      document_type: "Invoice",
+                                      file_path: inv.docUrl,
+                                      mime_type: "application/pdf",
+                                      created_by_name: "System",
+                                      created_at:
+                                        inv.InvoiceDate || new Date().toISOString(),
+                                    })
+                                  }
+                                  className="text-blue-600 hover:underline font-medium"
+                                >
+                                  View
+                                </button>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
