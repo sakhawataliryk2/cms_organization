@@ -69,7 +69,7 @@ type JobsFavorite = {
   createdAt: number;
 };
 
-const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 export default function JobList() {
   const router = useRouter();
@@ -803,38 +803,7 @@ export default function JobList() {
   const shouldApplyClientGlobalSearch = totalJobsCount == null;
   const shouldApplyClientColumnFilters =
     isAdvancedFullMode || totalJobsCount == null;
-  const totalPages =
-    isAdvancedFullMode
-      ? 1
-      : totalJobsCount != null
-        ? Math.max(1, Math.ceil(totalJobsCount / pageSize))
-        : null;
-  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
-  const canGoNext =
-    !isAdvancedFullMode &&
-    (totalPages != null ? currentPage < totalPages : jobs.length === pageSize) &&
-    !isPageLoading &&
-    !isLoading;
-  const paginationItems = useMemo<(number | "...")[]>(() => {
-    if (totalPages == null || totalPages <= 1) return [1];
-
-    const pages = new Set<number>();
-    pages.add(1);
-    pages.add(totalPages);
-    for (let p = currentPage - 1; p <= currentPage + 1; p += 1) {
-      if (p > 1 && p < totalPages) pages.add(p);
-    }
-
-    const sorted = Array.from(pages).sort((a, b) => a - b);
-    const items: (number | "...")[] = [];
-    for (let i = 0; i < sorted.length; i += 1) {
-      const value = sorted[i];
-      if (i > 0 && value - sorted[i - 1] > 1) items.push("...");
-      items.push(value);
-    }
-    return items;
-  }, [currentPage, totalPages]);
-  const filteredAndSortedJobs = useMemo(() => {
+  const filteredJobsAll = useMemo(() => {
     // Exclude archived jobs from main listing (same as Organization)
     const sourceJobs = isAdvancedFullMode ? (advancedJobsDataset ?? []) : jobs;
     let result = sourceJobs.filter((job) => job.status !== "Archived" && !job.archived_at);
@@ -911,12 +880,52 @@ export default function JobList() {
     shouldApplyClientGlobalSearch,
     shouldApplyClientColumnFilters,
   ]);
+
+  // Always render only the current page — advanced search used to mount every match.
+  const filteredAndSortedJobs = useMemo(() => {
+    if (!isAdvancedFullMode) return filteredJobsAll;
+    const start = (currentPage - 1) * pageSize;
+    return filteredJobsAll.slice(start, start + pageSize);
+  }, [filteredJobsAll, isAdvancedFullMode, currentPage, pageSize]);
+
+  const totalPages =
+    isAdvancedFullMode
+      ? Math.max(1, Math.ceil(filteredJobsAll.length / pageSize))
+      : totalJobsCount != null
+        ? Math.max(1, Math.ceil(totalJobsCount / pageSize))
+        : null;
+  const canGoPrev = currentPage > 1 && !isPageLoading && !isLoading;
+  const canGoNext =
+    (totalPages != null ? currentPage < totalPages : jobs.length === pageSize) &&
+    !isPageLoading &&
+    !isLoading;
+  const paginationItems = useMemo<(number | "...")[]>(() => {
+    if (totalPages == null || totalPages <= 1) return [1];
+
+    const pages = new Set<number>();
+    pages.add(1);
+    pages.add(totalPages);
+    for (let p = currentPage - 1; p <= currentPage + 1; p += 1) {
+      if (p > 1 && p < totalPages) pages.add(p);
+    }
+
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const items: (number | "...")[] = [];
+    for (let i = 0; i < sorted.length; i += 1) {
+      const value = sorted[i];
+      if (i > 0 && value - sorted[i - 1] > 1) items.push("...");
+      items.push(value);
+    }
+    return items;
+  }, [currentPage, totalPages]);
   const visibleResultsCount =
     totalJobsCount != null &&
     advancedSearchCriteria.length === 0 &&
     !shouldApplyClientColumnFilters
       ? totalJobsCount
-      : filteredAndSortedJobs.length;
+      : isAdvancedFullMode
+        ? filteredJobsAll.length
+        : filteredAndSortedJobs.length;
 
   const showTableSkeleton = isLoading || isPageLoading;
   const visibleTableColumnKeys = effectiveColumnFields.filter((k) =>
