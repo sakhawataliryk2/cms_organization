@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useRouter } from "nextjs-toploader/app";
 import { FiX, FiDownload, FiEye, FiTrash2 } from "react-icons/fi";
+import { groupImportErrorsByCause } from "@/lib/importErrorMessages";
 
 interface CustomFieldDefinition {
   id: string;
@@ -1580,6 +1581,14 @@ export default function DataUploader() {
     return validationErrors.filter((e) => e.row === actualRowNumber);
   };
 
+  const groupedImportErrors = useMemo(
+    () =>
+      importSummary?.errors?.length
+        ? groupImportErrorsByCause(importSummary.errors)
+        : [],
+    [importSummary],
+  );
+
   return (
     <div className="bg-gray-200 min-h-screen p-8">
       <div className="max-w-6xl mx-auto bg-white rounded shadow p-6 relative">
@@ -2549,70 +2558,39 @@ export default function DataUploader() {
                     {importSummary.errors.length > 0 && (
                       <div className="mt-6">
                         <h3 className="text-lg font-semibold mb-3">
-                          Error Details
+                          Failed by cause
                         </h3>
-                        <div className="overflow-x-auto border rounded">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                  Row
-                                </th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                  Errors
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                              {importSummary.errors.map((error, idx) => (
-                                <tr key={idx}>
-                                  <td className="px-4 py-2 text-sm text-gray-900">
-                                    {error.row}
-                                  </td>
-                                  <td className="px-4 py-2 text-sm">
-                                    <ul className="list-disc list-inside">
-                                      {error.errors.map((err, errIdx) => (
-                                        <li
-                                          key={errIdx}
-                                          className="text-red-600"
-                                        >
-                                          {err}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                    {error.links && error.links.length > 0 && (
-                                      <div className="mt-1 flex flex-wrap gap-2">
-                                        {error.links.map((link, linkIdx) => (
-                                          <a
-                                            key={linkIdx}
-                                            href={link.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 underline text-xs font-medium"
-                                          >
-                                            {link.text}
-                                            <svg
-                                              className="w-3 h-3"
-                                              fill="none"
-                                              viewBox="0 0 24 24"
-                                              stroke="currentColor"
-                                              strokeWidth={2}
-                                            >
-                                              <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                              />
-                                            </svg>
-                                          </a>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <p className="text-sm text-gray-600 mb-3">
+                          {importSummary.errors.length} failed row
+                          {importSummary.errors.length === 1 ? "" : "s"} grouped
+                          into {groupedImportErrors.length} cause
+                          {groupedImportErrors.length === 1 ? "" : "s"}.
+                        </p>
+                        <div className="space-y-3 border rounded divide-y divide-gray-100">
+                          {groupedImportErrors.map((group) => {
+                            const previewRows = group.rows.slice(0, 25);
+                            const remaining =
+                              group.rows.length - previewRows.length;
+                            return (
+                              <div key={group.cause} className="p-4">
+                                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                  <p className="text-sm font-medium text-red-700">
+                                    {group.cause}
+                                  </p>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    {group.count} record
+                                    {group.count === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs text-gray-600">
+                                  Rows: {previewRows.join(", ")}
+                                  {remaining > 0
+                                    ? `, and ${remaining} more`
+                                    : ""}
+                                </p>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
