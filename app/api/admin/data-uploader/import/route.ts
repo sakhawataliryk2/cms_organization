@@ -6,6 +6,7 @@ import {
   HM_ORGANIZATION_ID_FIELD_NAME,
 } from "@/lib/entitySummaryFieldMaps";
 import { clearImportCancellation, isImportCancelled } from "./state";
+import { humanizeImportError } from "@/lib/importErrorMessages";
 
 // Large CSV imports (e.g. 10K rows) can run for a long time.
 export const maxDuration = 300;
@@ -182,7 +183,7 @@ interface FieldDefinition {
   lookupType?: string | null;
 }
 
-const LOOKUP_RESOLVE_CONCURRENCY = 20;
+const LOOKUP_RESOLVE_CONCURRENCY = 80;
 
 function fieldLookupType(fd: FieldDefinition): string | null {
   const t = fd.lookup_type ?? fd.lookupType;
@@ -456,10 +457,10 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
 
 /** Organizations: large SQL bulk batches. */
 const ORG_BULK_CHUNK_SIZE = 500;
-const ORG_BULK_CONCURRENCY = 6;
-/** Other entities: smaller chunks so progress streams often and requests stay under timeout. */
-const DEFAULT_BULK_CHUNK_SIZE = 50;
-const DEFAULT_BULK_CONCURRENCY = 8;
+const ORG_BULK_CONCURRENCY = 8;
+/** Other entities: larger chunks for throughput on big imports. */
+const DEFAULT_BULK_CHUNK_SIZE = 250;
+const DEFAULT_BULK_CONCURRENCY = 12;
 /** Timeout for backend bulk-create requests (jobs can be slow per row). */
 const IMPORT_REQUEST_TIMEOUT_MS = 180_000;
 /** Retry attempts for transient bulk failures. */
@@ -586,7 +587,7 @@ export async function POST(request: NextRequest) {
           const getExistingRecords = async (): Promise<ExistingRecord[]> => {
             if (existingRecordsCache !== null) return existingRecordsCache;
             try {
-              const res = await fetch(`${apiUrl}/api/${endpoint}?limit=10000`, {
+              const res = await fetch(`${apiUrl}/api/${endpoint}?limit=100000`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
               if (!res.ok) {
@@ -703,7 +704,10 @@ export async function POST(request: NextRequest) {
                     : "Bulk create failed");
                 for (const c of chunk) {
                   summary.failed++;
-                  summary.errors.push({ row: c.row, errors: [String(msg)] });
+                  summary.errors.push({
+                    row: c.row,
+                    errors: [humanizeImportError(String(msg))],
+                  });
                 }
                 writeProgress(
                   lastScannedForBulk,
@@ -731,7 +735,9 @@ export async function POST(request: NextRequest) {
                   if (mapped) {
                     summary.errors.push({
                       row: mapped.row,
-                      errors: e.errors ?? ["Unknown error"],
+                      errors: (e.errors ?? ["Unknown error"]).map(
+                        humanizeImportError,
+                      ),
                     });
                   }
                 }
@@ -745,7 +751,10 @@ export async function POST(request: NextRequest) {
                 err instanceof Error ? err.message : "Bulk create failed";
               for (const c of chunk) {
                 summary.failed++;
-                summary.errors.push({ row: c.row, errors: [msg] });
+                summary.errors.push({
+                  row: c.row,
+                  errors: [humanizeImportError(msg)],
+                });
               }
             }
             writeProgress(
@@ -812,8 +821,26 @@ export async function POST(request: NextRequest) {
             fieldNameToLabel[AUTO_DATE_FIELD_NAME] ??
             null;
 
+          // When skipping duplicates, don't warm lookup caches for rows we will skip.
+          // (updateExisting still needs lookups for matching rows.)
+          const skipDupWithoutUpdate =
+            !!(opts.skipDuplicates || opts.importNewOnly) &&
+            !opts.updateExisting;
+          const recordsForLookups =
+            skipDupWithoutUpdate && existingByRN
+              ? records.filter((_record, idx) => {
+                  const rawRn = importRecordNumbers[idx];
+                  const rn =
+                    rawRn !== undefined && rawRn !== null && rawRn !== ""
+                      ? normalizeRecordNumber(String(rawRn))
+                      : null;
+                  if (rn === null) return true;
+                  return !existingByRN!.has(rn);
+                })
+              : records;
+
           await preResolveImportLookups(
-            records,
+            recordsForLookups,
             lookupFields,
             apiUrl,
             token,
@@ -850,6 +877,45 @@ export async function POST(request: NextRequest) {
               summary.totalRows--;
             } else {
               try {
+                // Resolve imported record number early so skip-duplicates can bail
+                // before payload build + lookup application.
+                const rawImportedRN = importRecordNumbers[i];
+                const importedRN =
+                  rawImportedRN !== undefined &&
+                  rawImportedRN !== null &&
+                  rawImportedRN !== ""
+                    ? normalizeRecordNumber(String(rawImportedRN))
+                    : null;
+
+                let foundDuplicate = false;
+                if (
+                  skipDupWithoutUpdate &&
+                  hasImportOption &&
+                  importedRN !== null &&
+                  existingByRN
+                ) {
+                  const match = existingByRN.get(importedRN);
+                  if (match) {
+                    foundDuplicate = true;
+                    summary.failed++;
+                    summary.errors.push({
+                      row: rowNumber,
+                      errors: [
+                        humanizeImportError(
+                          `Record with record number #${importedRN} already exists in the system. Skipped as per import option.`,
+                        ),
+                      ],
+                      links: [
+                        {
+                          text: "View Record",
+                          url: `/dashboard/${endpoint}/view/${match.id}`,
+                        },
+                      ],
+                    });
+                  }
+                }
+
+                if (!foundDuplicate) {
                 // Build payload the same way individual add pages do
                 const payload = buildPayload(
                   entityType,
@@ -961,13 +1027,6 @@ export async function POST(request: NextRequest) {
 
                 // ── Preserve imported record numbers (create-only) ─────────────────
                 // Record number is used as a lookup key for updates, never overwritten.
-                const rawImportedRN = importRecordNumbers[i];
-                const importedRN =
-                  rawImportedRN !== undefined &&
-                  rawImportedRN !== null &&
-                  rawImportedRN !== ""
-                    ? normalizeRecordNumber(String(rawImportedRN))
-                    : null;
                 if (importedRN !== null && importedRN > 0) {
                   payload.recordNumber = importedRN;
                 }
@@ -1025,10 +1084,14 @@ export async function POST(request: NextRequest) {
                 }
 
                 // ── Record Number duplicate detection & update ─────────────────────
-                // Record Number is used as a lookup key only — NEVER overwritten during updates.
-                let foundDuplicate = false;
-
-                if (hasImportOption && importedRN !== null && existingByRN) {
+                // Skip-without-update was handled before payload/lookups above.
+                // updateExisting (and any remaining skip path) still handled here.
+                if (
+                  !foundDuplicate &&
+                  hasImportOption &&
+                  importedRN !== null &&
+                  existingByRN
+                ) {
                   const match = existingByRN.get(importedRN);
                   if (match) {
                     foundDuplicate = true;
@@ -1053,7 +1116,9 @@ export async function POST(request: NextRequest) {
                         summary.errors.push({
                           row: rowNumber,
                           errors: [
-                            updateData.message ?? "Failed to update record",
+                            humanizeImportError(
+                              updateData.message ?? "Failed to update record",
+                            ),
                           ],
                           links: [
                             {
@@ -1066,12 +1131,14 @@ export async function POST(request: NextRequest) {
                         summary.successful++;
                       }
                     } else {
-                      // skipDuplicates or importNewOnly
+                      // skipDuplicates or importNewOnly (fallback if early skip missed)
                       summary.failed++;
                       summary.errors.push({
                         row: rowNumber,
                         errors: [
-                          `Record with record number #${importedRN} already exists in the system. Skipped as per import option.`,
+                          humanizeImportError(
+                            `Record with record number #${importedRN} already exists in the system. Skipped as per import option.`,
+                          ),
                         ],
                         links: [
                           {
@@ -1103,12 +1170,15 @@ export async function POST(request: NextRequest) {
                     await flushBulkChunksConcurrently(batchToFlush);
                   }
                 }
+                } // end if (!foundDuplicate) early-skip gate
               } catch (err) {
                 summary.failed++;
                 summary.errors.push({
                   row: rowNumber,
                   errors: [
-                    err instanceof Error ? err.message : "Unknown error",
+                    humanizeImportError(
+                      err instanceof Error ? err.message : "Unknown error",
+                    ),
                   ],
                 });
               }
