@@ -15,6 +15,7 @@ import Link from "next/link";
 import { TableSkeletonRows } from "@/components/TableSkeletonRows";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import { getViewConfigUserId } from "@/lib/viewConfigCache";
 import { catalogKeyFromColumn, remapLegacyCustomKeys, resolveCustomColumnValue, formatColumnValueOrNA } from "@/lib/fieldCatalogKeys";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -92,6 +93,43 @@ type OrganizationFavorite = {
 };
 
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 200, 500] as const;
+
+type OrganizationListState = {
+  currentPage: number;
+  pageSize: number;
+  searchInput: string;
+  searchTerm: string;
+  columnFilters: Record<string, ColumnFilterState>;
+  columnSorts: Record<string, ColumnSortState>;
+  advancedSearchCriteria: AdvancedSearchCriterion[];
+};
+
+function getListStateStorageKey(): string {
+  const userId = typeof window !== "undefined" ? getViewConfigUserId() : null;
+  return `organizationListState:${userId ?? "anonymous"}`;
+}
+
+function loadOrganizationListState(): OrganizationListState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(getListStateStorageKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as OrganizationListState;
+  } catch {
+    return null;
+  }
+}
+
+function saveOrganizationListState(state: OrganizationListState): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(getListStateStorageKey(), JSON.stringify(state));
+  } catch {
+    // ignore quota / private mode
+  }
+}
 
 export default function OrganizationList() {
   const router = useRouter();
@@ -720,9 +758,84 @@ export default function OrganizationList() {
     };
   }, []);
 
+  // Restore the last search/page state (e.g. when returning from a record detail page)
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+  const restoredSearchKeyRef = useRef<string>("");
+
   useEffect(() => {
+    const saved = loadOrganizationListState();
+    if (saved) {
+      restoredSearchKeyRef.current = JSON.stringify([
+        saved.searchTerm,
+        saved.columnFilters,
+        saved.columnSorts,
+        saved.advancedSearchCriteria,
+      ]);
+      if (typeof saved.searchInput === "string")
+        setSearchInput(saved.searchInput);
+      if (typeof saved.searchTerm === "string")
+        setSearchTerm(saved.searchTerm);
+      if (saved.columnFilters && typeof saved.columnFilters === "object")
+        setColumnFilters(saved.columnFilters);
+      if (saved.columnSorts && typeof saved.columnSorts === "object")
+        setColumnSorts(saved.columnSorts);
+      if (Array.isArray(saved.advancedSearchCriteria))
+        setAdvancedSearchCriteria(saved.advancedSearchCriteria);
+      if (
+        typeof saved.pageSize === "number" &&
+        (PAGE_SIZE_OPTIONS as readonly number[]).includes(saved.pageSize)
+      )
+        setPageSize(saved.pageSize);
+      if (typeof saved.currentPage === "number" && saved.currentPage >= 1)
+        setCurrentPage(saved.currentPage);
+    }
+    setRestoredFromStorage(true);
+  }, []);
+
+  // Persist list state so the user returns to the same page after opening a record
+  useEffect(() => {
+    saveOrganizationListState({
+      currentPage,
+      pageSize,
+      searchInput,
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      advancedSearchCriteria,
+    });
+  }, [
+    currentPage,
+    pageSize,
+    searchInput,
+    searchTerm,
+    columnFilters,
+    columnSorts,
+    advancedSearchCriteria,
+  ]);
+
+  // Reset to page 1 when the user changes search/filters/sorts (but not on the
+  // initial restore from localStorage, which should keep the saved page).
+  useEffect(() => {
+    if (!restoredFromStorage) return;
+    const currentKey = JSON.stringify([
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      advancedSearchCriteria,
+    ]);
+    if (currentKey === restoredSearchKeyRef.current) return;
+    restoredSearchKeyRef.current = currentKey;
     setCurrentPage(1);
-  }, [searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
+  }, [restoredFromStorage, searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
+
+  // Safety net: if the saved page is now beyond the last page (data changed),
+  // fall back to the last available page.
+  useEffect(() => {
+    if (isAdvancedFullMode) return;
+    if (totalOrganizationsCount == null) return;
+    const maxPage = Math.max(1, Math.ceil(totalOrganizationsCount / pageSize));
+    if (currentPage > maxPage) setCurrentPage(maxPage);
+  }, [totalOrganizationsCount, currentPage, pageSize, isAdvancedFullMode]);
 
   useEffect(() => {
     if (!isAdvancedFullMode) {
