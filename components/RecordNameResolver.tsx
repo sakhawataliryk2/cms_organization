@@ -51,6 +51,25 @@ function isValidRecordId(id: string) {
 const recordNameCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, Promise<CacheEntry>>();
 
+/** Cap parallel /api/resolve-record calls so list views don't exhaust the DB pool. */
+const MAX_CONCURRENT_RESOLVES = 4;
+let activeResolves = 0;
+const resolveWaitQueue: Array<() => void> = [];
+
+async function withResolveSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeResolves >= MAX_CONCURRENT_RESOLVES) {
+    await new Promise<void>((resolve) => resolveWaitQueue.push(resolve));
+  }
+  activeResolves += 1;
+  try {
+    return await fn();
+  } finally {
+    activeResolves -= 1;
+    const next = resolveWaitQueue.shift();
+    if (next) next();
+  }
+}
+
 /* ---------------------------------------------
    Hook: useRecordName
 --------------------------------------------- */
@@ -95,7 +114,9 @@ export function useRecordName(
             id: idStr!,
           });
 
-          const res = await fetch(`/api/resolve-record?${params}`);
+          const res = await withResolveSlot(() =>
+            fetch(`/api/resolve-record?${params}`),
+          );
           const data = await res.json();
 
           const entry: CacheEntry =

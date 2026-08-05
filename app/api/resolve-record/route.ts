@@ -1,6 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+/** Avoid re-fetching /api/users/active for every owner cell on overview pages. */
+type OwnerUsersCache = {
+  token: string;
+  users: Array<{ id: string | number; name?: string; email?: string }>;
+  expiresAt: number;
+};
+let ownerUsersCache: OwnerUsersCache | null = null;
+const OWNER_USERS_TTL_MS = 60_000;
+
+async function getActiveUsersCached(
+  apiUrl: string,
+  token: string,
+): Promise<Array<{ id: string | number; name?: string; email?: string }>> {
+  const now = Date.now();
+  if (
+    ownerUsersCache &&
+    ownerUsersCache.token === token &&
+    ownerUsersCache.expiresAt > now
+  ) {
+    return ownerUsersCache.users;
+  }
+
+  const response = await fetch(`${apiUrl}/api/users/active`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(data.message || "Failed to fetch users") as Error & {
+      status?: number;
+    };
+    err.status = response.status;
+    throw err;
+  }
+
+  const users = (data.users || []) as OwnerUsersCache["users"];
+  ownerUsersCache = {
+    token,
+    users,
+    expiresAt: now + OWNER_USERS_TTL_MS,
+  };
+  return users;
+}
+
 /**
  * Resolves a record ID to its display name.
  * GET /api/resolve-record?type=organization&id=123
@@ -70,36 +116,33 @@ export async function GET(request: NextRequest) {
 
     // Owner type uses /api/users/active endpoint and finds user by ID
     if (normalizedType === "owner") {
-      const url = `${apiUrl}${basePath}`;
-      const response = await fetch(url, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      try {
+        const users = await getActiveUsersCached(apiUrl, token);
+        const user = users.find((u) => String(u.id) === String(id));
+        const name = user ? (user.name || user.email || "") : "";
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
+        return NextResponse.json({
+          success: true,
+          name: (name || "").trim() || `${id}`,
+          id: String(id),
+          type: normalizedType,
+        });
+      } catch (ownerErr) {
+        const status =
+          ownerErr && typeof ownerErr === "object" && "status" in ownerErr
+            ? Number((ownerErr as { status?: number }).status) || 500
+            : 500;
         return NextResponse.json(
           {
             success: false,
-            message: data.message || "Failed to fetch users",
+            message:
+              ownerErr instanceof Error
+                ? ownerErr.message
+                : "Failed to fetch users",
           },
-          { status: response.status }
+          { status },
         );
       }
-
-      const users = data.users || [];
-      const user = users.find((u: any) => String(u.id) === String(id));
-      const name = user ? (user.name || user.email || "") : "";
-
-      return NextResponse.json({
-        success: true,
-        name: (name || "").trim() || `${id}`,
-        id: String(id),
-        type: normalizedType,
-      });
     }
 
     const url = `${apiUrl}${basePath}/${id}`;

@@ -6,8 +6,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfjs-dist"],
   experimental: {
     serverActions: {
-      // Allow document uploads up to 10MB (must match backend multer limit)
-      bodySizeLimit: "10mb",
+      // Data uploader + document uploads
+      bodySizeLimit: "100mb",
     },
   },
   async redirects() {
