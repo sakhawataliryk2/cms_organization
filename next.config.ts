@@ -6,9 +6,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfjs-dist"],
   experimental: {
     serverActions: {
-      // Data uploader sends full CSV payloads as JSON (10K+ rows).
-      // Also covers document uploads; keep in sync with backend multer where relevant.
-      bodySizeLimit: "100mb",
+      // Allow document uploads up to 10MB (must match backend multer limit)
+      bodySizeLimit: "10mb",
     },
   },
   async redirects() {
