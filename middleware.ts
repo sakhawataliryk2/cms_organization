@@ -21,8 +21,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Skip middleware for jobs XML feed
-  if (path === "/jobs/feed") {
+  // Skip middleware for jobs XML feeds (public board consumers)
+  if (path === "/jobs/feed" || path === "/jobs/feed/ziprecruiter") {
     return NextResponse.next();
   }
 
