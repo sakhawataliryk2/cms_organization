@@ -5514,14 +5514,6 @@ out.sort((a, b) => {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="grid flex-1 min-w-0 grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-8 gap-y-3">
-            {/* Always show Job Type */}
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500">Job Type</div>
-              <div className="capitalize text-sm font-medium text-gray-900">
-                {job?.jobType || "Not specified"}
-              </div>
-            </div>
-
             {headerFields.filter((fk) => headerFieldCatalog.some((cat) => cat.key === fk)).length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected

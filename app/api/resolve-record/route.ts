@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     if (!type || !id) {
       return NextResponse.json(
         { success: false, message: "Both type and id are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (!token) {
       return NextResponse.json(
         { success: false, message: "Authentication required" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
           success: false,
           message: `Unknown type: "${type}". Supported: organization, hiring-manager, job, job-seeker, lead, placement, task, owner`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
       try {
         const users = await getActiveUsersCached(apiUrl, token);
         const user = users.find((u) => String(u.id) === String(id));
-        const name = user ? (user.name || user.email || "") : "";
+        const name = user ? user.name || user.email || "" : "";
 
         return NextResponse.json({
           success: true,
@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
           success: false,
           message: data.message || "Record not found",
         },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -220,7 +220,8 @@ export async function GET(request: NextRequest) {
           [record.first_name, record.last_name].filter(Boolean).join(" ");
         const jobTitle =
           record.jobTitle || record.job_title || record.job_name || "";
-        name = [jsName, jobTitle].filter(Boolean).join(" - ") || `Placement #${id}`;
+        name =
+          [jsName, jobTitle].filter(Boolean).join(" - ") || `Placement #${id}`;
       } else if (normalizedType.includes("task")) {
         name = record.title || record.subject || "";
       }
@@ -229,16 +230,30 @@ export async function GET(request: NextRequest) {
     // Fallback: use record_number (with type prefix) instead of raw PK id
     const recordNumber = record?.record_number;
     const prefixMap: Record<string, string> = {
-      organization: "O", organizations: "O",
-      "hiring-manager": "HM", "hiring-managers": "HM", hiringmanager: "HM", hiringmanagers: "HM",
-      job: "J", jobs: "J",
-      "job-seeker": "JS", "job-seekers": "JS", jobseeker: "JS", jobseekers: "JS",
-      lead: "L", leads: "L",
-      placement: "P", placements: "P",
-      task: "T", tasks: "T",
+      organization: "O",
+      organizations: "O",
+      "hiring-manager": "HM",
+      "hiring-managers": "HM",
+      hiringmanager: "HM",
+      hiringmanagers: "HM",
+      job: "J",
+      jobs: "J",
+      "job-seeker": "JS",
+      "job-seekers": "JS",
+      jobseeker: "JS",
+      jobseekers: "JS",
+      lead: "L",
+      leads: "L",
+      placement: "P",
+      placements: "P",
+      task: "T",
+      tasks: "T",
     };
     const prefix = prefixMap[normalizedType];
-    const recordNumberFallback = recordNumber != null ? `${prefix ?? ""}${prefix ? " " : ""}${recordNumber}` : null;
+    const recordNumberFallback =
+      recordNumber != null
+        ? `${prefix ?? ""}${prefix ? " " : ""}${recordNumber}`
+        : null;
 
     return NextResponse.json({
       success: true,
@@ -255,7 +270,7 @@ export async function GET(request: NextRequest) {
         success: false,
         message: "Internal server error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
