@@ -183,7 +183,7 @@ interface FieldDefinition {
   lookupType?: string | null;
 }
 
-const LOOKUP_RESOLVE_CONCURRENCY = 80;
+const LOOKUP_RESOLVE_CONCURRENCY = 12;
 
 function fieldLookupType(fd: FieldDefinition): string | null {
   const t = fd.lookup_type ?? fd.lookupType;
@@ -457,10 +457,10 @@ function getVal(payload: Record<string, any>, ...keys: string[]): string {
 
 /** Organizations: large SQL bulk batches. */
 const ORG_BULK_CHUNK_SIZE = 500;
-const ORG_BULK_CONCURRENCY = 8;
-/** Other entities: larger chunks for throughput on big imports. */
-const DEFAULT_BULK_CHUNK_SIZE = 250;
-const DEFAULT_BULK_CONCURRENCY = 12;
+const ORG_BULK_CONCURRENCY = 3;
+/** Other entities: moderate chunks; keep concurrency low to avoid DB pool exhaustion. */
+const DEFAULT_BULK_CHUNK_SIZE = 150;
+const DEFAULT_BULK_CONCURRENCY = 3;
 /** Timeout for backend bulk-create requests (jobs can be slow per row). */
 const IMPORT_REQUEST_TIMEOUT_MS = 180_000;
 /** Retry attempts for transient bulk failures. */
