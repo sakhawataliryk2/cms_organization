@@ -34,10 +34,14 @@ export function AuthFetchInterceptor() {
         // Office 365 / Google Calendar 401 = calendar auth/config issue, not CMS session
         const isOffice365Route = url.includes("/api/office365/");
         const isGoogleCalendarRoute = url.includes("/api/google/calendar/");
+        // Lookup name resolution can 401 when the DB pool is exhausted; that must
+        // not force a full logout (Jobs overview fires many of these in parallel).
+        const isResolveRecordRoute = url.includes("/api/resolve-record");
         if (
           !isAuthRoute &&
           !isOffice365Route &&
           !isGoogleCalendarRoute &&
+          !isResolveRecordRoute &&
           (url.includes("/api/") || url.startsWith("/api/"))
         ) {
           logout();

@@ -52,7 +52,7 @@ const recordNameCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, Promise<CacheEntry>>();
 
 /** Cap parallel /api/resolve-record calls so list views don't exhaust the DB pool. */
-const MAX_CONCURRENT_RESOLVES = 4;
+const MAX_CONCURRENT_RESOLVES = 2;
 let activeResolves = 0;
 const resolveWaitQueue: Array<() => void> = [];
 
