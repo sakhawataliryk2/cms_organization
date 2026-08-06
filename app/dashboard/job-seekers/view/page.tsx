@@ -346,6 +346,12 @@ const PRIMARY_PHONE_FIELD_IDENTIFIER = "field_11";
 // Additional phone fields that also show the Call button
 const EXTRA_PHONE_FIELD_IDENTIFIERS = ["field_12", "field_13"];
 
+/** Decode Excel XML escapes (_x000D_ etc.) without changing other spacing. */
+const decodeSpreadsheetText = (value: unknown): string =>
+  String(value ?? "").replace(/_x([0-9A-Fa-f]{4})_/g, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+
 const normalizeFieldIdentifier = (identifier: unknown) => {
   if (identifier === undefined || identifier === null) {
     return "";
@@ -2908,9 +2914,9 @@ Best regards`;
       const jobSeekerData = data.jobSeeker;
 
       // Create a resume object based on the job seeker's data
+      const resumeTextRaw = decodeSpreadsheetText(jobSeekerData.resume_text || "");
       const resume = {
-        profile:
-          jobSeekerData.resume_text || "No profile information available",
+        profile: resumeTextRaw || "No profile information available",
         experience: [], // Would be populated from a formatted resume if available
       };
 
@@ -2973,7 +2979,7 @@ Best regards`;
           : [],
         desiredSalary: jobSeekerData.desired_salary || "Not specified",
         resume: resume,
-        resumeText: jobSeekerData.resume_text || "",
+        resumeText: resumeTextRaw,
         customFields: customFieldsObj,
         archived_at: jobSeekerData.archived_at || null,
         archive_reason: jobSeekerData.archive_reason || null,
@@ -4580,7 +4586,9 @@ Best regards`;
           {visibleFields.resume.includes("profile") && (
             <div className="flex border-b border-gray-200 last:border-b-0">
               {/* <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div> */}
-              <div className="flex-1 p-2 text-sm">{jobSeeker.resume.profile}</div>
+              <div className="flex-1 p-2 text-sm whitespace-pre-wrap wrap-anywhere">
+                {jobSeeker.resume.profile}
+              </div>
             </div>
           )}
         </div>

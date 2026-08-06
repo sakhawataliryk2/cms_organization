@@ -641,7 +641,8 @@ export default function DataUploader() {
     const record: Record<string, string> = {};
     Object.keys(fieldMappings).forEach((fieldName) => {
       const csvColumn = fieldMappings[fieldName];
-      record[fieldName] = row[csvColumn]?.trim() || "";
+      // Keep exact spacing / line breaks from the spreadsheet cell.
+      record[fieldName] = row[csvColumn] ?? "";
     });
     return record;
   };
@@ -902,15 +903,11 @@ export default function DataUploader() {
   }, [currentStep, csvHeaders, availableFields, fieldMappings]);
 
   const normalizeSpreadsheetCellValue = (value: unknown): string => {
-    const text = String(value ?? "").trim();
-    // Decode Excel XML escapes (_x000D_ = CR, _x000A_ = LF, _x0009_ = tab)
-    // and normalize line endings to real newlines for storage/display.
-    return text
-      .replace(/_x000D__x000A_/gi, "\n")
-      .replace(/_x000D_/gi, "\n")
-      .replace(/_x000A_/gi, "\n")
-      .replace(/_x0009_/gi, "\t")
-      .replace(/\r\n|\r/g, "\n");
+    // Preserve exact cell text (spaces, blank lines, line endings).
+    // Only decode Excel XML escapes like _x000D_ (CR), _x000A_ (LF), _x0009_ (tab).
+    return String(value ?? "").replace(/_x([0-9A-Fa-f]{4})_/g, (_, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
   };
 
   const parseWorkbookToRows = async (
@@ -933,12 +930,12 @@ export default function DataUploader() {
     if (!matrix.length) return { headers: [], rows: [] };
 
     const headers = (matrix[0] || [])
-      .map((cell) => normalizeSpreadsheetCellValue(cell))
+      .map((cell) => normalizeSpreadsheetCellValue(cell).trim())
       .filter(Boolean);
     const rows = matrix
       .slice(1)
       .filter((row) =>
-        row.some((cell) => normalizeSpreadsheetCellValue(cell) !== ""),
+        row.some((cell) => normalizeSpreadsheetCellValue(cell).trim() !== ""),
       )
       .map((row) => {
         const csvRow: CSVRow = {};
@@ -1283,7 +1280,8 @@ export default function DataUploader() {
         const record: Record<string, any> = {};
         Object.keys(fieldMappings).forEach((fieldName) => {
           const csvColumn = fieldMappings[fieldName];
-          record[fieldName] = row[csvColumn]?.trim() || "";
+          // Keep exact spacing / line breaks from the spreadsheet cell.
+          record[fieldName] = row[csvColumn] ?? "";
         });
         importData.push(record);
         importRecordNumbers.push(getEffectiveRecordNumber(idx));
