@@ -57,7 +57,14 @@ export default function EntityBulkDeleteModal({ open, onClose, onSuccess, entity
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: { message?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
+      }
+
       if (res.ok) {
         toast.success(`Bulk delete request submitted for ${entityIds.length} record(s). Payroll has been notified.`);
         setResult({ success: true, message: data.message || "Delete request submitted successfully" });
@@ -68,8 +75,9 @@ export default function EntityBulkDeleteModal({ open, onClose, onSuccess, entity
           onSuccess?.();
         }, 1500);
       } else {
-        toast.error(data.message || "Failed to create delete request");
-        setResult({ success: false, message: data.message || "Failed to create delete request" });
+        const errorMsg = data.message || `Failed to create delete request (${res.status})`;
+        toast.error(errorMsg);
+        setResult({ success: false, message: errorMsg });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
