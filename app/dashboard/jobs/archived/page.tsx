@@ -710,13 +710,12 @@ export default function ArchivedJobsList() {
               ) : filteredAndSortedJobs.length > 0 ? (
                 filteredAndSortedJobs.map((job) => (
                   <tr key={job.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleViewJob(job.id)}>
-                    <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={(e) => handleSelectJob(job.id, e)}>
                       <input
                         type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded pointer-events-none"
                         checked={selectedJobs.includes(job.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectJob(job.id, e)}
+                        readOnly
                       />
                     </td>
 

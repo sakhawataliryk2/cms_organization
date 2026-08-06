@@ -1031,15 +1031,14 @@ export default function ArchivedJobSeekersList() {
                     onClick={() => handleViewJobSeeker(js.id)}
                   >
                     <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
+                      className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                      onClick={(e) => handleSelectJobSeeker(js.id, e)}
                     >
                       <input
                         type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded pointer-events-none"
                         checked={selectedJobSeekers.includes(js.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectJobSeeker(js.id, e)}
+                        readOnly
                       />
                     </td>
                     <td
