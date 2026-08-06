@@ -903,8 +903,14 @@ export default function DataUploader() {
 
   const normalizeSpreadsheetCellValue = (value: unknown): string => {
     const text = String(value ?? "").trim();
-    // Keep CSV and XLSX line-break representation consistent with Excel-style values.
-    return text.replace(/\r\n|\n|\r/g, "_x000D_");
+    // Decode Excel XML escapes (_x000D_ = CR, _x000A_ = LF, _x0009_ = tab)
+    // and normalize line endings to real newlines for storage/display.
+    return text
+      .replace(/_x000D__x000A_/gi, "\n")
+      .replace(/_x000D_/gi, "\n")
+      .replace(/_x000A_/gi, "\n")
+      .replace(/_x0009_/gi, "\t")
+      .replace(/\r\n|\r/g, "\n");
   };
 
   const parseWorkbookToRows = async (
