@@ -980,6 +980,7 @@ export default function JobSeekerView() {
   const [resumeDraft, setResumeDraft] = useState("");
   const [isSavingResume, setIsSavingResume] = useState(false);
   const [resumeSaveError, setResumeSaveError] = useState<string | null>(null);
+  const [isResumeExpanded, setIsResumeExpanded] = useState(false);
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -4575,6 +4576,7 @@ Best regards`;
   // Render individual panels for summary
   const renderResumePanel = () => {
     if (!jobSeeker) return null;
+    const resumeProfile = jobSeeker.resume.profile;
     return (
       <PanelWithHeader
         title="Resume"
@@ -4582,14 +4584,35 @@ Best regards`;
         editButtonTitle="Edit Resume Content"
         editButtonAriaLabel="Edit Resume Content"
       >
-        <div className="space-y-0 border border-gray-200 rounded">
+        <div className="border border-gray-200 rounded overflow-hidden">
           {visibleFields.resume.includes("profile") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              {/* <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div> */}
-              <div className="flex-1 p-2 text-sm whitespace-pre-wrap wrap-anywhere">
-                {jobSeeker.resume.profile}
+            <button
+              type="button"
+              onClick={() => setIsResumeExpanded((prev) => !prev)}
+              className="relative block w-full text-left cursor-pointer border-0 bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+              aria-expanded={isResumeExpanded}
+              title={isResumeExpanded ? "Click to collapse" : "Click to expand"}
+            >
+              <div
+                className={`relative overflow-hidden transition-[max-height] duration-300 ease-in-out ${
+                  isResumeExpanded ? "max-h-[80vh]" : "max-h-48"
+                }`}
+              >
+                <div
+                  className={`p-3 text-sm whitespace-pre-wrap wrap-anywhere ${
+                    isResumeExpanded ? "overflow-y-auto max-h-[80vh]" : ""
+                  }`}
+                >
+                  {resumeProfile}
+                </div>
+                {!isResumeExpanded && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-white via-white/80 to-transparent backdrop-blur-[2px]"
+                    aria-hidden
+                  />
+                )}
               </div>
-            </div>
+            </button>
           )}
         </div>
       </PanelWithHeader>
