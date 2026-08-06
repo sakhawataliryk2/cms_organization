@@ -1237,15 +1237,14 @@ export default function HiringManagerList() {
                   >
                     {/* Fixed checkbox */}
                     <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
+                      className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                      onClick={(e) => handleSelectHiringManager(hm.id, e)}
                     >
                       <input
                         type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded pointer-events-none"
                         checked={selectedHiringManagers.includes(hm.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectHiringManager(hm.id, e)}
+                        readOnly
                       />
                     </td>
 

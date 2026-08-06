@@ -924,15 +924,14 @@ export default function ArchivedOrganizationsList() {
                     >
                       {/* Fixed checkbox */}
                       <td
-                        className="px-6 py-4 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
+                        className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                        onClick={(e) => handleSelectOrganization(org.id, e)}
                       >
                         <input
                           type="checkbox"
-                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded pointer-events-none"
                           checked={selectedOrganizations.includes(org.id)}
-                          onChange={() => { }}
-                          onClick={(e) => handleSelectOrganization(org.id, e)}
+                          readOnly
                         />
                       </td>
 
