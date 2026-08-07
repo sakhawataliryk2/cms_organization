@@ -97,6 +97,14 @@ type ImportLiveProgress = {
   lookupTotal?: number;
 };
 
+type ResumeUploadProgress = {
+  scanned: number;
+  total: number;
+  uploaded: number;
+  failed: number;
+  skippedEmpty?: number;
+};
+
 /** Vercel serverless request body hard-cap is ~4.5MB; stay under it with headroom. */
 const IMPORT_BATCH_MAX_BYTES = Math.floor(3.5 * 1024 * 1024);
 
@@ -358,6 +366,14 @@ export default function DataUploader() {
     importNewOnly: false,
   });
   const [isImporting, setIsImporting] = useState(false);
+  const [isUploadingResumes, setIsUploadingResumes] = useState(false);
+  const [resumeUploadProgress, setResumeUploadProgress] =
+    useState<ResumeUploadProgress | null>(null);
+  const [resumeUploadSummary, setResumeUploadSummary] = useState<{
+    uploaded: number;
+    failed: number;
+    skippedEmpty: number;
+  } | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(
     null,
   );
@@ -1233,6 +1249,9 @@ export default function DataUploader() {
 
   const handleImport = async () => {
     setIsImporting(true);
+    setIsUploadingResumes(false);
+    setResumeUploadProgress(null);
+    setResumeUploadSummary(null);
     importAbortControllerRef.current = new AbortController();
     currentImportIdRef.current = null;
     setIsLiveStreamPaused(false);
@@ -1380,6 +1399,143 @@ export default function DataUploader() {
 
       const summary = mergeImportSummaries(batchResults);
 
+      const hasResumeColumnMapped = availableFields.some((f) => {
+        if (!fieldMappings[f.field_name]) return false;
+        const label = String(f.field_label || "")
+          .trim()
+          .toLowerCase();
+        return label === "resume" || label === "resume text";
+      });
+
+      // After records are saved, upload Resume DOCX docs in parallel (same as backfill script).
+      if (
+        entityType === "job-seekers" &&
+        summary.successful > 0 &&
+        hasResumeColumnMapped
+      ) {
+        setIsUploadingResumes(true);
+        setResumeUploadProgress({
+          scanned: 0,
+          total: 0,
+          uploaded: 0,
+          failed: 0,
+        });
+        try {
+          const resumeRes = await fetch(
+            "/api/admin/data-uploader/backfill-resume-docx",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              signal: importAbortControllerRef.current?.signal,
+              body: JSON.stringify({
+                concurrency: 16,
+                // Only seekers touched during this import window.
+                updatedSince: new Date(startedAt - 60_000).toISOString(),
+              }),
+            },
+          );
+
+          if (!resumeRes.ok) {
+            const errData = await resumeRes.json().catch(() => ({}));
+            throw new Error(
+              (errData as { message?: string }).message ||
+                "Resume document upload failed",
+            );
+          }
+
+          const reader = resumeRes.body?.getReader();
+          if (!reader) {
+            throw new Error("No response body from resume upload");
+          }
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let lastResumeSummary: {
+            uploaded: number;
+            failed: number;
+            skippedEmpty: number;
+          } | null = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              let msg: Record<string, unknown>;
+              try {
+                msg = JSON.parse(trimmed);
+              } catch {
+                continue;
+              }
+              if (msg.type === "progress") {
+                setResumeUploadProgress({
+                  scanned: Number(msg.scanned ?? 0),
+                  total: Number(msg.total ?? 0),
+                  uploaded: Number(msg.uploaded ?? 0),
+                  failed: Number(msg.failed ?? 0),
+                  skippedEmpty: Number(msg.skippedEmpty ?? 0),
+                });
+              } else if (msg.type === "done" && msg.summary) {
+                const s = msg.summary as {
+                  uploaded?: number;
+                  failed?: number;
+                  skippedEmpty?: number;
+                };
+                lastResumeSummary = {
+                  uploaded: s.uploaded ?? 0,
+                  failed: s.failed ?? 0,
+                  skippedEmpty: s.skippedEmpty ?? 0,
+                };
+                setResumeUploadSummary(lastResumeSummary);
+              } else if (msg.type === "error") {
+                throw new Error(
+                  String(msg.message || "Resume document upload failed"),
+                );
+              }
+            }
+          }
+          if (buffer.trim()) {
+            try {
+              const msg = JSON.parse(buffer.trim()) as Record<string, unknown>;
+              if (msg.type === "done" && msg.summary) {
+                const s = msg.summary as {
+                  uploaded?: number;
+                  failed?: number;
+                  skippedEmpty?: number;
+                };
+                lastResumeSummary = {
+                  uploaded: s.uploaded ?? 0,
+                  failed: s.failed ?? 0,
+                  skippedEmpty: s.skippedEmpty ?? 0,
+                };
+                setResumeUploadSummary(lastResumeSummary);
+              }
+            } catch {
+              /* ignore trailing partial */
+            }
+          }
+        } catch (resumeErr) {
+          if (
+            !(resumeErr instanceof DOMException && resumeErr.name === "AbortError")
+          ) {
+            console.error("Resume DOCX backfill failed:", resumeErr);
+            toast.warning(
+              resumeErr instanceof Error
+                ? `Records imported, but resume docs upload had an issue: ${resumeErr.message}`
+                : "Records imported, but resume docs upload had an issue.",
+            );
+          }
+        } finally {
+          setIsUploadingResumes(false);
+        }
+      }
+
       const durationMs = Date.now() - startedAt;
       setLastImportDurationMs(durationMs);
       setLastImportCompletedAt(new Date());
@@ -1435,6 +1591,8 @@ export default function DataUploader() {
         importTimerRef.current = null;
       }
       setImportLiveProgress(null);
+      setResumeUploadProgress(null);
+      setIsUploadingResumes(false);
       setLastStreamProgressAt(null);
       setIsLiveStreamPaused(false);
       setIsImporting(false);
@@ -2338,12 +2496,34 @@ export default function DataUploader() {
                     {isImporting && (
                       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <p className="text-sm font-semibold text-blue-900">
-                          Import in progress… elapsed{" "}
+                          {isUploadingResumes
+                            ? "Uploading resume documents…"
+                            : "Import in progress…"}{" "}
+                          elapsed{" "}
                           <span className="tabular-nums text-base">
                             {formatDurationMs(importElapsedMs)}
                           </span>
                         </p>
-                        {importLiveProgress && (
+                        {isUploadingResumes && resumeUploadProgress ? (
+                          <p className="text-sm text-blue-900 mt-2 tabular-nums">
+                            Resume DOCX files:{" "}
+                            <span className="font-semibold">
+                              {resumeUploadProgress.scanned}
+                            </span>
+                            {" / "}
+                            <span className="font-semibold">
+                              {resumeUploadProgress.total || "…"}
+                            </span>
+                            {" · "}
+                            <span className="text-green-800">
+                              Uploaded {resumeUploadProgress.uploaded}
+                            </span>
+                            {" · "}
+                            <span className="text-red-800">
+                              Failed {resumeUploadProgress.failed}
+                            </span>
+                          </p>
+                        ) : importLiveProgress ? (
                           <p className="text-sm text-blue-900 mt-2 tabular-nums">
                             {importLiveProgress.phase === "lookups" ? (
                               <>
@@ -2377,8 +2557,8 @@ export default function DataUploader() {
                               </>
                             )}
                           </p>
-                        )}
-                        {isLiveStreamPaused && (
+                        ) : null}
+                        {!isUploadingResumes && isLiveStreamPaused && (
                           <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
                             Waiting on the next server batch (writes happen in
                             chunks). Last seen:{" "}
@@ -2398,8 +2578,9 @@ export default function DataUploader() {
                           </div>
                         )}
                         <p className="text-xs text-blue-800 mt-1">
-                          Progress updates after each write batch (~50 rows for
-                          jobs). OK/Failed counts rise as batches complete.
+                          {isUploadingResumes
+                            ? "Records are saved. Now generating Resume DOCX files for the Docs tab in parallel."
+                            : "Progress updates after each write batch (~50 rows for jobs). OK/Failed counts rise as batches complete."}
                         </p>
                       </div>
                     )}
@@ -2538,6 +2719,22 @@ export default function DataUploader() {
                       </div>
                     </div>
 
+                    {resumeUploadSummary && (
+                      <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded">
+                        <div className="text-sm font-semibold text-indigo-900 mb-1">
+                          Resume documents (Docs tab)
+                        </div>
+                        <p className="text-sm text-indigo-900 tabular-nums">
+                          Uploaded {resumeUploadSummary.uploaded}
+                          {" · "}
+                          Failed {resumeUploadSummary.failed}
+                          {resumeUploadSummary.skippedEmpty > 0
+                            ? ` · Skipped empty ${resumeUploadSummary.skippedEmpty}`
+                            : ""}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                       <div className="p-4 bg-gray-50 border border-gray-200 rounded">
                         <div className="text-lg font-semibold text-gray-900 tabular-nums">
@@ -2652,11 +2849,17 @@ export default function DataUploader() {
                     }`}
                   >
                     {isImporting
-                      ? `Importing… ${formatDurationMs(importElapsedMs)}${
-                          importLiveProgress
-                            ? ` · ${importLiveProgress.successful}/${importLiveProgress.totalInput} OK`
-                            : ""
-                        }`
+                      ? isUploadingResumes
+                        ? `Uploading resumes… ${formatDurationMs(importElapsedMs)}${
+                            resumeUploadProgress
+                              ? ` · ${resumeUploadProgress.uploaded}/${resumeUploadProgress.total || "…"}`
+                              : ""
+                          }`
+                        : `Importing… ${formatDurationMs(importElapsedMs)}${
+                            importLiveProgress
+                              ? ` · ${importLiveProgress.successful}/${importLiveProgress.totalInput} OK`
+                              : ""
+                          }`
                       : "Start Import"}
                   </button>
                 ) : currentStep === 4 ? (
