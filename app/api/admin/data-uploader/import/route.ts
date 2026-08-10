@@ -214,7 +214,7 @@ function addItemToLookupMap(
   }
 }
 
-const AUTO_DATE_FIELD_NAME = "Field_69";
+const AUTO_DATE_FIELD_NAME = "Field_70";
 
 function toYmdDate(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -806,7 +806,7 @@ export async function POST(request: NextRequest) {
               );
             },
           );
-          // Resolve Field_69 label from admin center/custom-field service once per import request.
+          // Resolve Field_70 (Date Added) label from admin center/custom-field service once per import request.
           const adminResolvedAutoDateLabel = await resolveFieldLabelByFieldName(
             apiUrl,
             token,
@@ -985,7 +985,7 @@ export async function POST(request: NextRequest) {
                 // Ensure custom_fields is always a plain serialisable object
                 payload.custom_fields = { ...(payload.custom_fields ?? {}) };
 
-                // Auto-populate Field_69 label if the column was not present in the file.
+                // Auto-populate Field_70 (Date Added) label if the column was not present in the file.
                 // Value source: incoming created_at timestamp when available, else import-time date.
                 if (autoDateFieldLabel) {
                   const currentVal = payload.custom_fields[autoDateFieldLabel];
