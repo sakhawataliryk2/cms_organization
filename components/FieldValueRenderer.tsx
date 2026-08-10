@@ -12,6 +12,7 @@ import {
   getEntityUpdatePutPath,
   getMappedStatusFieldName,
   normalizeCrmEntityTypeSlug,
+  resolveFieldRenderMeta,
 } from "@/lib/entitySummaryFieldMaps";
 import { ADDRESS_FIELD_NAMES } from "@/components/AddressGroupRenderer";
 import {
@@ -28,6 +29,20 @@ const PHONE_PATTERN = /^\(\d{3}\)\s*\d{3}-\d{4}$/;
 
 /** Matches common date formats so we don't treat them as phones (YYYY-MM-DD, MM/DD/YYYY, etc.) */
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{2,4}$|^\d{1,2}-\d{1,2}-\d{2,4}$/;
+
+/**
+ * Excel / spreadsheet serial dates (e.g. 46160.74722 from CSV/XLS imports).
+ * Range covers ~1900–2100 without colliding with small integers or 4-digit years.
+ */
+const EXCEL_SERIAL_PATTERN = /^\d{3,5}(\.\d+)?$/;
+
+function isExcelSerialDateValue(value: string | number | null | undefined): boolean {
+  if (value == null || value === "") return false;
+  const s = String(value).trim();
+  if (!EXCEL_SERIAL_PATTERN.test(s)) return false;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 200 && n < 80000;
+}
 
 function extractFieldManagementFields(data: Record<string, unknown> | null): unknown[] {
   if (!data || typeof data !== "object") return [];
@@ -119,33 +134,51 @@ export interface FieldValueRendererProps {
   ellipsisInCell?: boolean;
 }
 
-function formatToMMDDYYYY(value: string): string {
-  if (!value) return value;
+/**
+ * Parse ISO/US date strings and Excel serial numbers into a Date.
+ * Excel epoch is 1899-12-30 (Lotus 1-2-3 leap-year quirk included in the day count).
+ */
+function parseFlexibleDate(value: string | number | null | undefined): Date | null {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  if (!s) return null;
 
-  const date = new Date(value);
+  if (isExcelSerialDateValue(s)) {
+    const serial = Number(s);
+    const ms = Date.UTC(1899, 11, 30) + serial * 86400000;
+    const excelDate = new Date(ms);
+    return isNaN(excelDate.getTime()) ? null : excelDate;
+  }
 
-  if (isNaN(date.getTime())) return value; // fallback if invalid
+  const date = new Date(s);
+  return isNaN(date.getTime()) ? null : date;
+}
 
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = date.getFullYear();
+function formatToMMDDYYYY(value: string | number): string {
+  if (value == null || value === "") return String(value ?? "");
+
+  const date = parseFlexibleDate(value);
+  if (!date) return String(value);
+
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
 
   return `${month}/${day}/${year}`;
 }
 
-function formatToMMDDYYYYHHMM(value: string): string {
-  if (!value) return value;
+function formatToMMDDYYYYHHMM(value: string | number): string {
+  if (value == null || value === "") return String(value ?? "");
 
-  const date = new Date(value);
+  const date = parseFlexibleDate(value);
+  if (!date) return String(value);
 
-  if (isNaN(date.getTime())) return value;
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
 
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = date.getFullYear();
-
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, "0");
+  let hours = date.getUTCHours();
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
   const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12;
   if (hours === 0) hours = 12;
@@ -154,12 +187,12 @@ function formatToMMDDYYYYHHMM(value: string): string {
 }
 
 /** Returns relative string: "X days ago" or "In X days", or null if invalid */
-function getRelativeDateString(dateStr: string): string | null {
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return null;
+function getRelativeDateString(dateStr: string | number): string | null {
+  const date = parseFlexibleDate(dateStr);
+  if (!date) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const d = new Date(date);
+  const d = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
   d.setHours(0, 0, 0, 0);
   const diffMs = d.getTime() - today.getTime();
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
@@ -200,7 +233,10 @@ function isDateFieldOrValue(label?: string, key?: string, value?: string): boole
   const l = (label ?? "").toLowerCase();
   const k = (key ?? "").toLowerCase();
   const hasDateInName = l.includes("date") || k.includes("date");
-  const looksLikeDate = value != null && DATE_PATTERN.test(String(value).trim());
+  const valueStr = value != null ? String(value).trim() : "";
+  const looksLikeDate =
+    valueStr !== "" &&
+    (DATE_PATTERN.test(valueStr) || (hasDateInName && isExcelSerialDateValue(valueStr)));
   return hasDateInName || looksLikeDate;
 }
 
@@ -310,7 +346,14 @@ export default function FieldValueRenderer({
   const [statusDefLoading, setStatusDefLoading] = useState(false);
   const [localStatusOverride, setLocalStatusOverride] = useState<string | null>(null);
 
-  const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
+  const resolvedMeta = resolveFieldRenderMeta(fieldInfo, entityType);
+  const fieldType = (resolvedMeta.fieldType || fieldInfo?.fieldType || "").toLowerCase();
+  const resolvedLookupType =
+    resolvedMeta.lookupType ||
+    resolvedMeta.multiSelectLookupType ||
+    fieldInfo?.lookupType ||
+    fieldInfo?.multiSelectLookupType ||
+    "";
   const label = (fieldInfo?.label || "").toLowerCase();
   const fieldKey = (fieldInfo?.key || "").toLowerCase();
   let fieldName = (fieldInfo?.name || "").toLowerCase();
@@ -669,10 +712,14 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Lookup fields
+  // Lookup fields (admin fieldType/lookupType, or inferred e.g. Field_69 → owner)
   const isLookup = fieldType === "lookup" || fieldType === "multiselect_lookup";
   if (isLookup) {
-    const lookupType = fieldInfo?.lookupType || fieldInfo?.multiSelectLookupType;
+    const lookupType =
+      resolvedLookupType ||
+      fieldInfo?.lookupType ||
+      fieldInfo?.multiSelectLookupType ||
+      "";
     const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
     const showLookupWarning = Boolean(lookupFallback);
     return (

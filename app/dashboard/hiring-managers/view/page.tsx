@@ -19,7 +19,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import {
   sendCalendarInvite,
   type CalendarEvent,
@@ -1196,6 +1196,35 @@ out.sort((a, b) => {
       setHeaderFieldsOrder([...selectedOrder, ...newFields]);
     }
   }, [headerFieldCatalog.length, headerFields, headerFieldsOrder.length]);
+
+  // Apply Admin Header Default (or hardcoded fallback) for first-time / uncustomized headers
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0) return;
+
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    );
+    const inCatalog = remapped.filter((k) => catalogKeys.includes(k));
+    const savedForEffective = inCatalog.length > 0 ? inCatalog : [];
+
+    const next = getEffectiveVisibleKeys(
+      savedForEffective,
+      availableFields,
+      catalogKeys,
+      {
+        keyForField: headerCatalogKeyFromField,
+        defaultFlag: "headerDefault",
+        sortField: "header_sort_order",
+        fallbackKeys: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
+      }
+    );
+
+    if (JSON.stringify(next) !== JSON.stringify(headerFields)) {
+      setHeaderFields(next);
+    }
+  }, [headerFieldCatalog, availableFields, headerFields, setHeaderFields]);
 
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -5742,11 +5771,23 @@ out.sort((a, b) => {
           saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
           isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
+            const catalogKeys = headerFieldCatalog.map((f) => f.key);
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => `custom:${f.field_name || f.field_key || f.api_name || f.id}`);
+              .map(f => headerCatalogKeyFromField(f));
 
-            const defaults = Array.from(new Set([...HIRING_MANAGER_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            const fromAdmin = getDefaultVisibleKeys(
+              availableFields,
+              catalogKeys,
+              {
+                keyForField: headerCatalogKeyFromField,
+                defaultFlag: "headerDefault",
+                sortField: "header_sort_order",
+                fallbackKeys: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
+              }
+            );
+
+            const defaults = Array.from(new Set([...fromAdmin, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}

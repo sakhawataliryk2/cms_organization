@@ -22,7 +22,7 @@ import {
   panelCatalogKeyFromField,
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
-import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import RequestActionModal from '@/components/RequestActionModal';
 import { useAuth } from '@/lib/auth';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
@@ -2656,6 +2656,35 @@ out.sort((a, b) => {
       setHeaderFieldsOrder([...selectedOrder, ...newFields]);
     }
   }, [headerFieldCatalog.length, headerFields]);
+
+  // Apply Admin Header Default (or hardcoded fallback) for first-time / uncustomized headers
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0) return;
+
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    );
+    const inCatalog = remapped.filter((k) => catalogKeys.includes(k));
+    const savedForEffective = inCatalog.length > 0 ? inCatalog : [];
+
+    const next = getEffectiveVisibleKeys(
+      savedForEffective,
+      availableFields,
+      catalogKeys,
+      {
+        keyForField: headerCatalogKeyFromField,
+        defaultFlag: "headerDefault",
+        sortField: "header_sort_order",
+        fallbackKeys: DEFAULT_HEADER_FIELDS,
+      }
+    );
+
+    if (JSON.stringify(next) !== JSON.stringify(headerFields)) {
+      setHeaderFields(next);
+    }
+  }, [headerFieldCatalog, availableFields, headerFields, setHeaderFields]);
 
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
@@ -6740,11 +6769,23 @@ out.sort((a, b) => {
           saveButtonText="Done"
           isSaveDisabled={headerFields.length === 0}
           onReset={() => {
+            const catalogKeys = headerFieldCatalog.map((f) => f.key);
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
               .map(f => headerCatalogKeyFromField(f));
 
-            const defaults = Array.from(new Set([...DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            const fromAdmin = getDefaultVisibleKeys(
+              availableFields,
+              catalogKeys,
+              {
+                keyForField: headerCatalogKeyFromField,
+                defaultFlag: "headerDefault",
+                sortField: "header_sort_order",
+                fallbackKeys: DEFAULT_HEADER_FIELDS,
+              }
+            );
+
+            const defaults = Array.from(new Set([...fromAdmin, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map((f) => f.key));
           }}

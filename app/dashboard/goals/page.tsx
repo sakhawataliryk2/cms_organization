@@ -113,13 +113,11 @@ const GoalsAndQuotas = () => {
   const usersDropdownRef = useRef<HTMLDivElement>(null);
 
   const [goalsQuotasData, setGoalsQuotasData] = useState<GoalQuotaRow[]>([]);
-  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
-  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  // Records modal (already existed)
-  const [recordsByUserCategory, setRecordsByUserCategory] = useState<
-    Record<string, any[]>
-  >({});
+  // Records modal
   const [selectedRecords, setSelectedRecords] = useState<{
     userId: string;
     category: string;
@@ -127,10 +125,7 @@ const GoalsAndQuotas = () => {
   } | null>(null);
   const [showRecordsModal, setShowRecordsModal] = useState(false);
 
-  // ✅ Notes modal (NEW)
-  const [notesByUserCategory, setNotesByUserCategory] = useState<
-    Record<string, any[]>
-  >({});
+  // Notes modal
   const [selectedNotes, setSelectedNotes] = useState<{
     userId: string;
     category: string;
@@ -151,6 +146,7 @@ const GoalsAndQuotas = () => {
 
   const [isApplyingRange, setIsApplyingRange] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const applyAbortRef = useRef<AbortController | null>(null);
 
   const calendarData = getCalendarData();
   const selectedDayAppointments = mockAppointments;
@@ -163,6 +159,33 @@ const GoalsAndQuotas = () => {
     "Placements",
     "Leads",
   ];
+
+  const categoryApiMap: Record<string, string> = {
+    Organization: "organizations",
+    Jobs: "jobs",
+    "Job Seekers": "job-seekers",
+    "Hiring Managers": "hiring-managers",
+    Placements: "placements",
+    Leads: "leads",
+  };
+
+  const categoryReportKeyMap: Record<string, string> = {
+    Organization: "organizations",
+    Jobs: "jobs",
+    "Job Seekers": "job-seekers",
+    "Hiring Managers": "hiring-managers",
+    Placements: "placements",
+    Leads: "leads",
+  };
+
+  const responseKeyMap: Record<string, string> = {
+    Organization: "organizations",
+    Jobs: "jobs",
+    "Job Seekers": "jobSeekers",
+    "Hiring Managers": "hiringManagers",
+    Placements: "placements",
+    Leads: "leads",
+  };
 
   const navigateMonth = (direction: "prev" | "next") => {
     setCurrentMonth((prev) => {
@@ -184,17 +207,95 @@ const GoalsAndQuotas = () => {
     };
   };
 
-  // Fetch users
+  const isInRange = (
+    dateString: string | null | undefined,
+    range: { start: string; end: string }
+  ) => {
+    if (!dateString) return false;
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return false;
+    const rangeStart = range.start ? new Date(`${range.start}T00:00:00`) : null;
+    const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
+    if (rangeStart && d < rangeStart) return false;
+    if (rangeEnd && d > rangeEnd) return false;
+    return true;
+  };
+
+  /** Efficient SQL-backed counts via /api/activity-report (avoids N+1 note fetches). */
+  const fetchActivityReports = async (
+    usersList: User[],
+    range: { start: string; end: string },
+    signal?: AbortSignal
+  ) => {
+    setIsLoadingReport(true);
+    setReportError(null);
+    try {
+      const concurrency = 5;
+      const reportsByUser = new Map<string, Record<string, any>>();
+
+      for (let i = 0; i < usersList.length; i += concurrency) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const batch = usersList.slice(i, i + concurrency);
+        const results = await Promise.all(
+          batch.map(async (user) => {
+            const response = await fetch(
+              `/api/activity-report?userId=${encodeURIComponent(user.id)}&start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`,
+              { signal, headers: getAuthHeader() }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(data.message || `Failed to load report for ${user.name || user.email}`);
+            }
+            return {
+              userId: String(user.id),
+              categories: (data.categories || {}) as Record<string, any>,
+            };
+          })
+        );
+        for (const result of results) {
+          reportsByUser.set(result.userId, result.categories);
+        }
+      }
+
+      setGoalsQuotasData((prevData) =>
+        prevData.map((row) => {
+          const cats = reportsByUser.get(String(row.userId)) || {};
+          const reportKey = categoryReportKeyMap[row.category];
+          const counts = (reportKey && cats[reportKey]) || {};
+          return {
+            ...row,
+            notesCount: Number(counts.notesCount) || 0,
+            addedToSystem: Number(counts.addedToSystem) || 0,
+            inboundEmails: Number(counts.inboundEmails) || 0,
+            outboundEmails: Number(counts.outboundEmails) || 0,
+            calls: Number(counts.calls) || 0,
+            texts: Number(counts.texts) || 0,
+          };
+        })
+      );
+    } catch (error) {
+      if ((error as Error)?.name === "AbortError") return;
+      console.error("Error fetching activity reports:", error);
+      setReportError(
+        error instanceof Error ? error.message : "Failed to fetch activity report"
+      );
+    } finally {
+      setIsLoadingReport(false);
+    }
+  };
+
+  // Fetch users, then load activity counts
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         const response = await fetch("/api/users/active");
         if (response.ok) {
           const data = await response.json();
-          setUsers(data.users || []);
+          const list: User[] = data.users || [];
+          setUsers(list);
 
           const initialData: GoalQuotaRow[] = [];
-          (data.users || []).forEach((user: User) => {
+          list.forEach((user: User) => {
             categories.forEach((category) => {
               initialData.push({
                 userId: user.id,
@@ -212,9 +313,9 @@ const GoalsAndQuotas = () => {
           });
           setGoalsQuotasData(initialData);
 
-          // initial load
-          fetchNotesCount(data.users || [], dateRange);
-          fetchRecordsCount(data.users || [], dateRange);
+          if (list.length > 0) {
+            void fetchActivityReports(list, dateRange);
+          }
         }
       } catch (error) {
         console.error("Error fetching users:", error);
@@ -225,233 +326,110 @@ const GoalsAndQuotas = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Fetch notes count + store notes list (for modal)
-  const fetchNotesCount = async (
-    usersList: User[],
-    range: { start: string; end: string }
-  ) => {
-    setIsLoadingNotes(true);
+  const handleRecordsClick = async (userId: string, category: string) => {
+    const apiEndpoint = categoryApiMap[category];
+    if (!apiEndpoint || !userId) return;
+
+    setIsLoadingDetails(true);
     try {
-      const categoryApiMap: Record<string, string> = {
-        Organization: "organizations",
-        Jobs: "jobs",
-        "Job Seekers": "job-seekers",
-        "Hiring Managers": "hiring-managers",
-        Placements: "placements",
-        Leads: "leads",
-      };
+      const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+        headers: getAuthHeader(),
+      });
+      if (!entitiesResponse.ok) {
+        setSelectedRecords({ userId, category, records: [] });
+        setShowRecordsModal(true);
+        return;
+      }
 
-      const responseKeyMap: Record<string, string> = {
-        Organization: "organizations",
-        Jobs: "jobs",
-        "Job Seekers": "jobSeekers",
-        "Hiring Managers": "hiringManagers",
-        Placements: "placements",
-        Leads: "leads",
-      };
+      const entitiesData = await entitiesResponse.json();
+      const responseKey =
+        responseKeyMap[category] || apiEndpoint.replace("-", "");
+      const entities = entitiesData[responseKey] || [];
+      const records = entities.filter(
+        (entity: any) =>
+          String(entity.created_by) === String(userId) &&
+          isInRange(entity.created_at, dateRange)
+      );
 
-      const notesCountMap: Record<string, number> = {};
-      const notesMap: Record<string, any[]> = {}; // ✅ store notes list too
+      setSelectedRecords({ userId, category, records });
+      setShowRecordsModal(true);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
 
-      const rangeStart = range.start
-        ? new Date(`${range.start}T00:00:00`)
-        : null;
-      const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
+  const handleNotesClick = async (userId: string, category: string) => {
+    const apiEndpoint = categoryApiMap[category];
+    if (!apiEndpoint || !userId) return;
 
-      const isInRange = (dateString: string | null | undefined) => {
-        if (!dateString) return false;
-        const d = new Date(dateString);
-        if (Number.isNaN(d.getTime())) return false;
-        if (rangeStart && d < rangeStart) return false;
-        if (rangeEnd && d > rangeEnd) return false;
-        return true;
-      };
+    if (category === "Placements") {
+      setSelectedNotes({ userId, category, notes: [] });
+      setShowNotesModal(true);
+      return;
+    }
 
-      for (const category of categories) {
-        const apiEndpoint = categoryApiMap[category];
-        if (!apiEndpoint) continue;
+    setIsLoadingDetails(true);
+    try {
+      const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+        headers: getAuthHeader(),
+      });
+      if (!entitiesResponse.ok) {
+        setSelectedNotes({ userId, category, notes: [] });
+        setShowNotesModal(true);
+        return;
+      }
 
-        // Skip Placements notes (no API endpoint exists)
-        if (category === 'Placements') continue;
+      const entitiesData = await entitiesResponse.json();
+      const responseKey =
+        responseKeyMap[category] || apiEndpoint.replace("-", "");
+      const entities =
+        entitiesData[responseKey] ||
+        entitiesData[category.toLowerCase().replace(" ", "")] ||
+        [];
 
-        try {
-          const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
-            headers: getAuthHeader(),
-          });
-          if (!entitiesResponse.ok) continue;
-
-          const entitiesData = await entitiesResponse.json();
-          const responseKey =
-            responseKeyMap[category] || apiEndpoint.replace("-", "");
-          const entities =
-            entitiesData[responseKey] ||
-            entitiesData[category.toLowerCase().replace(" ", "")] ||
-            [];
-
-          for (const entity of entities) {
-            if (!entity?.id) continue;
-
+      const notesList: any[] = [];
+      const concurrency = 8;
+      for (let i = 0; i < entities.length; i += concurrency) {
+        const batch = entities.slice(i, i + concurrency);
+        const batchNotes = await Promise.all(
+          batch.map(async (entity: any) => {
+            if (!entity?.id) return [] as any[];
             try {
               const notesResponse = await fetch(
                 `/api/${apiEndpoint}/${entity.id}/notes`,
                 { headers: getAuthHeader() }
               );
-
-              if (notesResponse.ok) {
-                const notesData = await notesResponse.json();
-                const notes = notesData.notes || [];
-
-                notes.forEach((note: any) => {
-                  if (note.created_by && isInRange(getNoteDateTimeValue(note))) {
-                    const key = `${note.created_by}-${category}`;
-                    notesCountMap[key] = (notesCountMap[key] || 0) + 1;
-
-                    if (!notesMap[key]) notesMap[key] = [];
-                    notesMap[key].push({
-                      ...note,
-                      _entityId: entity.id,
-                      _entityName:
-                        entity.name ||
-                        entity.job_title ||
-                        entity.full_name ||
-                        `${category} #${entity.id}`,
-                      _apiEndpoint: apiEndpoint,
-                    });
-                  }
-                });
-              }
-            } catch (err) {
-              console.error(
-                `Error fetching notes for ${category} entity ${entity.id}:`,
-                err
-              );
+              if (!notesResponse.ok) return [] as any[];
+              const notesData = await notesResponse.json();
+              return (notesData.notes || [])
+                .filter(
+                  (note: any) =>
+                    String(note.created_by) === String(userId) &&
+                    isInRange(getNoteDateTimeValue(note), dateRange)
+                )
+                .map((note: any) => ({
+                  ...note,
+                  _entityId: entity.id,
+                  _entityName:
+                    entity.name ||
+                    entity.job_title ||
+                    entity.full_name ||
+                    `${category} #${entity.id}`,
+                  _apiEndpoint: apiEndpoint,
+                }));
+            } catch {
+              return [] as any[];
             }
-          }
-        } catch (err) {
-          console.error(`Error fetching ${category} entities:`, err);
-        }
+          })
+        );
+        for (const notes of batchNotes) notesList.push(...notes);
       }
 
-      // ✅ store notes list
-      setNotesByUserCategory(notesMap);
-
-      // update rows
-      setGoalsQuotasData((prevData) =>
-        prevData.map((row) => {
-          const key = `${row.userId}-${row.category}`;
-          return {
-            ...row,
-            notesCount: notesCountMap[key] || 0,
-          };
-        })
-      );
-    } catch (error) {
-      console.error("Error fetching notes count:", error);
+      setSelectedNotes({ userId, category, notes: notesList });
+      setShowNotesModal(true);
     } finally {
-      setIsLoadingNotes(false);
+      setIsLoadingDetails(false);
     }
-  };
-
-  // ✅ Fetch records count + store records list (already)
-  const fetchRecordsCount = async (
-    usersList: User[],
-    range: { start: string; end: string }
-  ) => {
-    setIsLoadingRecords(true);
-    try {
-      const categoryApiMap: Record<string, string> = {
-        Organization: "organizations",
-        Jobs: "jobs",
-        "Job Seekers": "job-seekers",
-        "Hiring Managers": "hiring-managers",
-        Placements: "placements",
-        Leads: "leads",
-      };
-
-      const responseKeyMap: Record<string, string> = {
-        Organization: "organizations",
-        Jobs: "jobs",
-        "Job Seekers": "jobSeekers",
-        "Hiring Managers": "hiringManagers",
-        Placements: "placements",
-        Leads: "leads",
-      };
-
-      const recordsMap: Record<string, any[]> = {};
-
-      const rangeStart = range.start
-        ? new Date(`${range.start}T00:00:00`)
-        : null;
-      const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
-
-      const isEntityInRange = (entity: any) => {
-        const dateString = entity?.created_at;
-        if (!dateString) return false;
-        const d = new Date(dateString);
-        if (Number.isNaN(d.getTime())) return false;
-        if (rangeStart && d < rangeStart) return false;
-        if (rangeEnd && d > rangeEnd) return false;
-        return true;
-      };
-
-      for (const category of categories) {
-        const apiEndpoint = categoryApiMap[category];
-        if (!apiEndpoint) continue;
-
-        try {
-          const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
-            headers: getAuthHeader(),
-          });
-          if (!entitiesResponse.ok) continue;
-
-          const entitiesData = await entitiesResponse.json();
-          const responseKey =
-            responseKeyMap[category] || apiEndpoint.replace("-", "");
-          const entities = entitiesData[responseKey] || [];
-
-          entities.forEach((entity: any) => {
-            if (entity.created_by && isEntityInRange(entity)) {
-              const key = `${entity.created_by}-${category}`;
-              if (!recordsMap[key]) recordsMap[key] = [];
-              recordsMap[key].push(entity);
-            }
-          });
-        } catch (err) {
-          console.error(`Error fetching ${category} entities:`, err);
-        }
-      }
-
-      setRecordsByUserCategory(recordsMap);
-
-      setGoalsQuotasData((prevData) =>
-        prevData.map((row) => {
-          const key = `${row.userId}-${row.category}`;
-          return {
-            ...row,
-            addedToSystem: recordsMap[key]?.length || 0,
-          };
-        })
-      );
-    } catch (error) {
-      console.error("Error fetching records count:", error);
-    } finally {
-      setIsLoadingRecords(false);
-    }
-  };
-
-  // ✅ click handlers
-  const handleRecordsClick = (userId: string, category: string) => {
-    const key = `${userId}-${category}`;
-    const records = recordsByUserCategory[key] || [];
-    setSelectedRecords({ userId, category, records });
-    setShowRecordsModal(true);
-  };
-
-  const handleNotesClick = (userId: string, category: string) => {
-    const key = `${userId}-${category}`;
-    const notes = notesByUserCategory[key] || [];
-    setSelectedNotes({ userId, category, notes });
-    setShowNotesModal(true);
   };
 
   // Filter rows
@@ -505,6 +483,21 @@ const GoalsAndQuotas = () => {
     else setSelectedUsers(users.map((u) => u.id));
   };
 
+  const runApply = async (range: { start: string; end: string }) => {
+    if (users.length === 0) return;
+    applyAbortRef.current?.abort();
+    const controller = new AbortController();
+    applyAbortRef.current = controller;
+    setIsApplyingRange(true);
+    try {
+      await fetchActivityReports(users, range, controller.signal);
+    } finally {
+      if (applyAbortRef.current === controller) {
+        setIsApplyingRange(false);
+      }
+    }
+  };
+
   const applyDateRange = async () => {
     setRangeError(null);
     if (!dateRange.start || !dateRange.end) {
@@ -515,17 +508,7 @@ const GoalsAndQuotas = () => {
       setRangeError("Start date must be before or equal to end date.");
       return;
     }
-    if (users.length === 0) return;
-
-    setIsApplyingRange(true);
-    try {
-      await Promise.all([
-        fetchNotesCount(users, dateRange),
-        fetchRecordsCount(users, dateRange),
-      ]);
-    } finally {
-      setIsApplyingRange(false);
-    }
+    await runApply(dateRange);
   };
 
   const resetToThisMonth = async () => {
@@ -536,17 +519,7 @@ const GoalsAndQuotas = () => {
     };
     setDateRange(next);
     setRangeError(null);
-    if (users.length === 0) return;
-
-    setIsApplyingRange(true);
-    try {
-      await Promise.all([
-        fetchNotesCount(users, next),
-        fetchRecordsCount(users, next),
-      ]);
-    } finally {
-      setIsApplyingRange(false);
-    }
+    await runApply(next);
   };
 
   const exportToExcel = () => {
@@ -651,8 +624,9 @@ const GoalsAndQuotas = () => {
           title="ACTIVITY REPORT"
           subtitle="Counts by category for the selected users and date range."
           rows={goalsActivityRows}
-          loading={isLoadingNotes || isLoadingRecords}
-          loadingDetails={false}
+          loading={isLoadingReport || isApplyingRange}
+          error={reportError}
+          loadingDetails={isLoadingDetails}
           onNotesClick={(row) => handleNotesClick(row.userId ?? "", row.categoryLabel)}
           onRecordsClick={(row) => handleRecordsClick(row.userId ?? "", row.categoryLabel)}
           notesModalOpen={showNotesModal}

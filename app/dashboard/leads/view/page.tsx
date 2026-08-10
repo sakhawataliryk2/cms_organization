@@ -20,7 +20,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 // Drag and drop 
 import DocumentViewerModal from "@/components/DocumentViewerModal";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
@@ -784,18 +784,34 @@ out.sort((a, b) => {
     }
   }, [headerFieldCatalog.length, headerFields]);
 
+  // Apply Admin Header Default (or hardcoded fallback) for first-time / uncustomized headers
   useEffect(() => {
     const catalogKeys = headerFieldCatalog.map((f) => f.key);
-    if (catalogKeys.length === 0 || headerFields.length === 0) return;
-    const catalogSet = new Set(catalogKeys);
+    if (catalogKeys.length === 0) return;
+
     const remapped = remapLegacyCustomKeys(
       headerFields,
       headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
-    ).filter((k) => catalogSet.has(k));
-    if (remapped.length > 0 && JSON.stringify(remapped) !== JSON.stringify(headerFields)) {
-      setHeaderFields(remapped);
+    );
+    const inCatalog = remapped.filter((k) => catalogKeys.includes(k));
+    const savedForEffective = inCatalog.length > 0 ? inCatalog : [];
+
+    const next = getEffectiveVisibleKeys(
+      savedForEffective,
+      availableFields,
+      catalogKeys,
+      {
+        keyForField: headerCatalogKeyFromField,
+        defaultFlag: "headerDefault",
+        sortField: "header_sort_order",
+        fallbackKeys: LEAD_DEFAULT_HEADER_FIELDS,
+      }
+    );
+
+    if (JSON.stringify(next) !== JSON.stringify(headerFields)) {
+      setHeaderFields(next);
     }
-  }, [headerFieldCatalog, headerFields, setHeaderFields]);
+  }, [headerFieldCatalog, availableFields, headerFields, setHeaderFields]);
 
   // Fetch lead data when component mounts
   useEffect(() => {
@@ -3933,11 +3949,23 @@ out.sort((a, b) => {
           saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
           isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
+            const catalogKeys = headerFieldCatalog.map((f) => f.key);
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
-            
-            const defaults = Array.from(new Set([...LEAD_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+              .map(f => headerCatalogKeyFromField(f));
+
+            const fromAdmin = getDefaultVisibleKeys(
+              availableFields,
+              catalogKeys,
+              {
+                keyForField: headerCatalogKeyFromField,
+                defaultFlag: "headerDefault",
+                sortField: "header_sort_order",
+                fallbackKeys: LEAD_DEFAULT_HEADER_FIELDS,
+              }
+            );
+
+            const defaults = Array.from(new Set([...fromAdmin, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}
