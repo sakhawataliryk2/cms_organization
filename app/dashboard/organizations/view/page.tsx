@@ -19,7 +19,7 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
-import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import CountdownTimer from "@/components/CountdownTimer";
 import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import {
@@ -152,17 +152,20 @@ const REQUIRED_HM_CONTACT_FIELD_NAMES = [
 ] as const;
 const REQUIRED_JOB_FIELD_NAMES = [
   "Field_1",
-  "Field_10",
+  "Field_2",
   "Field_4",
+  "Field_6",
   "Field_69",
   "Field_70",
 ] as const;
-const JOB_FULL_ADDRESS_FIELD_NAMES = [
-  "Field_12",
-  "Field_13",
-  "Field_14",
-  "Field_15",
-  "Field_17",
+const JOB_TABLE_COLUMN_KEYS = [
+  "Field_1",
+  "Field_2",
+  "Field_4",
+  "Field_6",
+  "job_type",
+  "Field_69",
+  "Field_70",
 ] as const;
 
 const isClientVisitAction = (action?: string) => {
@@ -653,6 +656,12 @@ export default function OrganizationView() {
   const [contactSearchTerm, setContactSearchTerm] = useState("");
   const [hiringManagerFieldLabels, setHiringManagerFieldLabels] = useState<Record<string, string>>({});
 
+  // Jobs tab / Our Jobs panel: sortable/filterable column state
+  const JOB_DEFAULT_COLUMNS = [...JOB_TABLE_COLUMN_KEYS];
+  const [jobColumnFields, setJobColumnFields] = useState<string[]>(JOB_DEFAULT_COLUMNS);
+  const [jobColumnSorts, setJobColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [jobColumnFilters, setJobColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -676,7 +685,6 @@ export default function OrganizationView() {
     (async () => {
       const allJobFieldNames = [
         ...REQUIRED_JOB_FIELD_NAMES,
-        ...JOB_FULL_ADDRESS_FIELD_NAMES,
       ];
       const labelEntries = await Promise.all(
         allJobFieldNames.map(async (fieldName) => {
@@ -922,6 +930,7 @@ export default function OrganizationView() {
         const k = headerCatalogKeyFromField(f);
         return {
           key: k,
+          name: String(f.field_name ?? f.field_key ?? f.api_name ?? ""),
           label: f.field_label || f.field_name || String(f.field_key || f.id),
           fieldType: (f.field_type ?? f.fieldType ?? "") as string,
           lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
@@ -1006,8 +1015,7 @@ export default function OrganizationView() {
   };
 
   const getHeaderFieldInfo = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key);
-    return found as any;
+    return headerFieldCatalog.find((f) => f.key === key);
   };
 
   const getAboutOrganizationFieldName = () => {
@@ -1924,18 +1932,35 @@ export default function OrganizationView() {
     }
   }, [headerFieldCatalog.length, headerFields]);
 
+  // Apply Admin Header Default (or hardcoded fallback) for first-time / uncustomized headers
   useEffect(() => {
     const catalogKeys = headerFieldCatalog.map((f) => f.key);
-    if (catalogKeys.length === 0 || headerFields.length === 0) return;
-    const catalogSet = new Set(catalogKeys);
+    if (catalogKeys.length === 0) return;
+
     const remapped = remapLegacyCustomKeys(
       headerFields,
       headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
-    ).filter((k) => catalogSet.has(k));
-    if (remapped.length > 0 && JSON.stringify(remapped) !== JSON.stringify(headerFields)) {
-      setHeaderFields(remapped);
+    );
+    const inCatalog = remapped.filter((k) => catalogKeys.includes(k));
+    // No catalog intersection (e.g. legacy phone/website seeds) ⇒ treat as uncustomized
+    const savedForEffective = inCatalog.length > 0 ? inCatalog : [];
+
+    const next = getEffectiveVisibleKeys(
+      savedForEffective,
+      availableFields,
+      catalogKeys,
+      {
+        keyForField: headerCatalogKeyFromField,
+        defaultFlag: "headerDefault",
+        sortField: "header_sort_order",
+        fallbackKeys: ORG_DEFAULT_HEADER_FIELDS,
+      }
+    );
+
+    if (JSON.stringify(next) !== JSON.stringify(headerFields)) {
+      setHeaderFields(next);
     }
-  }, [headerFieldCatalog, headerFields, setHeaderFields]);
+  }, [headerFieldCatalog, availableFields, headerFields, setHeaderFields]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -2460,12 +2485,200 @@ export default function OrganizationView() {
     return "—";
   };
 
-  const getJobFullAddressValue = (job: any) => {
-    const parts = JOB_FULL_ADDRESS_FIELD_NAMES.map((fieldName) =>
-      String(getJobCustomFieldValue(job, fieldName) ?? "").trim()
-    ).filter((v) => v && v !== "—");
-    return parts.length ? parts.join(", ") : "—";
+  const jobColumnsCatalog = useMemo(
+    () =>
+      JOB_TABLE_COLUMN_KEYS.map((key) => {
+        if (key === "job_type") {
+          return {
+            key,
+            label: "Job Type",
+            sortable: true,
+            filterType: "text" as const,
+          };
+        }
+        return {
+          key,
+          label: jobFieldLabels[key] || key,
+          sortable: true,
+          filterType: (key === "Field_4" ? "select" : "text") as "text" | "select",
+        };
+      }),
+    [jobFieldLabels]
+  );
+
+  const getJobColumnLabel = (key: string) =>
+    jobColumnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getJobColumnInfo = (key: string) =>
+    jobColumnsCatalog.find((c) => c.key === key);
+
+  const getJobColumnValue = (job: any, key: string) => {
+    if (key === "job_type") {
+      return job.job_type || job.employment_type || "—";
+    }
+    if (REQUIRED_JOB_FIELD_NAMES.includes(key as (typeof REQUIRED_JOB_FIELD_NAMES)[number])) {
+      const customValue = getJobCustomFieldValue(job, key);
+      if (key === "Field_6" && (customValue == null || customValue === "—")) {
+        const description = job.job_description || job.description;
+        if (description != null && String(description).trim() !== "") {
+          return description;
+        }
+      }
+      return customValue;
+    }
+    return "—";
   };
+
+  const getJobFieldInfoForRenderer = (key: string) => {
+    if (key === "job_type") {
+      return { key, name: key, label: "Job Type" };
+    }
+    return { key, name: key, label: jobFieldLabels[key] || key };
+  };
+
+  const jobStatusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    jobs.forEach((job) => {
+      const status = getJobCustomFieldValue(job, "Field_4");
+      if (status != null && status !== "—" && String(status).trim() !== "") {
+        statuses.add(String(status).trim());
+      }
+      if (job.status) statuses.add(String(job.status).trim());
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [jobs, jobFieldLabels]);
+
+  const filteredAndSortedJobs = useMemo(() => {
+    let result = [...filteredJobs];
+
+    Object.entries(jobColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+      result = result.filter((job) => {
+        const value = getJobColumnValue(job, columnKey);
+        return String(value ?? "")
+          .toLowerCase()
+          .includes(String(filterValue).toLowerCase());
+      });
+    });
+
+    const activeSorts = Object.entries(jobColumnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        const aValue = getJobColumnValue(a, sortKey);
+        const bValue = getJobColumnValue(b, sortKey);
+        const cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [filteredJobs, jobColumnFilters, jobColumnSorts, jobFieldLabels]);
+
+  const handleJobColumnSort = (columnKey: string) => {
+    setJobColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") return { ...prev, [columnKey]: "desc" };
+      if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: "asc" };
+    });
+  };
+
+  const handleJobColumnFilter = (columnKey: string, value: string) => {
+    setJobColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  const handleJobColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = jobColumnFields.indexOf(active.id as string);
+    const newIndex = jobColumnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setJobColumnFields(arrayMove(jobColumnFields, oldIndex, newIndex));
+    }
+  };
+
+  const renderJobsOverviewTable = (rows: any[]) => (
+    <div className="overflow-x-auto">
+      <DndContext collisionDetection={closestCenter} onDragEnd={handleJobColumnDragEnd}>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-100 border-b">
+              <th className="text-left px-6 py-3 font-medium">Actions</th>
+              <SortableContext
+                items={jobColumnFields}
+                strategy={horizontalListSortingStrategy}
+              >
+                {jobColumnFields.map((key) => {
+                  const columnInfo = getJobColumnInfo(key);
+                  if (!columnInfo) return null;
+                  return (
+                    <SortableColumnHeader
+                      key={key}
+                      id={key}
+                      columnKey={key}
+                      label={getJobColumnLabel(key)}
+                      sortState={jobColumnSorts[key] || null}
+                      filterValue={jobColumnFilters[key] || null}
+                      onSort={() => handleJobColumnSort(key)}
+                      onFilterChange={(value) => handleJobColumnFilter(key, value)}
+                      filterType={columnInfo.filterType}
+                      filterOptions={
+                        key === "Field_4" ? jobStatusOptions : undefined
+                      }
+                    />
+                  );
+                })}
+              </SortableContext>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((job: any) => (
+              <tr key={job.id} className="border-b hover:bg-gray-50">
+                <td className="px-6 py-3">
+                  <ActionDropdown
+                    label="Actions"
+                    options={[
+                      {
+                        label: "View",
+                        action: () => router.push(`/dashboard/jobs/view?id=${job.id}`),
+                      },
+                    ]}
+                  />
+                </td>
+                {jobColumnFields.map((key) => (
+                  <td key={key} className="px-6 py-3">
+                    <FieldValueRenderer
+                      value={getJobColumnValue(job, key)}
+                      fieldInfo={getJobFieldInfoForRenderer(key)}
+                      entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                      stopPropagation
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DndContext>
+    </div>
+  );
 
   const contactStatusOptions = useMemo(() => {
     const statuses = new Set<string>();
@@ -3770,7 +3983,7 @@ export default function OrganizationView() {
       );
     }
     if (panelId === "ourJobs") {
-      const activeJobs = jobs.filter((j: any) => !j.archived_at);
+      const activeJobs = filteredAndSortedJobs.filter((j: any) => !j.archived_at);
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader title="Our Jobs:">
@@ -3779,28 +3992,17 @@ export default function OrganizationView() {
                 <div className="flex justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
                 </div>
+              ) : jobsError ? (
+                <div className="text-red-500 p-3 text-sm">{jobsError}</div>
               ) : activeJobs.length > 0 ? (
-                <div className="divide-y divide-gray-200">
-                  {activeJobs.slice(0, 5).map((job: any) => (
-                    <div
-                      key={job.id}
-                      className="p-3 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
-                    >
-                      <div className="font-medium text-blue-600 hover:underline">
-                        {job.job_title || "Untitled Job"}
-                      </div>
-                      <div className="text-xs text-gray-500">{job.worksite_location || job.category || ""}</div>
-                    </div>
-                  ))}
-                  {activeJobs.length > 5 && (
-                    <button
-                      onClick={() => setActiveTab("jobs")}
-                      className="w-full p-2 text-blue-500 text-sm hover:underline"
-                    >
-                      View all {activeJobs.length} jobs
-                    </button>
-                  )}
+                <div className="p-2">
+                  {renderJobsOverviewTable(activeJobs)}
+                  <button
+                    onClick={() => setActiveTab("jobs")}
+                    className="w-full p-2 text-blue-500 text-sm hover:underline"
+                  >
+                    Open Jobs tab
+                  </button>
                 </div>
               ) : (
                 <div className="p-2">
@@ -5939,7 +6141,7 @@ export default function OrganizationView() {
               </span>
             ) : (
               headerFields.filter(fk => headerFieldCatalog.some(cat => cat.key === fk)).map((fk) => {
-                const info = getHeaderFieldInfo(fk) as { key?: string; label?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                const info = getHeaderFieldInfo(fk);
                 return (
                   <div key={fk} className="min-w-0">
                     <div className="text-xs text-gray-500">
@@ -5947,7 +6149,19 @@ export default function OrganizationView() {
                     </div>
                     <FieldValueRenderer
                       value={getHeaderFieldValue(fk)}
-                      fieldInfo={info ? { key: info.key ?? fk, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
+                      fieldInfo={
+                        info
+                          ? {
+                              key: info.key ?? fk,
+                              name: info.name,
+                              label: info.label,
+                              fieldType: info.fieldType,
+                              lookupType: info.lookupType,
+                              multiSelectLookupType: info.multiSelectLookupType,
+                            }
+                          : { key: fk, label: getHeaderFieldLabel(fk) }
+                      }
+                      entityType={ORGANIZATION_CUSTOM_FIELD_ENTITY}
                       emptyPlaceholder="-"
                       clickable
                       ellipsisInCell
@@ -6542,8 +6756,6 @@ export default function OrganizationView() {
                                         key,
                                         name: key,
                                         label: hiringManagerFieldLabels[key] || key,
-                                        fieldType: key === "Field_69" ? "lookup" : undefined,
-                                        lookupType: key === "Field_69" ? "owner" : undefined,
                                       }}
                                       entityType={HIRING_MANAGER_CUSTOM_FIELD_ENTITY}
                                     />
@@ -7014,100 +7226,23 @@ export default function OrganizationView() {
               </div>
             ) : jobsError ? (
               <div className="text-red-500 py-2">{jobsError}</div>
-            ) : filteredJobs.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100 border-b">
-                      <th className="text-left p-3 font-medium">Actions</th>
-                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_1"] || "Field_1"}</th>
-                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_10"] || "Field_10"}</th>
-                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_4"] || "Field_4"}</th>
-                      <th className="text-left p-3 font-medium">Full Address</th>
-                      <th className="text-left p-3 font-medium">Employment Type</th>
-                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_69"] || "Field_69"}</th>
-                      <th className="text-left p-3 font-medium">{jobFieldLabels["Field_70"] || "Field_70"}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredJobs.map((job: any) => (
-                      <tr key={job.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
-                          <ActionDropdown
-                            label="Actions"
-                            options={[
-                              {
-                                label: "View",
-                                action: () => router.push(`/dashboard/jobs/view?id=${job.id}`),
-                              },
-                            ]}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobCustomFieldValue(job, "Field_1")}
-                            fieldInfo={{ key: "Field_1", name: "Field_1", label: jobFieldLabels["Field_1"] || "Field_1" }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobCustomFieldValue(job, "Field_10")}
-                            fieldInfo={{ key: "Field_10", name: "Field_10", label: jobFieldLabels["Field_10"] || "Field_10" }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobCustomFieldValue(job, "Field_4")}
-                            fieldInfo={{ key: "Field_4", name: "Field_4", label: jobFieldLabels["Field_4"] || "Field_4" }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobFullAddressValue(job)}
-                            fieldInfo={{ key: "full_address", name: "full_address", label: "Full Address" }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                        <td className="p-3">{job.employment_type || "—"}</td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobCustomFieldValue(job, "Field_69")}
-                            fieldInfo={{
-                              key: "Field_69",
-                              name: "Field_69",
-                              label: jobFieldLabels["Field_69"] || "Field_69",
-                              fieldType: "lookup",
-                              lookupType: "owner",
-                            }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                        <td className="p-3">
-                          <FieldValueRenderer
-                            value={getJobCustomFieldValue(job, "Field_70")}
-                            fieldInfo={{ key: "Field_70", name: "Field_70", label: jobFieldLabels["Field_70"] || "Field_70" }}
-                            entityType={JOBS_CUSTOM_FIELD_ENTITY}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            ) : filteredAndSortedJobs.length > 0 ? (
+              renderJobsOverviewTable(filteredAndSortedJobs)
             ) : (
               <div className="text-center py-8">
                 <p className="text-gray-500 italic mb-4">
-                  No jobs have been added to this organization yet.
+                  {jobs.length === 0
+                    ? "No jobs have been added to this organization yet."
+                    : "No jobs match the current filters"}
                 </p>
-                <button
-                  onClick={() => handleActionSelected("add-job")}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Add First Job
-                </button>
+                {jobs.length === 0 && (
+                  <button
+                    onClick={() => handleActionSelected("add-job")}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Add First Job
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -7973,11 +8108,23 @@ export default function OrganizationView() {
           saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
           isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
           onReset={() => {
+            const catalogKeys = headerFieldCatalog.map((f) => f.key);
             const requiredCustom = (availableFields || [])
               .filter(f => f.is_required || f.required || f.isRequired)
-              .map(f => `custom:${f.field_name || f.field_key || f.field_label || f.id}`);
+              .map(f => headerCatalogKeyFromField(f));
+
+            const fromAdmin = getDefaultVisibleKeys(
+              availableFields,
+              catalogKeys,
+              {
+                keyForField: headerCatalogKeyFromField,
+                defaultFlag: "headerDefault",
+                sortField: "header_sort_order",
+                fallbackKeys: ORG_DEFAULT_HEADER_FIELDS,
+              }
+            );
             
-            const defaults = Array.from(new Set([...ORG_DEFAULT_HEADER_FIELDS, ...requiredCustom]));
+            const defaults = Array.from(new Set([...fromAdmin, ...requiredCustom]));
             setHeaderFields(defaults);
             setHeaderFieldsOrder(headerFieldCatalog.map(f => f.key));
           }}

@@ -61,6 +61,9 @@ export const ORGANIZATION_LOOKUP_FIELD_BY_ENTITY: Record<string, string> = {
  * Independent of admin field_label renames.
  */
 export const LOOKUP_FIELD_BACKEND_COLUMN: Record<string, Record<string, string>> = {
+  organizations: {
+    Field_69: "owner",
+  },
   "hiring-managers": {
     [HM_ORGANIZATION_ID_FIELD_NAME]: "organizationId",
     Field_69: "owner",
@@ -84,6 +87,93 @@ export const LOOKUP_FIELD_BACKEND_COLUMN: Record<string, Record<string, string>>
     Field_2: "job_seeker_id",
   },
 };
+
+/** Extract stable Field_N (or bare key) from fieldInfo name/key. */
+export function getStableCustomFieldName(fieldInfo?: {
+  name?: string;
+  key?: string;
+} | null): string {
+  const rawName = String(fieldInfo?.name ?? "").trim();
+  if (rawName) {
+    return rawName.startsWith("custom:") ? rawName.slice("custom:".length) : rawName;
+  }
+  const rawKey = String(fieldInfo?.key ?? "").trim();
+  if (rawKey.startsWith("custom:")) return rawKey.slice("custom:".length);
+  return rawKey;
+}
+
+/**
+ * Normalize fieldType / lookupType for rendering.
+ * Uses admin-provided values when present; otherwise infers from stable field_name maps
+ * (e.g. Field_69 → owner lookup) so callers need not hardcode.
+ */
+export function resolveFieldRenderMeta(
+  fieldInfo?: {
+    name?: string;
+    key?: string;
+    label?: string;
+    fieldType?: string;
+    lookupType?: string;
+    multiSelectLookupType?: string;
+  } | null,
+  entityType?: string
+): {
+  fieldType: string;
+  lookupType: string;
+  multiSelectLookupType: string;
+} {
+  let fieldType = String(fieldInfo?.fieldType ?? "").trim();
+  let lookupType = String(fieldInfo?.lookupType ?? "").trim();
+  let multiSelectLookupType = String(fieldInfo?.multiSelectLookupType ?? "").trim();
+
+  const stableName = getStableCustomFieldName(fieldInfo);
+  const label = String(fieldInfo?.label ?? "").trim().toLowerCase();
+  const slug = entityType ? normalizeCrmEntityTypeSlug(entityType) : "";
+
+  const ensureLookup = (type: string) => {
+    if (!fieldType || fieldType.toLowerCase() === "text") {
+      fieldType = "lookup";
+    }
+    if (!lookupType && !multiSelectLookupType) {
+      lookupType = type;
+    }
+  };
+
+  // Cross-entity Owner field
+  if (stableName === "Field_69" || label === "owner") {
+    ensureLookup("owner");
+  }
+
+  if (slug) {
+    const backendCol = LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[stableName];
+    if (backendCol === "owner") {
+      ensureLookup("owner");
+    } else if (
+      backendCol === "organizationId" ||
+      backendCol === "currentOrganization" ||
+      backendCol === "organization_id"
+    ) {
+      ensureLookup("organizations");
+    } else if (backendCol === "hiringManager") {
+      ensureLookup("hiring-managers");
+    } else if (backendCol === "jobId") {
+      ensureLookup("jobs");
+    } else if (backendCol === "job_seeker_id") {
+      ensureLookup("job-seekers");
+    }
+
+    const orgField = ORGANIZATION_LOOKUP_FIELD_BY_ENTITY[slug];
+    if (orgField && stableName === orgField) {
+      ensureLookup("organizations");
+    }
+  }
+
+  return {
+    fieldType,
+    lookupType,
+    multiSelectLookupType,
+  };
+}
 
 /** Resolve top-level API column for a lookup custom field (label-independent). */
 export function getLookupBackendColumn(

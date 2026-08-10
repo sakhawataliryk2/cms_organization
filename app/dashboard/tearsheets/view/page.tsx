@@ -17,6 +17,11 @@ import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfi
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import {
+  headerCatalogKeyFromField,
+  remapLegacyCustomKeys,
+} from "@/lib/fieldCatalogKeys";
+import { getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
   buildPinnedKey,
   isPinnedRecord,
   PINNED_RECORDS_CHANGED_EVENT,
@@ -478,6 +483,35 @@ export default function TearsheetView() {
   };
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
+
+  // Apply Admin Header Default (or hardcoded fallback) for first-time / uncustomized headers
+  useEffect(() => {
+    const catalogKeys = headerFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0) return;
+
+    const remapped = remapLegacyCustomKeys(
+      headerFields,
+      headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? "" }))
+    );
+    const inCatalog = remapped.filter((k) => catalogKeys.includes(k));
+    const savedForEffective = inCatalog.length > 0 ? inCatalog : [];
+
+    const next = getEffectiveVisibleKeys(
+      savedForEffective,
+      [],
+      catalogKeys,
+      {
+        keyForField: headerCatalogKeyFromField,
+        defaultFlag: "headerDefault",
+        sortField: "header_sort_order",
+        fallbackKeys: TEARSHEET_DEFAULT_HEADER_FIELDS,
+      }
+    );
+
+    if (JSON.stringify(next) !== JSON.stringify(headerFields)) {
+      setHeaderFields(next);
+    }
+  }, [headerFieldCatalog, headerFields, setHeaderFields]);
 
   const getHeaderFieldValue = (key: string) => {
     if (!tearsheet) return "-";

@@ -73,8 +73,10 @@ interface CustomField {
   is_required: boolean;
   is_hidden: boolean;
   is_default?: boolean;
+  is_header_default?: boolean;
   is_read_only?: boolean;
   sort_order: number;
+  header_sort_order?: number;
   options?: string[];
   placeholder?: string;
   default_value?: string;
@@ -219,8 +221,10 @@ const FieldMapping = () => {
     field5: "Required",
     field6: "Default",
     field7: "Sort Order",
-    field8: "Last Modified",
-    field9: "Modified By",
+    field8: "Header Default",
+    field9: "Header Sort Order",
+    field10: "Last Modified",
+    field11: "Modified By",
   });
   const [editFormData, setEditFormData] = useState({
     fieldName: "",
@@ -229,8 +233,10 @@ const FieldMapping = () => {
     isRequired: false,
     isHidden: false,
     isDefault: false,
+    isHeaderDefault: false,
     isReadOnly: false,
     sortOrder: 0,
+    headerSortOrder: 0,
     options: [] as string[],
     placeholder: "",
     defaultValue: "",
@@ -257,6 +263,10 @@ const FieldMapping = () => {
   const [savedOrderSnapshot, setSavedOrderSnapshot] = useState<CustomField[]>([]);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  /** Drag-reorder target: overview/panels (sort_order) vs headers (header_sort_order) */
+  const [orderingMode, setOrderingMode] = useState<"overview" | "headers">("overview");
+  const activeOrderField =
+    orderingMode === "headers" ? "header_sort_order" : "sort_order";
 
   // Sorting state
   const [sortConfig, setSortConfig] = useState<{
@@ -272,7 +282,9 @@ const FieldMapping = () => {
     is_hidden: "",
     is_required: "",
     is_default: "",
+    is_header_default: "",
     sort_order: "",
+    header_sort_order: "",
     updated_at: "",
     updated_by: "",
   });
@@ -390,9 +402,17 @@ const FieldMapping = () => {
           (a.sort_order ?? Number.MAX_SAFE_INTEGER) -
           (b.sort_order ?? Number.MAX_SAFE_INTEGER)
       );
-      setCustomFields(sortedByOrder);
-      setOrderedFields(sortedByOrder);
-      setSavedOrderSnapshot(sortedByOrder);
+      const withHeaderOrder = sortedByOrder.map((field: CustomField, index: number) => ({
+        ...field,
+        header_sort_order:
+          Number(field.header_sort_order) > 0
+            ? Number(field.header_sort_order)
+            : (field.sort_order ?? index + 1),
+        is_header_default: Boolean(field.is_header_default),
+      }));
+      setCustomFields(withHeaderOrder);
+      setOrderedFields(withHeaderOrder);
+      setSavedOrderSnapshot(withHeaderOrder);
     } catch (err) {
       console.error("Error fetching custom fields:", err);
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -441,8 +461,10 @@ const FieldMapping = () => {
       isRequired: field.is_required,
       isHidden: field.is_hidden,
       isDefault: Boolean(field.is_default),
+      isHeaderDefault: Boolean(field.is_header_default),
       isReadOnly: Boolean((field as any).is_read_only),
       sortOrder: field.sort_order,
+      headerSortOrder: Number(field.header_sort_order) || field.sort_order || 0,
       options: Array.isArray(field.options)
         ? (field.options as string[]).map((o) => String(o).trim()).filter(Boolean)
         : [],
@@ -486,8 +508,10 @@ const FieldMapping = () => {
       isRequired: false,
       isHidden: false,
       isDefault: false,
+      isHeaderDefault: false,
       isReadOnly: false,
       sortOrder: customFields.length + 1,
+      headerSortOrder: customFields.length + 1,
       options: [],
       placeholder: "",
       defaultValue: "",
@@ -554,7 +578,10 @@ const FieldMapping = () => {
       } else if (name === "isHidden" && checked === true) {
         newData.isRequired = false;
         newData.isDefault = false;
+        newData.isHeaderDefault = false;
       } else if (name === "isDefault" && checked === true) {
+        newData.isHidden = false;
+      } else if (name === "isHeaderDefault" && checked === true) {
         newData.isHidden = false;
       }
 
@@ -641,8 +668,10 @@ const FieldMapping = () => {
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
           isDefault: editFormData.isDefault,
+          isHeaderDefault: editFormData.isHeaderDefault,
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
+          headerSortOrder: editFormData.headerSortOrder,
           options:
             editFormData.options.length > 0
               ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
@@ -684,8 +713,10 @@ const FieldMapping = () => {
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
           isDefault: editFormData.isDefault,
+          isHeaderDefault: editFormData.isHeaderDefault,
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
+          headerSortOrder: editFormData.headerSortOrder,
           options:
             editFormData.options.length > 0
               ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
@@ -820,6 +851,7 @@ const FieldMapping = () => {
       if (newHiddenValue === true) {
         updateData.isRequired = false;
         updateData.isDefault = false;
+        updateData.isHeaderDefault = false;
       }
 
       console.log("Toggling field hidden status:", updateData);
@@ -915,6 +947,53 @@ const FieldMapping = () => {
     }
   };
 
+  const toggleFieldHeaderDefault = async (field: CustomField) => {
+    try {
+      const newDefaultValue = !field.is_header_default;
+      const updateData: Record<string, boolean> = {
+        isHeaderDefault: newDefaultValue,
+      };
+
+      if (newDefaultValue === true) {
+        updateData.isHidden = false;
+      }
+
+      const response = await fetch(
+        `/api/admin/field-management/fields/${field.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updateData),
+        }
+      );
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Invalid response format from server");
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message ||
+          `Server error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      await fetchCustomFields();
+    } catch (err) {
+      console.error("Error updating field:", err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "An error occurred while updating the custom field";
+      toast.error(`Failed to update field status: ${errorMessage}`);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
@@ -958,7 +1037,9 @@ const FieldMapping = () => {
       if (oldIndex < 0 || newIndex < 0) return prev;
       return arrayMove(prev, oldIndex, newIndex).map((field, index) => ({
         ...field,
-        sort_order: index + 1,
+        ...(orderingMode === "headers"
+          ? { header_sort_order: index + 1 }
+          : { sort_order: index + 1 }),
       }));
     });
   };
@@ -970,6 +1051,7 @@ const FieldMapping = () => {
     const previousSnapshot = [...savedOrderSnapshot];
     try {
       const payload = {
+        orderField: activeOrderField,
         items: orderedFields.map((field, index) => ({
           id: Number(field.id),
           sort_order: index + 1,
@@ -989,12 +1071,21 @@ const FieldMapping = () => {
       }
 
       const sortedByOrder = [...(data.customFields || [])].sort(
-        (a: CustomField, b: CustomField) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+        (a: CustomField, b: CustomField) => {
+          if (orderingMode === "headers") {
+            return (a.header_sort_order ?? 0) - (b.header_sort_order ?? 0);
+          }
+          return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+        }
       );
       setCustomFields(sortedByOrder);
       setOrderedFields(sortedByOrder);
       setSavedOrderSnapshot(sortedByOrder);
-      toast.success("Field order saved");
+      toast.success(
+        orderingMode === "headers"
+          ? "Header field order saved"
+          : "Field order saved"
+      );
     } catch (err) {
       setOrderedFields(previousSnapshot);
       toast.error(
@@ -1075,6 +1166,15 @@ const FieldMapping = () => {
                 <li>
                   • Click on Field 6 (Default) to include the field in first-time
                   overview and panel layouts
+                </li>
+                <li>
+                  • Click on Field 8 (Header Default) to include the field in
+                  first-time view-page header layouts
+                </li>
+                <li>
+                  • Use “Ordering applies to” to choose whether drag reorder
+                  updates Sort Order (overview/panels) or Header Sort Order
+                  (headers)
                 </li>
                 <li>• Click the edit icon to modify field properties</li>
                 <li>
@@ -1281,12 +1381,37 @@ const FieldMapping = () => {
       }
     }
 
+    // Header Default filter (boolean)
+    if (columnFilters.is_header_default) {
+      const filterValue = columnFilters.is_header_default.toLowerCase();
+      const isHeaderDefault = Boolean(field.is_header_default);
+      if (filterValue === "yes" || filterValue === "true" || filterValue === "1") {
+        if (!isHeaderDefault) return false;
+      } else if (filterValue === "no" || filterValue === "false" || filterValue === "0") {
+        if (isHeaderDefault) return false;
+      } else if (filterValue !== "") {
+        if (!String(isHeaderDefault).toLowerCase().includes(filterValue)) {
+          return false;
+        }
+      }
+    }
+
     // Sort Order filter (number)
     if (
       columnFilters.sort_order &&
       !String(field.sort_order)
         .toLowerCase()
         .includes(columnFilters.sort_order.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Header Sort Order filter (number)
+    if (
+      columnFilters.header_sort_order &&
+      !String(field.header_sort_order ?? "")
+        .toLowerCase()
+        .includes(columnFilters.header_sort_order.toLowerCase())
     ) {
       return false;
     }
@@ -1347,9 +1472,17 @@ const FieldMapping = () => {
         aValue = a.is_default ? 1 : 0;
         bValue = b.is_default ? 1 : 0;
         break;
+      case "is_header_default":
+        aValue = a.is_header_default ? 1 : 0;
+        bValue = b.is_header_default ? 1 : 0;
+        break;
       case "sort_order":
         aValue = a.sort_order;
         bValue = b.sort_order;
+        break;
+      case "header_sort_order":
+        aValue = a.header_sort_order ?? 0;
+        bValue = b.header_sort_order ?? 0;
         break;
       case "updated_at":
         aValue = new Date(a.updated_at).getTime();
@@ -1527,8 +1660,8 @@ const FieldMapping = () => {
               field.is_hidden
                 ? "Cannot mark a hidden field as Default - Uncheck Hidden first"
                 : field.is_default
-                  ? "Default - Click to remove from default view"
-                  : "Not default - Click to include in default view"
+                  ? "Default - Click to remove from overview/panel default view"
+                  : "Not default - Click to include in overview/panel default view"
             }
           >
             {field.is_default && !field.is_hidden && (
@@ -1539,6 +1672,38 @@ const FieldMapping = () => {
         <td className="p-3">
           <span className="text-sm px-2 py-1">
             {field.sort_order}
+          </span>
+        </td>
+        <td className="p-3 text-center">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFieldHeaderDefault(field);
+            }}
+            disabled={field.is_hidden}
+            className={`h-4 w-4 rounded flex items-center justify-center ${field.is_hidden
+              ? "bg-gray-200 cursor-not-allowed opacity-50"
+              : field.is_header_default
+                ? "bg-violet-500 hover:bg-violet-600 text-white"
+                : "bg-gray-200 hover:bg-gray-400"
+              }`}
+            title={
+              field.is_hidden
+                ? "Cannot mark a hidden field as Header Default - Uncheck Hidden first"
+                : field.is_header_default
+                  ? "Header Default - Click to remove from header default view"
+                  : "Not header default - Click to include in header default view"
+            }
+          >
+            {field.is_header_default && !field.is_hidden && (
+              <span className="text-xs leading-none">✓</span>
+            )}
+          </button>
+        </td>
+        <td className="p-3">
+          <span className="text-sm px-2 py-1">
+            {field.header_sort_order ?? "—"}
           </span>
         </td>
         <td className="p-3 text-sm">{formatDate(field.updated_at)}</td>
@@ -1608,6 +1773,37 @@ const FieldMapping = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mr-2">
+            <span className="text-sm text-gray-700 whitespace-nowrap">
+              Ordering applies to:
+            </span>
+            <select
+              value={orderingMode}
+              onChange={(e) => {
+                const next = e.target.value === "headers" ? "headers" : "overview";
+                if (hasUnsavedOrderChanges) {
+                  setOrderedFields(savedOrderSnapshot);
+                  setDragActiveId(null);
+                }
+                setOrderingMode(next);
+                const sorted = [...(savedOrderSnapshot.length ? savedOrderSnapshot : customFields)].sort(
+                  (a, b) => {
+                    if (next === "headers") {
+                      return (a.header_sort_order ?? 0) - (b.header_sort_order ?? 0);
+                    }
+                    return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+                  }
+                );
+                setOrderedFields(sorted);
+                setSavedOrderSnapshot(sorted);
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+              title="Choose which sort column drag reorder updates"
+            >
+              <option value="overview">Overview / Panels</option>
+              <option value="headers">Headers</option>
+            </select>
+          </div>
           <button
             onClick={handleDiscardFieldOrder}
             disabled={!hasUnsavedOrderChanges || isSavingOrder}
@@ -1638,7 +1834,11 @@ const FieldMapping = () => {
 
       <div className="px-3 py-2 text-xs text-gray-600 bg-blue-50 border-b border-blue-200">
         {canDragReorder
-          ? "Drag fields using the handle in Actions, then click Save Order."
+          ? `Drag fields using the handle in Actions, then click Save Order. Currently updating ${
+              orderingMode === "headers"
+                ? "Header Sort Order (view-page headers)"
+                : "Sort Order (overview tables and panels)"
+            }.`
           : "Drag reordering is available only when no table sort/filter is active."}
       </div>
 
@@ -1751,6 +1951,28 @@ const FieldMapping = () => {
 
                     <SortableFilterableHeader
                       label={fieldColumnNames.field8}
+                      columnKey="is_header_default"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.is_header_default}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="boolean"
+                      filterPlaceholder="All"
+                    />
+
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field9}
+                      columnKey="header_sort_order"
+                      sortConfig={sortConfig}
+                      filterValue={columnFilters.header_sort_order}
+                      onSort={handleSort}
+                      onFilterChange={handleFilterChange}
+                      filterType="number"
+                      filterPlaceholder="Filter order..."
+                    />
+
+                    <SortableFilterableHeader
+                      label={fieldColumnNames.field10}
                       columnKey="updated_at"
                       sortConfig={sortConfig}
                       filterValue={columnFilters.updated_at}
@@ -1761,7 +1983,7 @@ const FieldMapping = () => {
                     />
 
                     <SortableFilterableHeader
-                      label={fieldColumnNames.field9}
+                      label={fieldColumnNames.field11}
                       columnKey="updated_by"
                       sortConfig={sortConfig}
                       filterValue={columnFilters.updated_by}
@@ -2223,6 +2445,26 @@ const FieldMapping = () => {
                       )}
                       {!editFormData.isHidden && (
                         <span className="text-xs text-gray-400 block">(Initial overview and panel layout)</span>
+                      )}
+                    </span>
+                  </label>
+
+                  <label className={`flex items-center ${editFormData.isHidden ? "opacity-50" : ""}`}>
+                    <input
+                      type="checkbox"
+                      name="isHeaderDefault"
+                      checked={editFormData.isHeaderDefault}
+                      onChange={handleEditFormChange}
+                      disabled={editFormData.isHidden}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""}`}
+                    />
+                    <span className={`ml-2 text-sm ${editFormData.isHidden ? "text-gray-500" : ""}`}>
+                      Header Default
+                      {editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">(Cannot header-default hidden fields)</span>
+                      )}
+                      {!editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">(Initial view-page header layout)</span>
                       )}
                     </span>
                   </label>
