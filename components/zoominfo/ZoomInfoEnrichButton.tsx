@@ -9,8 +9,6 @@ import ZoomInfoMatchModal, {
 
 type AtsEntityType = "organization" | "hiring_manager" | "job_seeker";
 
-type Change = { key: string; from?: unknown; to?: unknown };
-
 type Props = {
   atsEntityType: AtsEntityType;
   atsEntityId: string | number;
@@ -19,17 +17,6 @@ type Props = {
   onEnriched?: () => void;
   className?: string;
 };
-
-function describeChanges(changes: Change[]) {
-  const labels = changes
-    .map((c) => String(c.key || "").replace(/^custom_fields\./, ""))
-    .filter(Boolean);
-  const shown = labels.slice(0, 8);
-  const rest = labels.length - shown.length;
-  return shown.length
-    ? `\n\n${shown.map((l) => `• ${l}`).join("\n")}${rest > 0 ? `\n• …and ${rest} more` : ""}`
-    : "";
-}
 
 export default function ZoomInfoEnrichButton({
   atsEntityType,
@@ -67,16 +54,13 @@ export default function ZoomInfoEnrichButton({
         return;
       }
       if (!apply) {
-        const changes: Change[] = data.changes || [];
+        const changes: unknown[] = data.changes || [];
         if (!changes.length) {
           setMatchOpen(false);
           toast.message("ZoomInfo has nothing new to add — all fields already filled");
           return;
         }
-        const ok = window.confirm(
-          `ZoomInfo found ${changes.length} field update(s) (empty fields only). Apply now?${describeChanges(changes)}`
-        );
-        if (ok) await runEnrich(true, idForRequest);
+        await runEnrich(true, idForRequest);
         return;
       }
       setMatchOpen(false);
