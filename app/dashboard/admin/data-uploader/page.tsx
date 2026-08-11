@@ -4,7 +4,12 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useRouter } from "nextjs-toploader/app";
 import { FiX, FiDownload, FiEye, FiTrash2 } from "react-icons/fi";
-import { groupImportErrorsByCause } from "@/lib/importErrorMessages";
+import {
+  groupImportErrorsByCause,
+  groupResumeDocxErrorsByCause,
+  humanizeResumeDocxError,
+  type GroupedResumeDocxError,
+} from "@/lib/importErrorMessages";
 
 interface CustomFieldDefinition {
   id: string;
@@ -103,6 +108,21 @@ type ResumeUploadProgress = {
   uploaded: number;
   failed: number;
   skippedEmpty?: number;
+};
+
+type ResumeDocxErrorItem = {
+  id?: number | string;
+  recordNumber?: string | number | null;
+  message: string;
+  cause?: string;
+};
+
+type ResumeUploadSummary = {
+  uploaded: number;
+  failed: number;
+  skippedEmpty: number;
+  errors: ResumeDocxErrorItem[];
+  errorsByCause: GroupedResumeDocxError[];
 };
 
 /** Vercel serverless request body hard-cap is ~4.5MB; stay under it with headroom. */
@@ -369,11 +389,8 @@ export default function DataUploader() {
   const [isUploadingResumes, setIsUploadingResumes] = useState(false);
   const [resumeUploadProgress, setResumeUploadProgress] =
     useState<ResumeUploadProgress | null>(null);
-  const [resumeUploadSummary, setResumeUploadSummary] = useState<{
-    uploaded: number;
-    failed: number;
-    skippedEmpty: number;
-  } | null>(null);
+  const [resumeUploadSummary, setResumeUploadSummary] =
+    useState<ResumeUploadSummary | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(
     null,
   );
@@ -1431,7 +1448,8 @@ export default function DataUploader() {
               },
               signal: importAbortControllerRef.current?.signal,
               body: JSON.stringify({
-                concurrency: 16,
+                // Slightly lower concurrency reduces Blob rate-limit failures.
+                concurrency: 8,
                 // Only seekers touched during this import window.
                 updatedSince: new Date(startedAt - 60_000).toISOString(),
               }),
@@ -1452,11 +1470,49 @@ export default function DataUploader() {
           }
           const decoder = new TextDecoder();
           let buffer = "";
-          let lastResumeSummary: {
-            uploaded: number;
-            failed: number;
-            skippedEmpty: number;
-          } | null = null;
+          let lastResumeSummary: ResumeUploadSummary | null = null;
+          const streamedErrors: ResumeDocxErrorItem[] = [];
+          let lastProgressSnapshot: ResumeUploadProgress = {
+            scanned: 0,
+            total: 0,
+            uploaded: 0,
+            failed: 0,
+            skippedEmpty: 0,
+          };
+
+          const buildResumeSummary = (s: {
+            uploaded?: number;
+            failed?: number;
+            skippedEmpty?: number;
+            errors?: ResumeDocxErrorItem[];
+            errorsByCause?: GroupedResumeDocxError[];
+          }): ResumeUploadSummary => {
+            const fromServer = Array.isArray(s.errors) ? s.errors : [];
+            const errors =
+              fromServer.length > 0
+                ? fromServer.map((e) => ({
+                    id: e.id,
+                    recordNumber: e.recordNumber,
+                    message: String(e.message || e.cause || "Unknown error"),
+                    cause:
+                      e.cause ||
+                      humanizeResumeDocxError(
+                        String(e.message || "Unknown error"),
+                      ),
+                  }))
+                : streamedErrors;
+            const errorsByCause =
+              Array.isArray(s.errorsByCause) && s.errorsByCause.length > 0
+                ? s.errorsByCause
+                : groupResumeDocxErrorsByCause(errors);
+            return {
+              uploaded: s.uploaded ?? 0,
+              failed: s.failed ?? 0,
+              skippedEmpty: s.skippedEmpty ?? 0,
+              errors,
+              errorsByCause,
+            };
+          };
 
           while (true) {
             const { done, value } = await reader.read();
@@ -1474,24 +1530,38 @@ export default function DataUploader() {
                 continue;
               }
               if (msg.type === "progress") {
-                setResumeUploadProgress({
+                lastProgressSnapshot = {
                   scanned: Number(msg.scanned ?? 0),
                   total: Number(msg.total ?? 0),
                   uploaded: Number(msg.uploaded ?? 0),
                   failed: Number(msg.failed ?? 0),
                   skippedEmpty: Number(msg.skippedEmpty ?? 0),
+                };
+                setResumeUploadProgress(lastProgressSnapshot);
+              } else if (msg.type === "error-item") {
+                const rawMessage = String(msg.message || "Unknown error");
+                streamedErrors.push({
+                  id: msg.id as number | string | undefined,
+                  recordNumber: msg.recordNumber as
+                    | string
+                    | number
+                    | null
+                    | undefined,
+                  message: rawMessage,
+                  cause:
+                    typeof msg.cause === "string" && msg.cause.trim()
+                      ? msg.cause
+                      : humanizeResumeDocxError(rawMessage),
                 });
               } else if (msg.type === "done" && msg.summary) {
                 const s = msg.summary as {
                   uploaded?: number;
                   failed?: number;
                   skippedEmpty?: number;
+                  errors?: ResumeDocxErrorItem[];
+                  errorsByCause?: GroupedResumeDocxError[];
                 };
-                lastResumeSummary = {
-                  uploaded: s.uploaded ?? 0,
-                  failed: s.failed ?? 0,
-                  skippedEmpty: s.skippedEmpty ?? 0,
-                };
+                lastResumeSummary = buildResumeSummary(s);
                 setResumeUploadSummary(lastResumeSummary);
               } else if (msg.type === "error") {
                 throw new Error(
@@ -1508,17 +1578,53 @@ export default function DataUploader() {
                   uploaded?: number;
                   failed?: number;
                   skippedEmpty?: number;
+                  errors?: ResumeDocxErrorItem[];
+                  errorsByCause?: GroupedResumeDocxError[];
                 };
-                lastResumeSummary = {
-                  uploaded: s.uploaded ?? 0,
-                  failed: s.failed ?? 0,
-                  skippedEmpty: s.skippedEmpty ?? 0,
-                };
+                lastResumeSummary = buildResumeSummary(s);
                 setResumeUploadSummary(lastResumeSummary);
+              } else if (msg.type === "error-item") {
+                const rawMessage = String(msg.message || "Unknown error");
+                streamedErrors.push({
+                  id: msg.id as number | string | undefined,
+                  recordNumber: msg.recordNumber as
+                    | string
+                    | number
+                    | null
+                    | undefined,
+                  message: rawMessage,
+                  cause:
+                    typeof msg.cause === "string" && msg.cause.trim()
+                      ? msg.cause
+                      : humanizeResumeDocxError(rawMessage),
+                });
               }
             } catch {
               /* ignore trailing partial */
             }
+          }
+
+          // If stream ended without a done summary but we saw failures, still show them.
+          if (!lastResumeSummary && streamedErrors.length > 0) {
+            lastResumeSummary = {
+              uploaded: lastProgressSnapshot.uploaded,
+              failed: lastProgressSnapshot.failed || streamedErrors.length,
+              skippedEmpty: lastProgressSnapshot.skippedEmpty ?? 0,
+              errors: streamedErrors,
+              errorsByCause: groupResumeDocxErrorsByCause(streamedErrors),
+            };
+            setResumeUploadSummary(lastResumeSummary);
+          }
+
+          if (lastResumeSummary && lastResumeSummary.failed > 0) {
+            const topCause =
+              lastResumeSummary.errorsByCause[0]?.cause ||
+              "see Import Summary for details";
+            toast.warning(
+              `${lastResumeSummary.failed} resume document${
+                lastResumeSummary.failed === 1 ? "" : "s"
+              } failed (${topCause}). Details are listed in the Import Summary.`,
+            );
           }
         } catch (resumeErr) {
           if (
@@ -2732,6 +2838,65 @@ export default function DataUploader() {
                             ? ` · Skipped empty ${resumeUploadSummary.skippedEmpty}`
                             : ""}
                         </p>
+                        {resumeUploadSummary.skippedEmpty > 0 && (
+                          <p className="mt-2 text-xs text-indigo-800/80">
+                            Skipped empty means the seeker was flagged as having
+                            resume data, but the text was blank after cleanup
+                            (whitespace-only or unreadable custom field).
+                          </p>
+                        )}
+                        {resumeUploadSummary.failed > 0 && (
+                          <div className="mt-4">
+                            <h3 className="text-sm font-semibold text-red-800 mb-2">
+                              Resume document failures by cause
+                            </h3>
+                            {resumeUploadSummary.errorsByCause.length === 0 ? (
+                              <p className="text-xs text-red-700">
+                                {resumeUploadSummary.failed} resume document
+                                {resumeUploadSummary.failed === 1
+                                  ? ""
+                                  : "s"}{" "}
+                                failed, but no detailed cause was returned.
+                                Check server logs for Blob upload / DOCX
+                                conversion errors.
+                              </p>
+                            ) : (
+                              <div className="space-y-3 border border-indigo-100 bg-white rounded divide-y divide-gray-100">
+                                {resumeUploadSummary.errorsByCause.map(
+                                  (group) => {
+                                    const preview = group.recordNumbers.slice(
+                                      0,
+                                      25,
+                                    );
+                                    const remaining =
+                                      group.count - preview.length;
+                                    return (
+                                      <div key={group.cause} className="p-3">
+                                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                          <p className="text-sm font-medium text-red-700">
+                                            {group.cause}
+                                          </p>
+                                          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                            {group.count} record
+                                            {group.count === 1 ? "" : "s"}
+                                          </span>
+                                        </div>
+                                        {preview.length > 0 && (
+                                          <p className="mt-2 text-xs text-gray-600">
+                                            Record #s: {preview.join(", ")}
+                                            {remaining > 0
+                                              ? `, and ${remaining} more`
+                                              : ""}
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  },
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

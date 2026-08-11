@@ -95,3 +95,113 @@ export function groupImportErrorsByCause(
 
   return Array.from(map.values()).sort((a, b) => b.count - a.count);
 }
+
+/**
+ * Normalize Resume DOCX backfill / Blob / packer errors into short causes.
+ */
+export function humanizeResumeDocxError(raw: string): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "Unknown error while creating Resume DOCX";
+
+  const lower = s.toLowerCase();
+
+  if (
+    /blob_read_write_token|no token|missing.*token|blob.*not configured|unauthorized.*blob|access denied.*blob/i.test(
+      lower,
+    )
+  ) {
+    return "Blob storage not configured or unauthorized (check BLOB_READ_WRITE_TOKEN)";
+  }
+
+  if (/\b429\b|rate limit|too many requests|throttl/i.test(lower)) {
+    return "Blob storage rate limited — too many parallel uploads";
+  }
+
+  if (
+    /\b413\b|entity too large|payload too large|file too large|request entity|max 500,000|too large to convert/i.test(
+      lower,
+    )
+  ) {
+    return "Resume text / DOCX file too large for upload";
+  }
+
+  if (/timeout|timed out|etimedout|abort|econnreset|socket hang up/i.test(lower)) {
+    return "Upload timed out or connection dropped";
+  }
+
+  if (/network|fetch failed|econnrefused|enotfound|dns/i.test(lower)) {
+    return "Network error talking to blob storage";
+  }
+
+  if (
+    /out of memory|heap|maximum call stack|invalid string length|string length|failed to convert resume text/i.test(
+      lower,
+    )
+  ) {
+    return "Resume text too large or malformed to convert to DOCX";
+  }
+
+  if (/permission|forbidden|unauthorized|\b401\b|\b403\b/i.test(lower)) {
+    return "Permission denied while saving Resume document";
+  }
+
+  if (
+    /foreign key|violates|duplicate key|unique constraint|\b23505\b|\b23503\b|database insert failed/i.test(
+      lower,
+    )
+  ) {
+    return "Database rejected the Resume document row";
+  }
+
+  if (/resumetext is empty|resume text is empty|empty resume/i.test(lower)) {
+    return "Resume text was empty after import";
+  }
+
+  if (/blob upload failed/i.test(lower)) {
+    return s.length > 180 ? `${s.slice(0, 177)}...` : s;
+  }
+
+  if (s.length > 180) return `${s.slice(0, 177)}...`;
+  return s;
+}
+
+export type GroupedResumeDocxError = {
+  cause: string;
+  count: number;
+  recordNumbers: string[];
+};
+
+/** Group Resume DOCX backfill item failures by humanized cause. */
+export function groupResumeDocxErrorsByCause(
+  errors: Array<{
+    id?: number | string;
+    recordNumber?: string | number | null;
+    message?: string;
+    cause?: string;
+  }>,
+): GroupedResumeDocxError[] {
+  const map = new Map<string, GroupedResumeDocxError>();
+
+  for (const entry of errors || []) {
+    const cause =
+      (entry.cause && String(entry.cause).trim()) ||
+      humanizeResumeDocxError(entry.message || "");
+    let group = map.get(cause);
+    if (!group) {
+      group = { cause, count: 0, recordNumbers: [] };
+      map.set(cause, group);
+    }
+    group.count += 1;
+    const rn =
+      entry.recordNumber != null && String(entry.recordNumber).trim()
+        ? String(entry.recordNumber)
+        : entry.id != null
+          ? `id:${entry.id}`
+          : null;
+    if (rn && group.recordNumbers.length < 50) {
+      group.recordNumbers.push(rn);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
