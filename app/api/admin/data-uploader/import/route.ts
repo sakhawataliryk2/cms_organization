@@ -681,10 +681,13 @@ export async function POST(request: NextRequest) {
                       headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${token}`,
+                        // Never send welcome / distribution / portal emails from Data Uploader
+                        "X-Skip-Emails": "1",
                       },
                       body: JSON.stringify({
                         items: chunk.map((c) => c.payload),
                         maxBatch: bulkChunkSize,
+                        skipEmails: true,
                       }),
                     },
                   );
@@ -1106,8 +1109,10 @@ export async function POST(request: NextRequest) {
                           headers: {
                             "Content-Type": "application/json",
                             Authorization: `Bearer ${token}`,
+                            // Never send distribution / portal / update emails from Data Uploader
+                            "X-Skip-Emails": "1",
                           },
-                          body: JSON.stringify(payload),
+                          body: JSON.stringify({ ...payload, skipEmails: true }),
                         },
                       );
                       const updateData = await updateRes.json();
