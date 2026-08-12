@@ -74,6 +74,7 @@ import CountdownTimer from '@/components/CountdownTimer';
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
+import OutlookEmailNoteBody, { isOutlookEmailNote } from "@/components/OutlookEmailNoteBody";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -924,7 +925,11 @@ out.sort((a, b) => {
                     <span className="text-gray-500">{new Date(getNoteDateTimeValue(note) || 0).toLocaleString()}</span>
                   </div>
                   <div className="text-sm text-gray-700">
-                    <ZoomPhoneNoteBody text={note.text} compact />
+                    {isOutlookEmailNote(note.action, (note as any).note_type, note.text) ? (
+                      <OutlookEmailNoteBody text={note.text} compact />
+                    ) : (
+                      <ZoomPhoneNoteBody text={note.text} compact />
+                    )}
                   </div>
                 </div>
               ))}
@@ -4014,13 +4019,27 @@ out.sort((a, b) => {
         ) : noteError ? (
           <div className="text-red-500 py-2">{noteError}</div>
         ) : sortedFilteredNotes.length > 0 ? (
-          <div className="space-y-4">
+          <div className="space-y-1">
             {sortedFilteredNotes.map((note) => {
               const actionLabel =
                 actionFields.find(
                   (af) => af.field_name === note.action || af.field_label === note.action
                 )?.field_label || note.action || "General Note";
               const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+              const outlookEmail = isOutlookEmailNote(
+                note.action,
+                (note as any).note_type,
+                note.text
+              );
+
+              if (outlookEmail) {
+                return (
+                  <div id={`note-${note.id}`} key={note.id}>
+                    <OutlookEmailNoteBody text={note.text} />
+                  </div>
+                );
+              }
+
               const zoomKind = getZoomPhoneNoteKind(note.text);
               const zoomAccentClass =
                 zoomKind === "call"
