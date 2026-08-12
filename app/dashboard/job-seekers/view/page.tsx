@@ -48,6 +48,7 @@ import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
+import OutlookEmailNoteBody, { isOutlookEmailNote } from "@/components/OutlookEmailNoteBody";
 import SubmissionFormModal from "@/components/SubmissionFormModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 import { formatNoteDateTime, getNoteDateTimeMs, getNoteDateTimeValue } from "@/lib/noteUtils";
@@ -4295,13 +4296,13 @@ Best regards`;
           )}
         </div>
 
-        {/* Notes List (standardized to Organization Notes design) */}
+        {/* Notes List (email notes use inbox-style rows; others keep standard cards) */}
         {isLoadingNotes ? (
           <div className="flex justify-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
         ) : sortedFilteredNotes.length > 0 ? (
-          <div className="space-y-4">
+          <div className="space-y-1">
             {sortedFilteredNotes.map((note) => {
               const parseAboutReferences = (refs: any) => {
                 if (!refs) return [];
@@ -4317,6 +4318,21 @@ Best regards`;
               };
               const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
               const actionLabel = note.action || "General Note";
+              const outlookEmail = isOutlookEmailNote(
+                note.action,
+                (note as any).note_type,
+                note.text
+              );
+
+              // Journaled Outlook emails: compact inbox-style rows (collapsed by default)
+              if (outlookEmail) {
+                return (
+                  <div id={`note-${note.id}`} key={note.id}>
+                    <OutlookEmailNoteBody text={note.text} />
+                  </div>
+                );
+              }
+
               const zoomKind = getZoomPhoneNoteKind(note.text);
               const zoomAccentClass =
                 zoomKind === "call"
@@ -4996,7 +5012,11 @@ Best regards`;
                   </span>
                 </div>
                 <div className="mt-1">
-                  <ZoomPhoneNoteBody text={note.text} compact />
+                  {isOutlookEmailNote(note.action, (note as any).note_type, note.text) ? (
+                    <OutlookEmailNoteBody text={note.text} compact />
+                  ) : (
+                    <ZoomPhoneNoteBody text={note.text} compact />
+                  )}
                 </div>
               </div>
             ))}
