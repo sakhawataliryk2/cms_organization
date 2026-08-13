@@ -230,11 +230,10 @@ export default function StorageMigrationPage() {
                   Start migration Vercel Blob → AWS
                 </p>
                 <p className="text-xs text-gray-500 mt-2 max-w-2xl">
-                  Live DB safe mode: each file is downloaded, uploaded to S3, then that one
-                  URL is updated. Scan/migrate only docs attached to live non-archived records
-                  (orphaned / archived-parent docs are skipped). Closing the browser stops after
-                  the current file — it does not reverse completed rows. Use Undo to restore Blob
-                  URLs from the audit map for a run.
+                  Live DB safe mode: unique-URL migration uploads each Blob file once, then
+                  batch-updates all matching DB rows. Scan only includes docs on live
+                  non-archived records. Closing the browser stops after the current unique
+                  file. Use Undo to restore Blob URLs from the audit map for a run.
                 </p>
               </div>
               <button
