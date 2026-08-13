@@ -106,15 +106,15 @@ export function humanizeResumeDocxError(raw: string): string {
   const lower = s.toLowerCase();
 
   if (
-    /blob_read_write_token|no token|missing.*token|blob.*not configured|unauthorized.*blob|access denied.*blob/i.test(
+    /blob_read_write_token|no token|missing.*token|blob.*not configured|unauthorized.*blob|access denied.*blob|storage_not_configured|aws_region|s3_bucket|object storage is not configured/i.test(
       lower,
     )
   ) {
-    return "Blob storage not configured or unauthorized (check BLOB_READ_WRITE_TOKEN)";
+    return "Object storage not configured or unauthorized (check AWS_REGION, S3_BUCKET, and IAM role / credentials)";
   }
 
-  if (/\b429\b|rate limit|too many requests|throttl/i.test(lower)) {
-    return "Blob storage rate limited — too many parallel uploads";
+  if (/\b429\b|rate limit|too many requests|throttl|slowdown|throughput/i.test(lower)) {
+    return "Object storage rate limited — too many parallel uploads";
   }
 
   if (
@@ -129,8 +129,8 @@ export function humanizeResumeDocxError(raw: string): string {
     return "Upload timed out or connection dropped";
   }
 
-  if (/network|fetch failed|econnrefused|enotfound|dns/i.test(lower)) {
-    return "Network error talking to blob storage";
+  if (/network|fetch failed|econnrefused|enotfound|dns|credentials|accessdenied|nosuchbucket/i.test(lower)) {
+    return "Network or AWS error talking to object storage";
   }
 
   if (
