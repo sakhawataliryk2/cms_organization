@@ -16,7 +16,6 @@ type DocumentViewerProps = {
   mimeType?: string;
   documentName?: string;
   className?: string;
-  onOpenInNewTab?: () => void;
 };
 
 function getProxyUrl(filePath: string): string {
@@ -71,7 +70,6 @@ export default function DocumentViewer({
   mimeType = "",
   documentName = "",
   className = "",
-  onOpenInNewTab,
 }: DocumentViewerProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [numPages, setNumPages] = useState<number>(0);
@@ -85,7 +83,17 @@ export default function DocumentViewer({
   const isAbsoluteUrl =
     filePath.startsWith("http://") || filePath.startsWith("https://");
   const proxyUrl = isAbsoluteUrl ? getProxyUrl(filePath) : filePath;
-  const googleViewerUrl = isAbsoluteUrl ? getGoogleDocsViewerUrl(filePath) : "";
+  // Google Docs viewer cannot read private S3 / Blob objects — use our proxy iframe instead.
+  const isPrivateObjectStorage =
+    isAbsoluteUrl &&
+    (/blob\.vercel-storage\.com/i.test(filePath) ||
+      /\.s3[.-].*\.amazonaws\.com/i.test(filePath) ||
+      /\.s3\.amazonaws\.com/i.test(filePath));
+  const googleViewerUrl =
+    isAbsoluteUrl && !isPrivateObjectStorage
+      ? getGoogleDocsViewerUrl(filePath)
+      : "";
+  const fallbackIframeSrc = googleViewerUrl || proxyUrl;
 
   const pdf = isPdf(mime, name) && isAbsoluteUrl;
   const docx = isDocx(mime, name) && isAbsoluteUrl;
@@ -113,19 +121,6 @@ export default function DocumentViewer({
       }
     };
   }, [pdf, useFallback]);
-
-  const ActionBar = () =>
-    onOpenInNewTab ? (
-      <div className="p-2 bg-gray-50 border-t flex justify-end gap-2 shrink-0">
-        <button
-          type="button"
-          onClick={onOpenInNewTab}
-          className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
-        >
-          Open in new tab
-        </button>
-      </div>
-    ) : null;
 
   useEffect(() => {
     if (!docx || !docxContainerRef.current || useFallback) return;
@@ -163,12 +158,11 @@ export default function DocumentViewer({
         <div className={rootClass}>
           <div className={`${previewPaneFillClass} overflow-hidden`}>
             <iframe
-              src={googleViewerUrl}
+              src={fallbackIframeSrc}
               title={documentName || "Document"}
               className="w-full h-full border-0"
             />
           </div>
-          <ActionBar />
         </div>
       );
     }
@@ -217,7 +211,6 @@ export default function DocumentViewer({
             </Document>
           )}
         </div>
-        <ActionBar />
       </div>
     );
   }
@@ -228,12 +221,11 @@ export default function DocumentViewer({
         <div className={rootClass}>
           <div className={`${previewPaneFillClass} overflow-hidden`}>
             <iframe
-              src={googleViewerUrl}
+              src={fallbackIframeSrc}
               title={documentName || "Document"}
               className="w-full h-full border-0"
             />
           </div>
-          <ActionBar />
         </div>
       );
     }
@@ -256,7 +248,6 @@ export default function DocumentViewer({
             status === "loading" ? "hidden" : ""
           }`}
         />
-        <ActionBar />
       </div>
     );
   }
@@ -284,7 +275,6 @@ export default function DocumentViewer({
             />
           )}
         </div>
-        <ActionBar />
       </div>
     );
   }
@@ -300,7 +290,6 @@ export default function DocumentViewer({
             className="w-full h-full border-0"
           />
         </div>
-        <ActionBar />
       </div>
     );
   }

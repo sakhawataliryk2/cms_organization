@@ -346,9 +346,6 @@ export default function DocumentManagementOrganizationPage() {
                 mimeType={welcomeDefault.mime_type || "application/pdf"}
                 documentName={displayName}
                 className="h-full min-h-0"
-                onOpenInNewTab={() =>
-                  window.open(welcomeDefault.file_url ?? "", "_blank")
-                }
               />
             </div>
           </div>

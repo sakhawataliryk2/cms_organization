@@ -231,9 +231,10 @@ export default function StorageMigrationPage() {
                 </p>
                 <p className="text-xs text-gray-500 mt-2 max-w-2xl">
                   Live DB safe mode: each file is downloaded, uploaded to S3, then that one
-                  URL is updated. Closing the browser stops after the current file — it does
-                  not reverse completed rows. Use Undo to restore Blob URLs from the audit
-                  map for a run.
+                  URL is updated. Scan/migrate only docs attached to live non-archived records
+                  (orphaned / archived-parent docs are skipped). Closing the browser stops after
+                  the current file — it does not reverse completed rows. Use Undo to restore Blob
+                  URLs from the audit map for a run.
                 </p>
               </div>
               <button

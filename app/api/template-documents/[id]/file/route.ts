@@ -13,9 +13,25 @@ async function getToken() {
   return cookieStore.get("token")?.value || "";
 }
 
+function isRemoteStorageUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith(".blob.vercel-storage.com") || host === "blob.vercel-storage.com") {
+      return true;
+    }
+    if (host.endsWith(".amazonaws.com") && host.includes(".s3.")) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(_req: NextRequest, context: any) {
   try {
-    const id = String(context?.params?.id || "");
+    const params = await Promise.resolve(context?.params);
+    const id = String(params?.id || "");
 
     if (!id) {
       return NextResponse.json(
@@ -34,7 +50,6 @@ export async function GET(_req: NextRequest, context: any) {
 
     const base = requireApiUrl();
 
-    // 1) get doc (to read file_url / file_path)
     const docRes = await fetch(`${base}/api/template-documents/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
@@ -52,15 +67,75 @@ export async function GET(_req: NextRequest, context: any) {
     }
 
     const doc = docJson?.document || docJson;
-
-    // ✅ NEW: blob URL (preferred)
     const fileUrl: string | null = doc?.file_url || null;
-    if (fileUrl) {
-      return NextResponse.redirect(fileUrl);
+    const filePath: string | null = doc?.file_path || null;
+    const remoteUrl =
+      (fileUrl && isRemoteStorageUrl(fileUrl) && fileUrl) ||
+      (filePath && isRemoteStorageUrl(filePath) && filePath) ||
+      null;
+
+    // Private S3 / Blob: never redirect the browser — proxy bytes via Express.
+    if (remoteUrl) {
+      const proxyRes = await fetch(
+        `${base}/api/storage/proxy?url=${encodeURIComponent(remoteUrl)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "CMS-Organization/1.0",
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (!proxyRes.ok) {
+        const err = await proxyRes.json().catch(() => ({}));
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              (err as { message?: string })?.message ||
+              `Failed to fetch PDF file (${proxyRes.status})`,
+          },
+          { status: proxyRes.status || 502 }
+        );
+      }
+
+      const bytes = await proxyRes.arrayBuffer();
+      const contentType =
+        proxyRes.headers.get("content-type") || "application/pdf";
+
+      return new NextResponse(bytes, {
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": `inline; filename="template-${id}.pdf"`,
+          "Cache-Control": "no-store",
+        },
+      });
     }
 
-    // fallback (old local path)
-    const filePath: string | null = doc?.file_path || null;
+    if (fileUrl && /^https?:\/\//i.test(fileUrl)) {
+      // Non-S3 remote URL (legacy): still avoid bare redirect when possible
+      const pdfRes = await fetch(fileUrl, {
+        headers: { "User-Agent": "CMS-Organization/1.0" },
+        cache: "no-store",
+        redirect: "follow",
+      });
+      if (!pdfRes.ok) {
+        return NextResponse.json(
+          { success: false, message: `Failed to fetch PDF file (${pdfRes.status})` },
+          { status: 502 }
+        );
+      }
+      const bytes = await pdfRes.arrayBuffer();
+      return new NextResponse(bytes, {
+        headers: {
+          "Content-Type": pdfRes.headers.get("content-type") || "application/pdf",
+          "Content-Disposition": `inline; filename="template-${id}.pdf"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
     if (!filePath) {
       return NextResponse.json(
         { success: false, message: "file_url/file_path missing" },

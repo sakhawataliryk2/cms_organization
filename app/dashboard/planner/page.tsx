@@ -3197,7 +3197,6 @@ const Planners = () => {
                 filePath={documentViewer.url}
                 documentName={documentViewer.name || ""}
                 className="h-full min-h-0"
-                onOpenInNewTab={() => window.open(documentViewer.url, "_blank")}
               />
             </div>
           </div>

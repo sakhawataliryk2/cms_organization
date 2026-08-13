@@ -8,6 +8,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { getDocumentOpenUrl } from "@/lib/documentUrl";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
 
@@ -756,7 +757,9 @@ export default function OnboardingApprovalsPage() {
                       <div key={doc.id} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-200 hover:bg-gray-100 transition">
                         <span className="text-sm font-medium text-gray-700">{doc.document_name}</span>
                         <button
-                          onClick={() => window.open(doc.file_url, "_blank")}
+                          onClick={() =>
+                            window.open(getDocumentOpenUrl(doc.file_url), "_blank")
+                          }
                           className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium hover:bg-gray-50 transition"
                         >
                           View File
