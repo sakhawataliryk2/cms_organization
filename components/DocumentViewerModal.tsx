@@ -78,9 +78,6 @@ export default function DocumentViewerModal({
                 filePath={doc.file_path}
                 mimeType={doc.mime_type || undefined}
                 documentName={title}
-                onOpenInNewTab={() =>
-                  window.open(doc.file_path as string, "_blank")
-                }
               />
             </div>
           ) : (
