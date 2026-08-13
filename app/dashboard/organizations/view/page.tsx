@@ -78,6 +78,11 @@ import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import {
+  jobBelongsToOrganization,
+  normalizeOrganizationName,
+  resolveJobOrganizationFieldDefs,
+} from "@/lib/jobOrganizationCustomField";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
 import PermissionGate from "@/components/PermissionGate";
@@ -1121,7 +1126,7 @@ export default function OrganizationView() {
       // Refresh hiring managers and jobs
       if (organizationId) {
         fetchHiringManagers(organizationId);
-        fetchJobs(organizationId);
+        fetchJobs(organizationId, organization?.contact?.name);
       }
     }
   }, [organizationId]);
@@ -1129,7 +1134,7 @@ export default function OrganizationView() {
   // Refresh tasks when organization changes or when hiring managers/jobs are updated
   useEffect(() => {
     if (organizationId && !isLoadingHiringManagers && !isLoadingJobs) {
-      fetchTasks(organizationId);
+      fetchTasks(organizationId, organization?.contact?.name);
     }
   }, [organizationId, isLoadingHiringManagers, isLoadingJobs]);
 
@@ -2085,8 +2090,8 @@ export default function OrganizationView() {
       fetchHistory(id);
       fetchDocuments(id);
       fetchHiringManagers(id);
-      fetchJobs(id);
-      fetchTasks(id);
+      fetchJobs(id, formattedOrg.contact?.name);
+      fetchTasks(id, formattedOrg.contact?.name);
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError(
@@ -3016,31 +3021,50 @@ export default function OrganizationView() {
     }
   };
 
-  // Fetch jobs for organization
-  const fetchJobs = async (organizationId: string) => {
+  const getAuthHeaders = () => ({
+    Authorization: `Bearer ${document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    )}`,
+  });
+
+  const fetchAllJobPages = async () => {
+    const allJobs: any[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await fetch(`/api/jobs?page=${page}&limit=200`, {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch jobs");
+      }
+      const data = await response.json();
+      const batch = data.jobs || [];
+      allJobs.push(...batch);
+      hasMore = Boolean(data.hasMore ?? data.pagination?.hasMore) && batch.length > 0;
+      page += 1;
+      if (page > 100) break;
+    }
+
+    return allJobs;
+  };
+
+  // Fetch jobs for organization — match custom_fields Organization lookup, never organization_id
+  const fetchJobs = async (organizationId: string, organizationName?: string) => {
     setIsLoadingJobs(true);
     setJobsError(null);
 
     try {
-      const response = await fetch(`/api/jobs`, {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch jobs");
-      }
-
-      const data = await response.json();
-      // Filter jobs by organization ID
-      const orgJobs = (data.jobs || []).filter(
-        (job: any) =>
-          job.organization_id?.toString() === organizationId.toString()
+      const orgName = normalizeOrganizationName(
+        organizationName || organization?.contact?.name || organization?.name
+      );
+      const fieldDefs = await resolveJobOrganizationFieldDefs();
+      const allJobs = await fetchAllJobPages();
+      const orgJobs = allJobs.filter((job: any) =>
+        jobBelongsToOrganization(job, organizationId, fieldDefs, orgName)
       );
       setJobs(orgJobs);
     } catch (err) {
@@ -3124,7 +3148,7 @@ export default function OrganizationView() {
   };
 
   // Fetch tasks for organization (only non-completed tasks)
-  const fetchTasks = async (organizationId: string) => {
+  const fetchTasks = async (organizationId: string, organizationName?: string) => {
     setIsLoadingTasks(true);
     setTasksError(null);
 
@@ -3149,25 +3173,21 @@ export default function OrganizationView() {
         hiringManagerIds = orgHiringManagers.map((hm: any) => parseInt(hm.id));
       }
 
-      // Fetch jobs for this organization
-      const jobsResponse = await fetch(`/api/jobs`, {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
-
+      const orgName = normalizeOrganizationName(
+        organizationName || organization?.contact?.name || organization?.name
+      );
       let jobIds: number[] = [];
-      if (jobsResponse.ok) {
-        const jobsData = await jobsResponse.json();
-        jobIds = (jobsData.jobs || [])
-          .filter(
-            (job: any) =>
-              job.organization_id?.toString() === organizationId.toString()
+      try {
+        const fieldDefs = await resolveJobOrganizationFieldDefs();
+        const allJobs = await fetchAllJobPages();
+        jobIds = allJobs
+          .filter((job: any) =>
+            jobBelongsToOrganization(job, organizationId, fieldDefs, orgName)
           )
-          .map((job: any) => parseInt(job.id));
+          .map((job: any) => parseInt(job.id, 10))
+          .filter((id: number) => Number.isFinite(id));
+      } catch (jobErr) {
+        console.error("Error fetching jobs for organization tasks:", jobErr);
       }
 
       // Fetch all tasks
@@ -6352,10 +6372,9 @@ export default function OrganizationView() {
             // Jobs with count
             if (action.id === "jobs") {
               // Prefer jobs array length; fall back to summary API if needed
-              const count =
-                organizationJobsCount > 0
-                  ? organizationJobsCount
-                  : summaryCounts.jobs;
+              const count = isLoadingJobs
+                ? summaryCounts.jobs
+                : organizationJobsCount;
               const hasAny = count > 0;
               return (
                 <button
