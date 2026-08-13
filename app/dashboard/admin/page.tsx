@@ -15,7 +15,8 @@ import {
     FiMail,
     FiActivity,
     FiFilter,
-    FiCheckSquare
+    FiCheckSquare,
+    FiDatabase
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -633,6 +634,12 @@ export default function AdminCenter() {
             name: 'User Management',
             icon: <TfiUser size={50} color="white" />,
             path: '/dashboard/admin/user-management'
+        },
+        {
+            id: 'storage-migration',
+            name: 'Storage Migration',
+            icon: <FiDatabase size={50} color="white" />,
+            path: '/dashboard/admin/storage-migration'
         },
         {
             id: 'the-button',

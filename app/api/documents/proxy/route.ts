@@ -1,17 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-/** Allowed host suffix for document proxy (prevents SSRF). Vercel Blob: [store-id].public.blob.vercel-storage.com */
-const ALLOWED_HOST_SUFFIX = ".blob.vercel-storage.com";
+/** Dual-read allowlist: Vercel Blob (legacy) + our private S3 bucket host. */
+const BLOB_HOST_SUFFIX = ".blob.vercel-storage.com";
+const S3_BUCKET = (process.env.S3_BUCKET || "css-ats-resumes").toLowerCase();
+
+function isBlobHost(host: string): boolean {
+  return host === "blob.vercel-storage.com" || host.endsWith(BLOB_HOST_SUFFIX);
+}
+
+function isOurS3Host(host: string): boolean {
+  if (host === `${S3_BUCKET}.s3.amazonaws.com`) return true;
+  if (host.startsWith(`${S3_BUCKET}.s3.`) && host.endsWith(".amazonaws.com")) {
+    return true;
+  }
+  return false;
+}
 
 function isAllowedUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
-    return host.endsWith(ALLOWED_HOST_SUFFIX) || host === "blob.vercel-storage.com";
+    return isBlobHost(host) || isOurS3Host(host);
   } catch {
     return false;
   }
+}
+
+function getApiBase() {
+  return process.env.API_BASE_URL || "http://localhost:8080";
 }
 
 export async function GET(req: NextRequest) {
@@ -40,22 +57,35 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const headers: Record<string, string> = {
-      "User-Agent": "CMS-Organization/1.0",
-    };
-    // Do not forward browser Range requests — always fetch the full PDF.
-    // pdf.js range probes against a non-range proxy often surface as odd/empty responses.
+    const host = new URL(url).hostname.toLowerCase();
+    let res: Response;
 
-    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-    if (blobToken) {
-      headers.Authorization = `Bearer ${blobToken}`;
+    if (isOurS3Host(host)) {
+      // Private bucket: stream via Express (EC2 IAM / default credential chain)
+      res = await fetch(
+        `${getApiBase()}/api/storage/proxy?url=${encodeURIComponent(url)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "CMS-Organization/1.0",
+          },
+          cache: "no-store",
+        }
+      );
+    } else {
+      const headers: Record<string, string> = {
+        "User-Agent": "CMS-Organization/1.0",
+      };
+      const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+      if (blobToken) {
+        headers.Authorization = `Bearer ${blobToken}`;
+      }
+      res = await fetch(url, {
+        headers,
+        cache: "no-store",
+        redirect: "follow",
+      });
     }
-
-    const res = await fetch(url, {
-      headers,
-      cache: "no-store",
-      redirect: "follow",
-    });
 
     if (!res.ok || res.status === 204) {
       return NextResponse.json(
