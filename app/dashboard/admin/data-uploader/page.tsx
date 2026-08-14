@@ -125,6 +125,25 @@ type ResumeUploadSummary = {
   errorsByCause: GroupedResumeDocxError[];
 };
 
+function isResumeImportField(field: CustomFieldDefinition): boolean {
+  const name = String(field.field_name || "")
+    .trim()
+    .toLowerCase();
+  const label = String(field.field_label || "")
+    .trim()
+    .toLowerCase();
+  if (name === "field_40") return true;
+  return label === "resume" || label === "resume text" || label === "cv";
+}
+
+function normalizeImportRecordNumber(value: unknown): number | null {
+  if (value == null || String(value).trim() === "") return null;
+  const match = String(value).match(/\d+/);
+  if (!match) return null;
+  const num = parseInt(match[0], 10);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
 /** Vercel serverless request body hard-cap is ~4.5MB; stay under it with headroom. */
 const IMPORT_BATCH_MAX_BYTES = Math.floor(3.5 * 1024 * 1024);
 
@@ -1416,19 +1435,24 @@ export default function DataUploader() {
 
       const summary = mergeImportSummaries(batchResults);
 
-      const hasResumeColumnMapped = availableFields.some((f) => {
-        if (!fieldMappings[f.field_name]) return false;
-        const label = String(f.field_label || "")
-          .trim()
-          .toLowerCase();
-        return label === "resume" || label === "resume text";
-      });
+      const hasResumeColumnMapped = availableFields.some(
+        (f) => fieldMappings[f.field_name] && isResumeImportField(f),
+      );
+      const resumeLabels = availableFields
+        .filter((f) => fieldMappings[f.field_name] && isResumeImportField(f))
+        .map((f) => String(f.field_label || "").trim())
+        .filter(Boolean);
+      const importedRecordNumbers = importRecordNumbers
+        .map((rn) => normalizeImportRecordNumber(rn))
+        .filter((n): n is number => n !== null);
 
       // After records are saved, upload Resume DOCX docs in parallel (same as backfill script).
+      // Update Existing must still generate missing docs even if some rows failed to match.
       if (
         entityType === "job-seekers" &&
-        summary.successful > 0 &&
-        hasResumeColumnMapped
+        hasResumeColumnMapped &&
+        (summary.successful > 0 ||
+          (importOptions.updateExisting && importedRecordNumbers.length > 0))
       ) {
         setIsUploadingResumes(true);
         setResumeUploadProgress({
@@ -1450,7 +1474,9 @@ export default function DataUploader() {
               body: JSON.stringify({
                 // Slightly lower concurrency reduces Blob rate-limit failures.
                 concurrency: 8,
-                // Only seekers touched during this import window.
+                recordNumbers: importedRecordNumbers,
+                resumeLabels,
+                // New creates without a CSV record number still match this window.
                 updatedSince: new Date(startedAt - 60_000).toISOString(),
               }),
             },
@@ -2758,7 +2784,9 @@ export default function DataUploader() {
                             Update Existing Records
                           </div>
                           <div className="text-sm text-gray-500">
-                            Update existing records with new data from CSV
+                            Update existing records with new data from CSV. For
+                            job seekers, missing Resume DOCX files are also
+                            generated from resume text.
                           </div>
                         </div>
                       </label>

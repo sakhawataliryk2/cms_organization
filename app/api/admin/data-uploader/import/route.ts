@@ -396,6 +396,56 @@ function normalizeRecordNumber(value: string): number | null {
   return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
+/** List endpoints cap at 500 rows; page through all of them for duplicate matching. */
+const EXISTING_LIST_PAGE_SIZE = 500;
+
+async function fetchAllExistingByRecordNumber(
+  apiUrl: string,
+  token: string,
+  endpoint: string,
+  listKey: string,
+): Promise<Map<number, { id: string }>> {
+  const map = new Map<number, { id: string }>();
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (offset < total) {
+    const qs = new URLSearchParams({
+      limit: String(EXISTING_LIST_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const res = await fetch(`${apiUrl}/api/${endpoint}?${qs}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) break;
+
+    const data = await res.json();
+    const existingRecords: Array<Record<string, unknown>> =
+      data[listKey] ?? data.data ?? [];
+
+    for (const rec of existingRecords) {
+      const rn = rec.record_number ?? rec.recordNumber;
+      if (rn == null) continue;
+      const num = normalizeRecordNumber(String(rn));
+      const id = rec.id;
+      if (num !== null && id != null) {
+        map.set(num, { id: String(id) });
+      }
+    }
+
+    if (typeof data.total === "number" && data.total >= 0) {
+      total = data.total;
+    } else if (existingRecords.length < EXISTING_LIST_PAGE_SIZE) {
+      break;
+    }
+
+    offset += existingRecords.length;
+    if (existingRecords.length === 0) break;
+  }
+
+  return map;
+}
+
 /**
  * Build the backend payload exactly the same way the individual add pages do:
  *  1. Every field goes into custom_fields keyed by its field_label.
@@ -461,6 +511,8 @@ const ORG_BULK_CONCURRENCY = 8;
 /** Other entities: 100 records per bulk-create request. */
 const DEFAULT_BULK_CHUNK_SIZE = 100;
 const DEFAULT_BULK_CONCURRENCY = 8;
+/** Parallel PUTs when Update Existing is on (avoids 1 HTTP call per row). */
+const UPDATE_CONCURRENCY = 8;
 /** Timeout for backend bulk-create requests (jobs can be slow per row). */
 const IMPORT_REQUEST_TIMEOUT_MS = 180_000;
 /** Retry attempts for transient bulk failures. */
@@ -580,36 +632,15 @@ export async function POST(request: NextRequest) {
           // Per-request cache: lookup_type → Map<record_number, id>
           const lookupCache = new Map<string, Map<number, LookupCacheEntry>>();
 
-          // Pre-fetch all existing records once for duplicate checking (avoids N queries per row)
-          type ExistingRecord = { id: string; [key: string]: any };
-          let existingRecordsCache: ExistingRecord[] | null = null;
-
-          const getExistingRecords = async (): Promise<ExistingRecord[]> => {
-            if (existingRecordsCache !== null) return existingRecordsCache;
-            try {
-              const res = await fetch(`${apiUrl}/api/${endpoint}?limit=100000`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              if (!res.ok) {
-                existingRecordsCache = [];
-                return [];
-              }
-              const data = await res.json();
-              const listKeyMap: Record<string, string> = {
-                "job-seekers": "jobSeekers",
-                "hiring-managers": "hiringManagers",
-                organizations: "organizations",
-                jobs: "jobs",
-                leads: "leads",
-                placements: "placements",
-              };
-              const listKey = listKeyMap[endpoint] ?? endpoint;
-              existingRecordsCache = data[listKey] ?? data.data ?? [];
-            } catch {
-              existingRecordsCache = [];
-            }
-            return existingRecordsCache!;
+          const listKeyMap: Record<string, string> = {
+            "job-seekers": "jobSeekers",
+            "hiring-managers": "hiringManagers",
+            organizations: "organizations",
+            jobs: "jobs",
+            leads: "leads",
+            placements: "placements",
           };
+          const listKey = listKeyMap[endpoint] ?? endpoint;
 
           const summary = {
             totalRows: records.length,
@@ -643,17 +674,16 @@ export async function POST(request: NextRequest) {
           const bulkFlushAt = bulkChunkSize;
 
           // Pre-build record-number → id map once (avoids rebuilding on every row).
+          // Must page: list APIs cap at 500 rows even if ?limit=100000 is sent.
           let existingByRN: Map<number, { id: string }> | null = null;
           if (hasImportOption) {
             writeProgress(0, 0, 0, records.length, true);
-            const allExisting = await getExistingRecords();
-            existingByRN = new Map<number, { id: string }>();
-            for (const rec of allExisting) {
-              const rn = rec.record_number;
-              if (rn == null) continue;
-              const num = normalizeRecordNumber(String(rn));
-              if (num !== null) existingByRN.set(num, { id: rec.id });
-            }
+            existingByRN = await fetchAllExistingByRecordNumber(
+              apiUrl,
+              token,
+              endpoint,
+              listKey,
+            );
           }
 
           const createBulkChunk = async (
@@ -792,6 +822,85 @@ export async function POST(request: NextRequest) {
                 true,
               );
               await Promise.all(batch.map((chunk) => createBulkChunk(chunk)));
+            }
+          };
+
+          const updatePending: Array<{
+            row: number;
+            id: string;
+            payload: Record<string, any>;
+          }> = [];
+
+          const flushPendingUpdates = async () => {
+            if (updatePending.length === 0) return;
+            const pending = updatePending.splice(0, updatePending.length);
+            const chunks = chunkArray(pending, UPDATE_CONCURRENCY);
+            for (const chunk of chunks) {
+              throwIfAborted();
+              await Promise.all(
+                chunk.map(async ({ row, id, payload }) => {
+                  try {
+                    const updateRes = await fetch(
+                      `${apiUrl}/api/${endpoint}/${id}`,
+                      {
+                        method: "PUT",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                          "X-Skip-Emails": "1",
+                        },
+                        body: JSON.stringify({ ...payload, skipEmails: true }),
+                      },
+                    );
+                    const updateData = await updateRes.json().catch(() => ({}));
+                    if (!updateRes.ok) {
+                      summary.failed++;
+                      summary.errors.push({
+                        row,
+                        errors: [
+                          humanizeImportError(
+                            (updateData as { message?: string }).message ??
+                              "Failed to update record",
+                          ),
+                        ],
+                        links: [
+                          {
+                            text: "View Record",
+                            url: `/dashboard/${endpoint}/view/${id}`,
+                          },
+                        ],
+                      });
+                    } else {
+                      summary.successful++;
+                    }
+                  } catch (err) {
+                    summary.failed++;
+                    summary.errors.push({
+                      row,
+                      errors: [
+                        humanizeImportError(
+                          err instanceof Error
+                            ? err.message
+                            : "Failed to update record",
+                        ),
+                      ],
+                      links: [
+                        {
+                          text: "View Record",
+                          url: `/dashboard/${endpoint}/view/${id}`,
+                        },
+                      ],
+                    });
+                  }
+                }),
+              );
+              writeProgress(
+                lastScannedForBulk,
+                summary.successful,
+                summary.failed,
+                records.length,
+                true,
+              );
             }
           };
 
@@ -1102,38 +1211,13 @@ export async function POST(request: NextRequest) {
                     if (opts.updateExisting) {
                       // Strip recordNumber so it is NEVER overwritten during update
                       delete payload.recordNumber;
-                      const updateRes = await fetch(
-                        `${apiUrl}/api/${endpoint}/${match.id}`,
-                        {
-                          method: "PUT",
-                          headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`,
-                            // Never send distribution / portal / update emails from Data Uploader
-                            "X-Skip-Emails": "1",
-                          },
-                          body: JSON.stringify({ ...payload, skipEmails: true }),
-                        },
-                      );
-                      const updateData = await updateRes.json();
-                      if (!updateRes.ok) {
-                        summary.failed++;
-                        summary.errors.push({
-                          row: rowNumber,
-                          errors: [
-                            humanizeImportError(
-                              updateData.message ?? "Failed to update record",
-                            ),
-                          ],
-                          links: [
-                            {
-                              text: "View Record",
-                              url: `/dashboard/${endpoint}/view/${match.id}`,
-                            },
-                          ],
-                        });
-                      } else {
-                        summary.successful++;
+                      updatePending.push({
+                        row: rowNumber,
+                        id: match.id,
+                        payload,
+                      });
+                      if (updatePending.length >= UPDATE_CONCURRENCY * 4) {
+                        await flushPendingUpdates();
                       }
                     } else {
                       // skipDuplicates or importNewOnly (fallback if early skip missed)
@@ -1198,6 +1282,7 @@ export async function POST(request: NextRequest) {
             );
           }
 
+          await flushPendingUpdates();
           await flushBulkChunksConcurrently(
             orgBulkPending.splice(0, orgBulkPending.length),
           );
