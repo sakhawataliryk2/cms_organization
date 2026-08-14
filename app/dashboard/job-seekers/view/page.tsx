@@ -353,6 +353,95 @@ const decodeSpreadsheetText = (value: unknown): string =>
     String.fromCharCode(parseInt(hex, 16)),
   );
 
+const RESUME_COLLAPSED_MAX_PX = 192;
+
+function normalizeResumePanelText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function CollapsibleResumeText({ text }: { text: string }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [contentHeight, setContentHeight] = useState(0);
+  const normalized = useMemo(() => normalizeResumePanelText(text), [text]);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [normalized]);
+
+  useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (!el) {
+      setContentHeight(0);
+      return;
+    }
+    const measure = () => {
+      setContentHeight(el.scrollHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [normalized]);
+
+  const needsToggle = contentHeight > RESUME_COLLAPSED_MAX_PX + 6;
+  const appliedMax = !needsToggle
+    ? undefined
+    : expanded
+      ? contentHeight
+      : RESUME_COLLAPSED_MAX_PX;
+  const showFade = needsToggle && !expanded;
+
+  return (
+    <div className="relative">
+      <div
+        className="relative overflow-hidden transition-[max-height] duration-500 ease-in-out motion-reduce:transition-none"
+        style={
+          appliedMax != null
+            ? { maxHeight: `${Math.ceil(appliedMax)}px` }
+            : undefined
+        }
+      >
+        <div
+          ref={innerRef}
+          className="p-3 text-sm whitespace-pre-wrap wrap-anywhere"
+        >
+          {normalized}
+        </div>
+        {showFade && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-16 bg-gradient-to-t from-white via-white/85 to-transparent backdrop-blur-[1px]"
+            aria-hidden
+          />
+        )}
+      </div>
+
+      {needsToggle && (
+        <div className="relative z-[2] flex justify-center border-t border-gray-100 py-2">
+          <button
+            type="button"
+            onClick={() => setExpanded((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
+            aria-expanded={expanded}
+          >
+            <FiChevronDown
+              className={`h-4 w-4 shrink-0 animate-bounce motion-reduce:animate-none transition-transform duration-500 ease-in-out ${
+                expanded ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            />
+            {expanded ? "View less" : "View more"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const normalizeFieldIdentifier = (identifier: unknown) => {
   if (identifier === undefined || identifier === null) {
     return "";
@@ -1010,10 +1099,6 @@ export default function JobSeekerView() {
   const [resumeDraft, setResumeDraft] = useState("");
   const [isSavingResume, setIsSavingResume] = useState(false);
   const [resumeSaveError, setResumeSaveError] = useState<string | null>(null);
-  const [isResumeExpanded, setIsResumeExpanded] = useState(false);
-  const [resumeContentHeight, setResumeContentHeight] = useState(0);
-  const resumeContentRef = useRef<HTMLDivElement>(null);
-  const RESUME_COLLAPSED_MAX_PX = 192;
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -1714,25 +1799,6 @@ Best regards`;
       fetchJobSeeker(jobSeekerId);
     }
   }, [jobSeekerId]);
-
-  // Reset resume expand state when switching records
-  useEffect(() => {
-    setIsResumeExpanded(false);
-  }, [jobSeekerId]);
-
-  // Measure resume content so fade / toggle only show when it overflows
-  useLayoutEffect(() => {
-    const el = resumeContentRef.current;
-    if (!el) {
-      setResumeContentHeight(0);
-      return;
-    }
-    const measure = () => setResumeContentHeight(el.scrollHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [jobSeeker?.resume?.profile, jobSeeker?.resumeText]);
 
   // Refetch notes when Submission modal opens so Prescreen tip and counts are up to date
   useEffect(() => {
@@ -4643,14 +4709,6 @@ Best regards`;
   // Render individual panels for summary
   const renderResumePanel = () => {
     if (!jobSeeker) return null;
-    const resumeProfile = jobSeeker.resume.profile;
-    const needsToggle = resumeContentHeight > RESUME_COLLAPSED_MAX_PX + 6;
-    const appliedMax = !needsToggle
-      ? resumeContentHeight || undefined
-      : isResumeExpanded
-        ? resumeContentHeight
-        : RESUME_COLLAPSED_MAX_PX;
-    const showFade = needsToggle && !isResumeExpanded;
 
     return (
       <PanelWithHeader
@@ -4661,48 +4719,13 @@ Best regards`;
       >
         <div className="border border-gray-200 rounded overflow-hidden">
           {visibleFields.resume.includes("profile") && (
-            <div className="relative">
-              <div
-                className="relative overflow-hidden transition-[max-height] duration-500 ease-in-out motion-reduce:transition-none"
-                style={
-                  appliedMax != null
-                    ? { maxHeight: `${Math.ceil(appliedMax)}px` }
-                    : undefined
-                }
-              >
-                <div
-                  ref={resumeContentRef}
-                  className="p-3 text-sm whitespace-pre-wrap wrap-anywhere"
-                >
-                  {resumeProfile}
-                </div>
-                {showFade && (
-                  <div
-                    className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-16 bg-gradient-to-t from-white via-white/85 to-transparent backdrop-blur-[1px]"
-                    aria-hidden
-                  />
-                )}
-              </div>
-
-              {needsToggle && (
-                <div className="relative z-[2] flex justify-center border-t border-gray-100 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsResumeExpanded((prev) => !prev)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
-                    aria-expanded={isResumeExpanded}
-                  >
-                    <FiChevronDown
-                      className={`h-4 w-4 shrink-0 animate-bounce motion-reduce:animate-none transition-transform duration-500 ease-in-out ${
-                        isResumeExpanded ? "rotate-180" : ""
-                      }`}
-                      aria-hidden
-                    />
-                    {isResumeExpanded ? "View less" : "View more"}
-                  </button>
-                </div>
-              )}
-            </div>
+            <CollapsibleResumeText
+              text={
+                jobSeeker.resumeText ||
+                jobSeeker.resume?.profile ||
+                ""
+              }
+            />
           )}
         </div>
       </PanelWithHeader>
