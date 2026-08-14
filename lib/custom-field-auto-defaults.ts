@@ -102,7 +102,9 @@ export function resolveInitialValueFromDefinition(
   const isOwnerLookup =
     fld.field_type === "lookup" &&
     String(fld.lookup_type ?? "").trim().toLowerCase() === "owner";
-  if (isOwnerLookup && raw === AUTO_CURRENT_OWNER_USER_ID) {
+  const isOwnerField =
+    isOwnerLookup || String(fld.field_name ?? "").trim() === "Field_69";
+  if (isOwnerField && (raw === "" || raw === AUTO_CURRENT_OWNER_USER_ID)) {
     return getCurrentUserIdFromClient() || "";
   }
 
@@ -126,7 +128,9 @@ export function resolveSentinelForSubmission(
   const isOwnerLookup =
     field.field_type === "lookup" &&
     String(field.lookup_type ?? "").trim().toLowerCase() === "owner";
-  if (isOwnerLookup && s === AUTO_CURRENT_OWNER_USER_ID) {
+  const isOwnerField =
+    isOwnerLookup || String(field.field_name ?? "").trim() === "Field_69";
+  if (isOwnerField && (s === "" || s === AUTO_CURRENT_OWNER_USER_ID)) {
     return getCurrentUserIdFromClient() || "";
   }
   return value;
