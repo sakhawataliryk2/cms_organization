@@ -1472,8 +1472,7 @@ export default function DataUploader() {
               },
               signal: importAbortControllerRef.current?.signal,
               body: JSON.stringify({
-                // Slightly lower concurrency reduces Blob rate-limit failures.
-                concurrency: 8,
+                concurrency: 50,
                 recordNumbers: importedRecordNumbers,
                 resumeLabels,
                 // New creates without a CSV record number still match this window.
