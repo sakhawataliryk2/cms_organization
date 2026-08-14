@@ -2199,6 +2199,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         let valueToSend = resolveSentinelForSubmission(
           {
             field_type: field.field_type,
+            field_name: field.field_name,
             default_value: field.default_value,
             lookup_type: field.lookup_type ?? null,
           },

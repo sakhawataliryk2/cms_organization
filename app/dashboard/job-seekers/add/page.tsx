@@ -1483,7 +1483,7 @@ export default function AddJobSeeker() {
         resumeText: "",
         skills: "",
         desiredSalary: "",
-        owner: currentUser ? currentUser.name : "",
+        owner: currentUser?.id != null ? String(currentUser.id) : "",
         dateAdded: new Date().toISOString().split("T")[0],
       };
 
@@ -1598,28 +1598,39 @@ export default function AddJobSeeker() {
         }
       }
 
-      // Auto-populate Owner if not set (only in create mode)
-      if (!isEditMode && (!apiDataDefaults.owner || String(apiDataDefaults.owner).trim() === "")) {
-        try {
-          const userCookie = document.cookie.replace(
-            /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          );
-          if (userCookie) {
-            const userData = JSON.parse(decodeURIComponent(userCookie));
-            if (userData.name) {
-              apiDataDefaults.owner = userData.name;
-              const ownerField = customFields.find(
-                (f) =>
-                  f.field_name === "Field_17" ||
-                  f.field_name === "field_17" ||
-                  (f.field_label === "Owner" && f.field_name?.includes("17"))
-              );
-              if (ownerField) customFieldsForDB[ownerField.field_label] = userData.name;
+      // Auto-populate Owner / Field_69 if not set (create mode only).
+      // Lookup widgets store the numeric users.id, not the display name.
+      if (!isEditMode) {
+        const ownerAlreadySet =
+          (apiDataDefaults.owner != null &&
+            String(apiDataDefaults.owner).trim() !== "") ||
+          Object.entries(customFieldsForDB).some(([label, val]) => {
+            const def = customFields.find((f) => f.field_label === label);
+            return (
+              (def?.field_name === "Field_69" ||
+                label.toLowerCase() === "owner") &&
+              val != null &&
+              String(val).trim() !== ""
+            );
+          });
+        if (!ownerAlreadySet) {
+          const ownerUserId =
+            currentUser?.id != null && String(currentUser.id).trim() !== ""
+              ? String(currentUser.id).trim()
+              : "";
+          if (ownerUserId) {
+            apiDataDefaults.owner = ownerUserId;
+            const ownerField = customFields.find(
+              (f) =>
+                f.field_name === "Field_69" ||
+                f.field_label?.toLowerCase() === "owner"
+            );
+            if (ownerField) {
+              customFieldsForDB[ownerField.field_label] = ownerUserId;
+            } else {
+              customFieldsForDB.Owner = ownerUserId;
             }
           }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
         }
       }
 

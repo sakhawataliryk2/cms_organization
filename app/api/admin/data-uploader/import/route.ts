@@ -215,6 +215,45 @@ function addItemToLookupMap(
 }
 
 const AUTO_DATE_FIELD_NAME = "Field_70";
+/** Stable Owner lookup field (Admin Center); label may be renamed. */
+const AUTO_OWNER_FIELD_NAME = "Field_69";
+
+/** Resolve uploading user's numeric id from JWT / user cookie (no DB call). */
+function getUploaderUserId(
+  cookieStore: Awaited<ReturnType<typeof cookies>>,
+  token: string,
+): string | null {
+  try {
+    const userCookie = cookieStore.get("user")?.value;
+    if (userCookie) {
+      const userData = JSON.parse(decodeURIComponent(userCookie)) as {
+        id?: string | number;
+      };
+      if (userData?.id != null && String(userData.id).trim() !== "") {
+        return String(userData.id).trim();
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const payloadB64 = token.split(".")[1];
+    if (!payloadB64) return null;
+    const json = Buffer.from(
+      payloadB64.replace(/-/g, "+").replace(/_/g, "/"),
+      "base64",
+    ).toString("utf8");
+    const decoded = JSON.parse(json) as {
+      userId?: string | number;
+      id?: string | number;
+    };
+    const uid = decoded?.userId ?? decoded?.id;
+    if (uid != null && String(uid).trim() !== "") return String(uid).trim();
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 function toYmdDate(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -933,6 +972,27 @@ export async function POST(request: NextRequest) {
             fieldNameToLabel[AUTO_DATE_FIELD_NAME] ??
             null;
 
+          // Resolve Field_69 (Owner) label; used to default owner to the uploader when missing.
+          const uploaderUserId = getUploaderUserId(cookieStore, token);
+          const adminResolvedAutoOwnerLabel =
+            entityType === "job-seekers" && uploaderUserId
+              ? await resolveFieldLabelByFieldName(
+                  apiUrl,
+                  token,
+                  entityType,
+                  AUTO_OWNER_FIELD_NAME,
+                )
+              : null;
+          const autoOwnerFieldLabel =
+            entityType === "job-seekers" && uploaderUserId
+              ? (adminResolvedAutoOwnerLabel ??
+                (fieldDefinitions as FieldDefinition[]).find(
+                  (fd) => fd.field_name === AUTO_OWNER_FIELD_NAME,
+                )?.field_label ??
+                fieldNameToLabel[AUTO_OWNER_FIELD_NAME] ??
+                "Owner")
+              : null;
+
           // When skipping duplicates, don't warm lookup caches for rows we will skip.
           // (updateExisting still needs lookups for matching rows.)
           const skipDupWithoutUpdate =
@@ -1113,6 +1173,29 @@ export async function POST(request: NextRequest) {
                     const fallbackDate = new Date().toISOString().slice(0, 10);
                     payload.custom_fields[autoDateFieldLabel] =
                       toYmdDate(createdAtFromRow) ?? fallbackDate;
+                  }
+                }
+
+                // Auto-populate Field_69 (Owner) with the uploading user when missing (job seekers).
+                if (
+                  entityType === "job-seekers" &&
+                  uploaderUserId &&
+                  autoOwnerFieldLabel
+                ) {
+                  const ownerFromCf =
+                    payload.custom_fields[autoOwnerFieldLabel] ??
+                    payload.custom_fields[AUTO_OWNER_FIELD_NAME] ??
+                    payload.custom_fields.Owner ??
+                    payload.custom_fields.owner;
+                  const ownerFromTop = payload.owner;
+                  const hasOwner =
+                    (ownerFromCf != null &&
+                      String(ownerFromCf).trim() !== "") ||
+                    (ownerFromTop != null &&
+                      String(ownerFromTop).trim() !== "");
+                  if (!hasOwner) {
+                    payload.custom_fields[autoOwnerFieldLabel] = uploaderUserId;
+                    payload.owner = uploaderUserId;
                   }
                 }
 
