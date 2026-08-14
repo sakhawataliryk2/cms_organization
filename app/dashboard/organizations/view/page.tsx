@@ -78,11 +78,6 @@ import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
-import {
-  jobBelongsToOrganization,
-  normalizeOrganizationName,
-  resolveJobOrganizationFieldDefs,
-} from "@/lib/jobOrganizationCustomField";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
 import PermissionGate from "@/components/PermissionGate";
@@ -3028,13 +3023,13 @@ export default function OrganizationView() {
     )}`,
   });
 
-  const fetchAllJobPages = async () => {
-    const allJobs: any[] = [];
-    let page = 1;
-    let hasMore = true;
+  // Fetch jobs for organization — server matches Organization custom field, never organization_id
+  const fetchJobs = async (organizationId: string) => {
+    setIsLoadingJobs(true);
+    setJobsError(null);
 
-    while (hasMore) {
-      const response = await fetch(`/api/jobs?page=${page}&limit=200`, {
+    try {
+      const response = await fetch(`/api/organizations/${organizationId}/jobs`, {
         headers: getAuthHeaders(),
       });
       if (!response.ok) {
@@ -3042,31 +3037,7 @@ export default function OrganizationView() {
         throw new Error(errorData.message || "Failed to fetch jobs");
       }
       const data = await response.json();
-      const batch = data.jobs || [];
-      allJobs.push(...batch);
-      hasMore = Boolean(data.hasMore ?? data.pagination?.hasMore) && batch.length > 0;
-      page += 1;
-      if (page > 100) break;
-    }
-
-    return allJobs;
-  };
-
-  // Fetch jobs for organization — match custom_fields Organization lookup, never organization_id
-  const fetchJobs = async (organizationId: string, organizationName?: string) => {
-    setIsLoadingJobs(true);
-    setJobsError(null);
-
-    try {
-      const orgName = normalizeOrganizationName(
-        organizationName || organization?.contact?.name || organization?.name
-      );
-      const fieldDefs = await resolveJobOrganizationFieldDefs();
-      const allJobs = await fetchAllJobPages();
-      const orgJobs = allJobs.filter((job: any) =>
-        jobBelongsToOrganization(job, organizationId, fieldDefs, orgName)
-      );
-      setJobs(orgJobs);
+      setJobs(Array.isArray(data.jobs) ? data.jobs : []);
     } catch (err) {
       console.error("Error fetching jobs:", err);
       setJobsError(
@@ -3148,7 +3119,7 @@ export default function OrganizationView() {
   };
 
   // Fetch tasks for organization (only non-completed tasks)
-  const fetchTasks = async (organizationId: string, organizationName?: string) => {
+  const fetchTasks = async (organizationId: string) => {
     setIsLoadingTasks(true);
     setTasksError(null);
 
@@ -3173,19 +3144,18 @@ export default function OrganizationView() {
         hiringManagerIds = orgHiringManagers.map((hm: any) => parseInt(hm.id));
       }
 
-      const orgName = normalizeOrganizationName(
-        organizationName || organization?.contact?.name || organization?.name
-      );
       let jobIds: number[] = [];
       try {
-        const fieldDefs = await resolveJobOrganizationFieldDefs();
-        const allJobs = await fetchAllJobPages();
-        jobIds = allJobs
-          .filter((job: any) =>
-            jobBelongsToOrganization(job, organizationId, fieldDefs, orgName)
-          )
-          .map((job: any) => parseInt(job.id, 10))
-          .filter((id: number) => Number.isFinite(id));
+        const jobsResponse = await fetch(
+          `/api/organizations/${organizationId}/jobs`,
+          { headers: getAuthHeaders() },
+        );
+        if (jobsResponse.ok) {
+          const jobsData = await jobsResponse.json();
+          jobIds = (Array.isArray(jobsData.jobs) ? jobsData.jobs : [])
+            .map((job: any) => parseInt(job.id, 10))
+            .filter((jobId: number) => Number.isFinite(jobId));
+        }
       } catch (jobErr) {
         console.error("Error fetching jobs for organization tasks:", jobErr);
       }
