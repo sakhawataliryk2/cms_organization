@@ -1122,7 +1122,7 @@ export default function OrganizationView() {
       // Refresh hiring managers and jobs
       if (organizationId) {
         fetchHiringManagers(organizationId);
-        fetchJobs(organizationId, organization?.contact?.name);
+        fetchJobs(organizationId);
       }
     }
   }, [organizationId]);
@@ -1130,7 +1130,7 @@ export default function OrganizationView() {
   // Refresh tasks when organization changes or when hiring managers/jobs are updated
   useEffect(() => {
     if (organizationId && !isLoadingHiringManagers && !isLoadingJobs) {
-      fetchTasks(organizationId, organization?.contact?.name);
+      fetchTasks(organizationId);
     }
   }, [organizationId, isLoadingHiringManagers, isLoadingJobs]);
 
@@ -2086,8 +2086,8 @@ export default function OrganizationView() {
       fetchHistory(id);
       fetchDocuments(id);
       fetchHiringManagers(id);
-      fetchJobs(id, formattedOrg.contact?.name);
-      fetchTasks(id, formattedOrg.contact?.name);
+      fetchJobs(id);
+      fetchTasks(id);
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError(
