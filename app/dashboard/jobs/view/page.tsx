@@ -3548,6 +3548,7 @@ out.sort((a, b) => {
       fetchSubmittedCandidates();
       return;
     } else if (action === "ai-smart-match" && jobId) {
+      if (isAiMatching) return;
       (async () => {
         setIsAiMatching(true);
         const token = document.cookie.replace(
@@ -3562,31 +3563,27 @@ out.sort((a, b) => {
             headers,
           });
           const data = await res.json().catch(() => ({}));
-          const matchedIds: string[] = Array.isArray(data?.matchedIds)
-            ? data.matchedIds.map((id: any) => String(id))
-            : [];
-          if (matchedIds.length === 0) {
+          if (!res.ok) {
+            toast.error(data?.message || "AI Smart Match failed. Please try again.");
+            return;
+          }
+          const apiMatches = Array.isArray(data?.matches) ? data.matches : [];
+          const matchedCandidates = apiMatches.map((js: any) => ({
+            id: js.id,
+            name: js.name || `Job Seeker #${js?.record_number || js.id}`,
+            email: js.email,
+            title: js.title,
+            record_number: js.record_number,
+            score: js.score,
+            ...js,
+          }));
+          if (matchedCandidates.length === 0) {
             setSubmittedCandidates([]);
             setFilteredCandidates([]);
             setActiveTab("applied");
-            toast.info("AI Smart Match found no candidates for this job.");
+            toast.info(data?.message || "AI Smart Match found no candidates for this job.");
             return;
           }
-          const jsRes = await fetch("/api/job-seekers", { headers });
-          const jsData = await jsRes.json().catch(() => ({}));
-          const all = jsData?.jobSeekers || [];
-          const ordered = matchedIds
-            .map((id) => all.find((js: any) => String(js.id) === id))
-            .filter(Boolean);
-          const matchedCandidates = ordered.map((js: any) => ({
-            id: js.id,
-            name:
-              js.full_name ||
-              `${(js.first_name || "").trim()} ${(js.last_name || "").trim()}`.trim() ||
-              `Job Seeker #${js?.record_number || js.id}`,
-            email: js.email,
-            ...js,
-          }));
           setSubmittedCandidates(matchedCandidates);
           setFilteredCandidates(matchedCandidates);
           setActiveTab("applied");
@@ -4421,7 +4418,7 @@ out.sort((a, b) => {
       { label: "Add Task", action: () => handleActionSelected("add-task") },
       { label: "Add Placement", action: () => handleActionSelected("add-placement") },
       { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-      { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
+      { label: isAiMatching ? "AI Smart Match…" : "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
       { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
       { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
       { label: "Clone", action: () => handleActionSelected("clone") },

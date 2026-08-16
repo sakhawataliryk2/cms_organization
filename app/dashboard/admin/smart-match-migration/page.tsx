@@ -23,11 +23,55 @@ type RunInfo = {
   total_migrated?: number;
   total_failed?: number;
   total_skipped?: number;
-  total_undone?: number;
-  module_counts?: Record<string, number>;
+  estimated_tokens?: number;
+  estimated_cost_usd?: number | string;
+  actual_tokens?: number;
+  actual_cost_usd?: number | string;
   last_error?: string | null;
   started_by_name?: string | null;
+  cost_breakdown?: CostBreakdown | null;
 };
+
+type EntityCost = {
+  active?: number;
+  alreadyEmbedded?: number;
+  missing?: number;
+  sampled?: number;
+  eligibleToEmbed?: number;
+  ineligible?: number;
+  estimatedTokens?: number;
+  estimatedUsd?: number;
+};
+
+type CostBreakdown = {
+  mode?: string;
+  model?: string;
+  usdPerMillionTokens?: number;
+  tokenEstimate?: string;
+  seekers?: EntityCost;
+  jobs?: EntityCost;
+  totals?: {
+    toEmbed?: number;
+    ineligible?: number;
+    alreadyEmbedded?: number;
+    missing?: number;
+    estimatedTokens?: number;
+    estimatedUsd?: number;
+    actualTokens?: number;
+    actualUsd?: number;
+  };
+};
+
+function formatUsd(n: unknown) {
+  const v = Number(n) || 0;
+  if (v === 0) return '$0.00';
+  if (Math.abs(v) < 0.01) return `$${v.toFixed(6)}`;
+  return `$${v.toFixed(2)}`;
+}
+
+function formatN(n: unknown) {
+  return Number(n || 0).toLocaleString('en-US');
+}
 
 async function consumeNdjson(
   response: Response,
@@ -66,24 +110,26 @@ async function consumeNdjson(
   }
 }
 
-export default function StorageMigrationPage() {
+export default function SmartMatchMigrationPage() {
   const router = useRouter();
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [busy, setBusy] = useState(false);
+  const [cost, setCost] = useState<CostBreakdown | null>(null);
   const [status, setStatus] = useState<{
-    storage?: Record<string, unknown>;
     env?: {
       ok?: boolean;
       configured?: boolean;
-      canUpload?: boolean;
       canMigrate?: boolean;
       summary?: string;
       missing?: string[];
-      warnings?: string[];
     };
+    counts?: {
+      seekers?: { active?: number; missing?: number; eligible?: number; ineligible?: number };
+      jobs?: { active?: number; missing?: number; eligible?: number; ineligible?: number };
+    };
+    pricing?: { model?: string; usdPerMillionTokens?: number };
     latestRun?: RunInfo | null;
     activeRun?: RunInfo | null;
-    itemCounts?: Record<string, number> | null;
   } | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
   const logIdRef = useRef(0);
@@ -106,12 +152,16 @@ export default function StorageMigrationPage() {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/storage-migration/status', {
+      const res = await fetch('/api/admin/smart-match-migration/status', {
         cache: 'no-store',
       });
       const data = await res.json();
       if (data?.success) {
         setStatus(data);
+        const fromRun = data?.activeRun?.cost_breakdown || data?.latestRun?.cost_breakdown;
+        if (fromRun && typeof fromRun === 'object') {
+          setCost(fromRun as CostBreakdown);
+        }
       } else {
         appendLog('error', data?.message || 'Failed to load status');
       }
@@ -135,7 +185,7 @@ export default function StorageMigrationPage() {
       e.returnValue = '';
       try {
         navigator.sendBeacon?.(
-          '/api/admin/storage-migration/stop',
+          '/api/admin/smart-match-migration/stop',
           new Blob([JSON.stringify({})], { type: 'application/json' }),
         );
       } catch {
@@ -151,13 +201,13 @@ export default function StorageMigrationPage() {
     if (busy && action !== 'stop') return;
     if (action === 'stop') {
       try {
-        await fetch('/api/admin/storage-migration/stop', {
+        await fetch('/api/admin/smart-match-migration/stop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
         abortRef.current?.abort();
-        appendLog('warn', 'Stop requested — finishing current document, then pausing.');
+        appendLog('warn', 'Stop requested — finishing current record, then pausing.');
         await refreshStatus();
       } catch (e: unknown) {
         appendLog('error', e instanceof Error ? e.message : 'Stop failed');
@@ -172,7 +222,7 @@ export default function StorageMigrationPage() {
     appendLog('info', `Starting action: ${action}`);
 
     try {
-      const res = await fetch(`/api/admin/storage-migration/${action}`, {
+      const res = await fetch(`/api/admin/smart-match-migration/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -187,6 +237,9 @@ export default function StorageMigrationPage() {
       }
 
       await consumeNdjson(res, (evt) => {
+        if (evt.type === 'cost' && evt.cost && typeof evt.cost === 'object') {
+          setCost(evt.cost as CostBreakdown);
+        }
         const level = String(evt.level || (evt.type === 'error' ? 'error' : 'info'));
         const message = String(evt.message || JSON.stringify(evt));
         appendLog(level, message, evt);
@@ -206,8 +259,9 @@ export default function StorageMigrationPage() {
   };
 
   const run = status?.activeRun || status?.latestRun;
-  const storage = status?.storage;
   const env = status?.env;
+  const counts = status?.counts;
+  const totals = cost?.totals;
 
   const levelClass = (level: LogLevel) => {
     if (level === 'error') return 'text-red-700';
@@ -224,27 +278,16 @@ export default function StorageMigrationPage() {
             <div className="flex justify-between items-start gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-gray-800">
-                  Storage Migration
+                  Smart Match Migration
                 </h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  Start migration Vercel Blob → AWS
+                  One-time embeddings for existing jobs and job seekers
                 </p>
                 <p className="text-xs text-gray-500 mt-2 max-w-2xl">
-                  Live DB safe mode: unique-URL migration uploads each Blob file once, then
-                  batch-updates all matching DB rows. Scan only includes docs on live
-                  non-archived records. Closing the browser stops after the current unique
-                  file. Use Undo to restore Blob URLs from the audit map for a run.
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                  Existing jobs / job seekers embeddings:{' '}
-                  <button
-                    type="button"
-                    className="text-blue-700 underline"
-                    onClick={() => router.push('/dashboard/admin/smart-match-migration')}
-                  >
-                    Smart Match Migration
-                  </button>{' '}
-                  (Validate env → Scan → Dry run with cost → Start).
+                  Same steps as Storage Migration: Validate env → Scan → Dry run (cost) →
+                  Start. Runs against this environment&apos;s database. New and updated
+                  records embed on save; this page only backfills what is already there.
+                  Closing the browser stops after the current record. Use Resume to continue.
                 </p>
               </div>
               <button
@@ -260,20 +303,16 @@ export default function StorageMigrationPage() {
           <div className="bg-white rounded-lg shadow p-6 mb-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div className="border border-gray-200 rounded p-3">
-                <div className="font-medium text-gray-800 mb-2">S3 configuration</div>
+                <div className="font-medium text-gray-800 mb-2">Environment</div>
                 <div className="text-gray-600 space-y-1 font-mono text-xs">
-                  <div>configured: {String(storage?.configured ?? '—')}</div>
-                  <div>region: {String(storage?.region ?? '—')}</div>
-                  <div>bucket: {String(storage?.bucket ?? '—')}</div>
-                  <div>credentials: {String(storage?.credentialMode ?? '—')}</div>
+                  <div>model: {String(status?.pricing?.model ?? '—')}</div>
+                  <div>
+                    price: {formatUsd(status?.pricing?.usdPerMillionTokens)} / 1M tokens
+                  </div>
                   <div>env ok: {String(env?.ok ?? '—')}</div>
-                  <div>can upload: {String(env?.canUpload ?? '—')}</div>
                   <div>can migrate: {String(env?.canMigrate ?? '—')}</div>
                   {env?.missing && env.missing.length > 0 ? (
-                    <div className="text-red-600">missing/errors: {env.missing.join(', ')}</div>
-                  ) : null}
-                  {env?.warnings && env.warnings.length > 0 ? (
-                    <div className="text-amber-700">warnings: {env.warnings.join(', ')}</div>
+                    <div className="text-red-600">missing: {env.missing.join(', ')}</div>
                   ) : null}
                   {env?.summary ? (
                     <div className="text-gray-700 whitespace-pre-wrap normal-case font-sans text-xs mt-1">
@@ -281,9 +320,18 @@ export default function StorageMigrationPage() {
                     </div>
                   ) : null}
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Use <span className="font-medium">Validate env</span> for a full check including live S3 HeadBucket.
-                </p>
+                <div className="text-xs text-gray-500 mt-3 space-y-1">
+                  <div>
+                    Seekers: {formatN(counts?.seekers?.missing)} missing /{' '}
+                    {formatN(counts?.seekers?.active)} active (
+                    {formatN(counts?.seekers?.eligible)} indexed)
+                  </div>
+                  <div>
+                    Jobs: {formatN(counts?.jobs?.missing)} missing /{' '}
+                    {formatN(counts?.jobs?.active)} active (
+                    {formatN(counts?.jobs?.eligible)} indexed)
+                  </div>
+                </div>
               </div>
               <div className="border border-gray-200 rounded p-3">
                 <div className="font-medium text-gray-800 mb-2">Latest / active run</div>
@@ -293,10 +341,13 @@ export default function StorageMigrationPage() {
                     <div>status: {run.status}</div>
                     <div>found: {run.total_found ?? 0}</div>
                     <div>pending: {run.total_pending ?? 0}</div>
-                    <div>migrated: {run.total_migrated ?? 0}</div>
+                    <div>embedded: {run.total_migrated ?? 0}</div>
                     <div>failed: {run.total_failed ?? 0}</div>
                     <div>skipped: {run.total_skipped ?? 0}</div>
-                    <div>undone: {run.total_undone ?? 0}</div>
+                    <div>
+                      billed: {formatN(run.actual_tokens)} tokens (
+                      {formatUsd(run.actual_cost_usd)})
+                    </div>
                     {run.last_error ? (
                       <div className="text-red-600 whitespace-pre-wrap">{run.last_error}</div>
                     ) : null}
@@ -306,6 +357,75 @@ export default function StorageMigrationPage() {
                 )}
               </div>
             </div>
+
+            {cost ? (
+              <div className="border border-gray-200 rounded p-3 text-sm">
+                <div className="font-medium text-gray-800 mb-2">
+                  Cost breakdown
+                  {cost.mode ? (
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      ({cost.mode === 'scan'
+                        ? 'scan sample'
+                        : cost.mode === 'dry_run'
+                          ? 'dry run'
+                          : 'migration'})
+                    </span>
+                  ) : null}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="text-gray-500 border-b">
+                        <th className="py-1 pr-3 font-medium">Entity</th>
+                        <th className="py-1 pr-3 font-medium">To embed</th>
+                        <th className="py-1 pr-3 font-medium">Ineligible</th>
+                        <th className="py-1 pr-3 font-medium">Already indexed</th>
+                        <th className="py-1 pr-3 font-medium">Est. tokens</th>
+                        <th className="py-1 font-medium">Est. cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-gray-800">
+                      <tr>
+                        <td className="py-1 pr-3">Job seekers</td>
+                        <td className="py-1 pr-3">{formatN(cost.seekers?.eligibleToEmbed)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.seekers?.ineligible)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.seekers?.alreadyEmbedded)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.seekers?.estimatedTokens)}</td>
+                        <td className="py-1">{formatUsd(cost.seekers?.estimatedUsd)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1 pr-3">Jobs</td>
+                        <td className="py-1 pr-3">{formatN(cost.jobs?.eligibleToEmbed)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.jobs?.ineligible)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.jobs?.alreadyEmbedded)}</td>
+                        <td className="py-1 pr-3">{formatN(cost.jobs?.estimatedTokens)}</td>
+                        <td className="py-1">{formatUsd(cost.jobs?.estimatedUsd)}</td>
+                      </tr>
+                      <tr className="border-t font-medium">
+                        <td className="py-1 pr-3">Total</td>
+                        <td className="py-1 pr-3">{formatN(totals?.toEmbed)}</td>
+                        <td className="py-1 pr-3">{formatN(totals?.ineligible)}</td>
+                        <td className="py-1 pr-3">{formatN(totals?.alreadyEmbedded)}</td>
+                        <td className="py-1 pr-3">{formatN(totals?.estimatedTokens)}</td>
+                        <td className="py-1">{formatUsd(totals?.estimatedUsd)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {totals?.actualTokens ? (
+                  <p className="text-xs text-gray-600 mt-2">
+                    Actual billed this run: {formatN(totals.actualTokens)} tokens (
+                    {formatUsd(totals.actualUsd)})
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Estimates use chars/4. OpenRouter bills actual tokens at{' '}
+                    {formatUsd(cost.usdPerMillionTokens)} / 1M. Scan samples missing rows;
+                    Dry run walks all of them with no API writes.
+                  </p>
+                )}
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap gap-2">
               <button
@@ -338,7 +458,7 @@ export default function StorageMigrationPage() {
                 onClick={() => {
                   if (
                     !window.confirm(
-                      'Start live migration? Each document will be moved to S3 and its DB URL updated. Stop-on-first-error is enabled.',
+                      'Start embedding existing jobs and job seekers? This calls OpenRouter and writes vectors. Stop-on-first-error is enabled. Use Resume if you pause.',
                     )
                   ) {
                     return;
@@ -369,37 +489,20 @@ export default function StorageMigrationPage() {
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  if (
-                    !window.confirm(
-                      'Undo the latest run? This restores old Vercel Blob URLs in the DB for migrated items. S3 objects are kept.',
-                    )
-                  ) {
-                    return;
-                  }
-                  runAction('undo', { runId: run?.id });
-                }}
-                className="px-4 py-2 border border-gray-400 text-gray-800 text-sm rounded disabled:opacity-50"
-              >
-                Undo last run
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => router.push('/dashboard/admin/smart-match-migration')}
-                className="px-4 py-2 border border-gray-400 text-gray-800 text-sm rounded disabled:opacity-50"
-              >
-                Smart Match embeddings
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
                   setLogs([]);
                   refreshStatus();
                 }}
                 className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded disabled:opacity-50"
               >
                 Refresh / clear logs
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => router.push('/dashboard/admin/storage-migration')}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded disabled:opacity-50"
+              >
+                Storage Migration
               </button>
             </div>
           </div>

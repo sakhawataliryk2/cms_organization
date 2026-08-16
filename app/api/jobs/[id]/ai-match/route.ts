@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+export const maxDuration = 60;
+
 /**
  * POST /api/jobs/[id]/ai-match
- * Proxies to Node backend. Returns { matchedIds: string[] }.
+ * Proxies to Node backend. Returns ranked job seekers for this job.
  */
 export async function POST(
   request: NextRequest,
