@@ -642,6 +642,12 @@ export default function AdminCenter() {
             path: '/dashboard/admin/storage-migration'
         },
         {
+            id: 'smart-match-migration',
+            name: 'Smart Match Migration',
+            icon: <FiDatabase size={50} color="white" />,
+            path: '/dashboard/admin/smart-match-migration'
+        },
+        {
             id: 'the-button',
             name: 'The Button',
             icon: <FaRegArrowAltCircleRight size={50} color="white" />,

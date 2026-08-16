@@ -72,6 +72,7 @@ import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import ZoomPhoneNoteBody, { getZoomPhoneNoteKind } from "@/components/ZoomPhoneNoteBody";
+import ZoomInfoNoteBody, { isZoomInfoNote } from "@/components/ZoomInfoNoteBody";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
@@ -3847,6 +3848,8 @@ export default function OrganizationView() {
                         )}
                         {getZoomPhoneNoteKind(note.text) ? (
                           <ZoomPhoneNoteBody text={note.text} compact />
+                        ) : isZoomInfoNote(note.action, (note as any).note_type, note.text) ? (
+                          <ZoomInfoNoteBody text={note.text} compact />
                         ) : (
                           <p className="text-sm text-gray-700">
                             {note.text.length > 100
@@ -5717,18 +5720,27 @@ export default function OrganizationView() {
 
               // Zoom Phone call / SMS note styling
               const zoomKind = getZoomPhoneNoteKind(note.text);
+              const zoomInfoNote = isZoomInfoNote(
+                note.action,
+                (note as any).note_type,
+                note.text
+              );
               const zoomAccentClass =
                 zoomKind === "call"
                   ? "border-l-4 border-l-indigo-400"
                   : zoomKind === "sms"
                     ? "border-l-4 border-l-teal-500"
-                    : "";
+                    : zoomInfoNote
+                      ? "border-l-4 border-l-orange-400"
+                      : "";
               const zoomActionBadge =
                 /zoom\s*call/i.test(String(actionLabel))
                   ? "bg-indigo-100 text-indigo-900 border border-indigo-200/80"
                   : /zoom\s*sms/i.test(String(actionLabel))
                     ? "bg-teal-100 text-teal-900 border border-teal-200/80"
-                    : "bg-blue-100 text-blue-800";
+                    : /zoominfo/i.test(String(actionLabel))
+                      ? "bg-orange-100 text-orange-900 border border-orange-200/80"
+                      : "bg-blue-100 text-blue-800";
 
               return (
                 <div id={`note-${note.id}`} key={note.id} className={`p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors ${zoomAccentClass}`}>
@@ -5847,7 +5859,11 @@ export default function OrganizationView() {
 
                   {/* Note Content */}
                   <div className="mt-2">
-                    <ZoomPhoneNoteBody text={note.text} />
+                    {zoomInfoNote ? (
+                      <ZoomInfoNoteBody text={note.text} />
+                    ) : (
+                      <ZoomPhoneNoteBody text={note.text} />
+                    )}
                   </div>
                 </div>
               );
