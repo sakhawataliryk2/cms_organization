@@ -12,6 +12,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
   headerCatalogKeyFromField,
@@ -1837,25 +1838,13 @@ export default function OrganizationView() {
   }, [contactInfoFieldCatalog, panelFieldsConfig, availableFields]);
 
   // Initialize modal state when opening Contact Info edit (order has no duplicate keys)
-  useEffect(() => {
-    if (editingPanel !== "contactInfo") return;
-    const current = visibleFields.contactInfo || [];
-    const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
-    const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    const uniqueOrder = Array.from(new Set(order));
-    setModalContactInfoOrder(uniqueOrder);
-
-    setModalContactInfoVisible(
-      catalogKeys.reduce<Record<string, boolean>>((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {})
-    );
-  }, [editingPanel, contactInfoFieldCatalog, visibleFields.contactInfo]);
+  useSyncSortableFieldsModal(
+    editingPanel === "contactInfo",
+    contactInfoFieldCatalog,
+    visibleFields.contactInfo || [],
+    setModalContactInfoOrder,
+    setModalContactInfoVisible
+  );
 
   // Save Contact Info config (visibility + order) and persist globally
   const saveContactInfoConfig = () => {

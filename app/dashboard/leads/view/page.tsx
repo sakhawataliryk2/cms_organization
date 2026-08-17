@@ -13,6 +13,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
   headerCatalogKeyFromField,
@@ -953,74 +954,37 @@ out.sort((a, b) => {
     [setPanelFieldsConfig]
   );
 
-  // Sync Lead Contact Info modal state when opening edit for contactInfo
-  useEffect(() => {
-    if (editingPanel !== "contactInfo") return;
-    const current = visibleFields.contactInfo || [];
-    const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
-    // Remove duplicates from catalogKeys
-    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+  useSyncSortableFieldsModal(
+    editingPanel === "contactInfo",
+    contactInfoFieldCatalog,
+    visibleFields.contactInfo || [],
+    setModalContactInfoOrder,
+    setModalContactInfoVisible
+  );
 
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
-    const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
+  useSyncSortableFieldsModal(
+    editingPanel === "details",
+    detailsFieldCatalog,
+    visibleFields.details || [],
+    setModalDetailsOrder,
+    setModalDetailsVisible
+  );
 
-    const uniqueOrder = Array.from(new Set(order));
-    setModalContactInfoOrder(uniqueOrder);
-    setModalContactInfoVisible(
-      uniqueCatalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.contactInfo, contactInfoFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "websiteJobs",
+    websiteJobsFieldCatalog,
+    visibleFields.websiteJobs || [],
+    setModalWebsiteJobsOrder,
+    setModalWebsiteJobsVisible
+  );
 
-  // Sync Lead Details modal state when opening edit for details
-  useEffect(() => {
-    if (editingPanel !== "details") return;
-    const current = visibleFields.details || [];
-    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
-    // Remove duplicates from catalogKeys
-    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-    const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
-    uniqueCatalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    // Ensure order has no duplicates
-    const uniqueOrder = Array.from(new Set(order));
-    setModalDetailsOrder(uniqueOrder);
-    setModalDetailsVisible(
-      uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
-
-  useEffect(() => {
-    if (editingPanel !== "websiteJobs") return;
-    const current = visibleFields.websiteJobs || [];
-    const catalogKeys = websiteJobsFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    setModalWebsiteJobsOrder(order);
-    setModalWebsiteJobsVisible(
-      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.websiteJobs, websiteJobsFieldCatalog]);
-
-  useEffect(() => {
-    if (editingPanel !== "ourJobs") return;
-    const current = visibleFields.ourJobs || [];
-    const catalogKeys = ourJobsFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    setModalOurJobsOrder(order);
-    setModalOurJobsVisible(
-      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.ourJobs, ourJobsFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "ourJobs",
+    ourJobsFieldCatalog,
+    visibleFields.ourJobs || [],
+    setModalOurJobsOrder,
+    setModalOurJobsVisible
+  );
 
   // Handle edit panel click
   const renderPanel = (id: string, isOverlay = false) => {

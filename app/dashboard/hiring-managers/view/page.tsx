@@ -12,6 +12,7 @@ import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import ZoomInfoEnrichButton from '@/components/zoominfo/ZoomInfoEnrichButton';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
   headerCatalogKeyFromField,
@@ -1481,47 +1482,21 @@ out.sort((a, b) => {
     }
   }, [organizationDetailsFieldCatalog, panelFields, setPanelFields]);
 
-  // Sync Hiring Manager Details modal state when opening edit for details
-  useEffect(() => {
-    if (editingPanel !== "details") return;
-    const current = visibleFields.details || [];
-    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
-    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+  useSyncSortableFieldsModal(
+    editingPanel === "details",
+    detailsFieldCatalog,
+    visibleFields.details || [],
+    setModalDetailsOrder,
+    setModalDetailsVisible
+  );
 
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
-    const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    const uniqueOrder = Array.from(new Set(order));
-    setModalDetailsOrder(uniqueOrder);
-    setModalDetailsVisible(
-      uniqueCatalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
-
-  // Sync Hiring Manager Organization Details modal state when opening edit for organizationDetails
-  useEffect(() => {
-    if (editingPanel !== "organizationDetails") return;
-    const current = visibleFields.organizationDetails || [];
-    const catalogKeys = organizationDetailsFieldCatalog.map((f) => f.key);
-    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
-    const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    const uniqueOrder = Array.from(new Set(order));
-    setModalOrganizationDetailsOrder(uniqueOrder);
-    setModalOrganizationDetailsVisible(
-      uniqueCatalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.organizationDetails, organizationDetailsFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "organizationDetails",
+    organizationDetailsFieldCatalog,
+    visibleFields.organizationDetails || [],
+    setModalOrganizationDetailsOrder,
+    setModalOrganizationDetailsVisible
+  );
 
 
   // Toggle field visibility (non-persisted panels only)

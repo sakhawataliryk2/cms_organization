@@ -11,6 +11,7 @@ import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
   getJobsSubtypePath,
@@ -2573,34 +2574,21 @@ out.sort((a, b) => {
     updatePanelFields(path, next);
   };
 
-  // Sync Job Details modal state when opening edit for jobDetails
-  useEffect(() => {
-    if (editingPanel !== "jobDetails") return;
-    const current = visibleFields.jobDetails || [];
-    const catalogKeys = jobDetailsFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    setModalJobDetailsOrder(order);
-    setModalJobDetailsVisible(
-      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "jobDetails",
+    jobDetailsFieldCatalog,
+    visibleFields.jobDetails || [],
+    setModalJobDetailsOrder,
+    setModalJobDetailsVisible
+  );
 
-  useEffect(() => {
-    if (editingPanel !== "details") return;
-    const current = visibleFields.details || [];
-    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    setModalDetailsOrder(order);
-    setModalDetailsVisible(
-      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "details",
+    detailsFieldCatalog,
+    visibleFields.details || [],
+    setModalDetailsOrder,
+    setModalDetailsVisible
+  );
 
   useEffect(() => {
     if (editingPanel === "hiringManager" && hiringManagerAvailableFields.length === 0) {
@@ -2608,23 +2596,13 @@ out.sort((a, b) => {
     }
   }, [editingPanel]);
 
-  useEffect(() => {
-    if (editingPanel !== "hiringManager") return;
-    const current = visibleFields.hiringManager || [];
-    const catalogKeys = hiringManagerFieldCatalog.map((f) => f.key);
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
-    const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    setModalHiringManagerOrder(order);
-    setModalHiringManagerVisible(
-      catalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.hiringManager, hiringManagerFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "hiringManager",
+    hiringManagerFieldCatalog,
+    visibleFields.hiringManager || [],
+    setModalHiringManagerOrder,
+    setModalHiringManagerVisible
+  );
 
   const headerFieldCatalog = useMemo(() => {
     const seen = new Set<string>();

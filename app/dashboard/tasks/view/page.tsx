@@ -14,6 +14,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
     headerCatalogKeyFromField,
@@ -858,39 +859,21 @@ export default function TaskView() {
         }
     }, [taskOverviewFieldCatalog, panelFields, setPanelFields]);
 
-    // Sync Task Details modal state when opening edit for details
-    useEffect(() => {
-        if (editingPanel !== "details") return;
-        const current = visibleFields.details || [];
-        const catalogKeys = taskDetailsFieldCatalog.map((f) => f.key);
-        const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-        const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
-        uniqueCatalogKeys.forEach((k) => {
-            if (!order.includes(k)) order.push(k);
-        });
-        const uniqueOrder = Array.from(new Set(order));
-        setModalDetailsOrder(uniqueOrder);
-        setModalDetailsVisible(
-            uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-        );
-    }, [editingPanel, visibleFields.details, taskDetailsFieldCatalog]);
+    useSyncSortableFieldsModal(
+        editingPanel === "details",
+        taskDetailsFieldCatalog,
+        visibleFields.details || [],
+        setModalDetailsOrder,
+        setModalDetailsVisible
+    );
 
-    // Sync Task Overview modal state when opening edit for taskOverview
-    useEffect(() => {
-        if (editingPanel !== "taskOverview") return;
-        const current = visibleFields.taskOverview || [];
-        const catalogKeys = taskOverviewFieldCatalog.map((f) => f.key);
-        const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-        const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
-        uniqueCatalogKeys.forEach((k) => {
-            if (!order.includes(k)) order.push(k);
-        });
-        const uniqueOrder = Array.from(new Set(order));
-        setModalTaskOverviewOrder(uniqueOrder);
-        setModalTaskOverviewVisible(
-            uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-        );
-    }, [editingPanel, visibleFields.taskOverview, taskOverviewFieldCatalog]);
+    useSyncSortableFieldsModal(
+        editingPanel === "taskOverview",
+        taskOverviewFieldCatalog,
+        visibleFields.taskOverview || [],
+        setModalTaskOverviewOrder,
+        setModalTaskOverviewVisible
+    );
 
     // Task Details modal: save order/visibility and persist for all records
     const handleSaveTaskDetailsFields = useCallback(() => {

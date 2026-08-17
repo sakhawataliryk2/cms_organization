@@ -22,6 +22,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import {
@@ -2404,62 +2405,27 @@ Best regards`;
     [visibleFieldsState.resume, jobSeekerDetailsVisible, overviewVisible, payrollInfoVisible]
   );
 
-  // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
-  useEffect(() => {
-    if (editingPanel !== "jobSeekerDetails") return;
-    const current = visibleFields.jobSeekerDetails || [];
-    const catalogKeys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
-    const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    setModalJobSeekerDetailsOrder(order);
-    setModalJobSeekerDetailsVisible(
-      catalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.jobSeekerDetails, jobSeekerDetailsFieldCatalog]);
-
-  // Sync Overview modal state when opening edit for overview
-  useEffect(() => {
-    if (editingPanel !== "overview") return;
-    const current = visibleFields.overview || [];
-    const catalogKeys = overviewFieldCatalog.map((f) => f.key);
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
-    const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    setModalOverviewOrder(order);
-    setModalOverviewVisible(
-      catalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.overview, overviewFieldCatalog]);
-
-  // Sync Payroll Info modal state when opening edit for payrollInfo
-  useEffect(() => {
-    if (editingPanel !== "payrollInfo") return;
-    const current = visibleFields.payrollInfo || [];
-    const catalogKeys = payrollInfoFieldCatalog.map((f) => f.key);
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
-    const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
-
-    setModalPayrollInfoOrder(order);
-    setModalPayrollInfoVisible(
-      catalogKeys.reduce((acc, k) => {
-        acc[k] = current.includes(k);
-        return acc;
-      }, {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.payrollInfo, payrollInfoFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "jobSeekerDetails",
+    jobSeekerDetailsFieldCatalog,
+    visibleFields.jobSeekerDetails || [],
+    setModalJobSeekerDetailsOrder,
+    setModalJobSeekerDetailsVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "overview",
+    overviewFieldCatalog,
+    visibleFields.overview || [],
+    setModalOverviewOrder,
+    setModalOverviewVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "payrollInfo",
+    payrollInfoFieldCatalog,
+    visibleFields.payrollInfo || [],
+    setModalPayrollInfoOrder,
+    setModalPayrollInfoVisible
+  );
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {

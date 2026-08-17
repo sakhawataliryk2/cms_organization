@@ -17,6 +17,7 @@ import { formatRecordId } from "@/lib/recordIdFormatter";
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
   headerCatalogKeyFromField,
@@ -1308,56 +1309,48 @@ export default function PlacementView() {
     [setPanelFieldsConfig]
   );
 
-  // Sync modal state when opening edit for each panel
-  const syncModalFor = (panelId: string, catalog: { key: string }[], current: string[]) => {
-    const catalogKeys = Array.from(new Set(catalog.map((f) => f.key)));
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => { if (!order.includes(k)) order.push(k); });
-    const visible = catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>);
-    return { order, visible };
-  };
-  useEffect(() => {
-    if (editingPanel !== "candidateDetails") return;
-    const { order, visible } = syncModalFor("candidateDetails", candidateFieldCatalog, visibleFields.candidateDetails || []);
-    setModalCandidateOrder(order);
-    setModalCandidateVisible(visible);
-  }, [editingPanel, visibleFields.candidateDetails, candidateFieldCatalog]);
-  useEffect(() => {
-    if (editingPanel !== "companyDetails") return;
-    const { order, visible } = syncModalFor("companyDetails", companyFieldCatalog, visibleFields.companyDetails || []);
-    setModalCompanyOrder(order);
-    setModalCompanyVisible(visible);
-  }, [editingPanel, visibleFields.companyDetails, companyFieldCatalog]);
-  useEffect(() => {
-    if (editingPanel !== "billingContactDetails") return;
-    const { order, visible } = syncModalFor("billingContactDetails", hiringManagerFieldCatalog, visibleFields.billingContactDetails || []);
-    setModalBillingContactOrder(order);
-    setModalBillingContactVisible(visible);
-  }, [editingPanel, visibleFields.billingContactDetails, hiringManagerFieldCatalog]);
-  useEffect(() => {
-    if (editingPanel !== "timesheetApproverDetails") return;
-    const { order, visible } = syncModalFor("timesheetApproverDetails", hiringManagerFieldCatalog, visibleFields.timesheetApproverDetails || []);
-    setModalTimesheetApproverOrder(order);
-    setModalTimesheetApproverVisible(visible);
-  }, [editingPanel, visibleFields.timesheetApproverDetails, hiringManagerFieldCatalog]);
-  useEffect(() => {
-    if (editingPanel !== "jobDetails") return;
-    const { order, visible } = syncModalFor("jobDetails", jobDetailsFieldCatalog, visibleFields.jobDetails || []);
-    setModalJobDetailsOrder(order);
-    setModalJobDetailsVisible(visible);
-  }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
-  useEffect(() => {
-    if (editingPanel !== "placementDetails") return;
-    const current = visibleFields.placementDetails || [];
-    const catalogKeys = placementDetailsFieldCatalog.map((f) => f.key);
-    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-    const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
-    uniqueCatalogKeys.forEach((k) => { if (!order.includes(k)) order.push(k); });
-    setModalPlacementDetailsOrder(Array.from(new Set(order)));
-    setModalPlacementDetailsVisible(
-      uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
+  useSyncSortableFieldsModal(
+    editingPanel === "candidateDetails",
+    candidateFieldCatalog,
+    visibleFields.candidateDetails || [],
+    setModalCandidateOrder,
+    setModalCandidateVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "companyDetails",
+    companyFieldCatalog,
+    visibleFields.companyDetails || [],
+    setModalCompanyOrder,
+    setModalCompanyVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "billingContactDetails",
+    hiringManagerFieldCatalog,
+    visibleFields.billingContactDetails || [],
+    setModalBillingContactOrder,
+    setModalBillingContactVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "timesheetApproverDetails",
+    hiringManagerFieldCatalog,
+    visibleFields.timesheetApproverDetails || [],
+    setModalTimesheetApproverOrder,
+    setModalTimesheetApproverVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "jobDetails",
+    jobDetailsFieldCatalog,
+    visibleFields.jobDetails || [],
+    setModalJobDetailsOrder,
+    setModalJobDetailsVisible
+  );
+  useSyncSortableFieldsModal(
+    editingPanel === "placementDetails",
+    placementDetailsFieldCatalog,
+    visibleFields.placementDetails || [],
+    setModalPlacementDetailsOrder,
+    setModalPlacementDetailsVisible
+  );
 
   // Save handlers for each panel (persist via user view config)
   const handleSaveCandidateDetailsFields = useCallback(() => {
