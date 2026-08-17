@@ -480,6 +480,15 @@ const shouldShowPrimaryPhoneCallButton = (
   value !== "-" &&
   value !== "No phone provided";
 
+/** Normalize a stored phone to E.164 for Zoom Phone / SMS URI schemes. */
+const toZoomE164 = (rawNumber: string): string | null => {
+  const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+  if (!digitsOnly) return null;
+  if (digitsOnly.length === 10) return `+1${digitsOnly}`;
+  if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) return `+${digitsOnly}`;
+  return digitsOnly;
+};
+
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding", "smart-match"];
 
 interface NoteFormState {
@@ -755,9 +764,11 @@ export default function JobSeekerView() {
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
 
-  // Quick-call dropdown state
+  // Quick-call / message dropdown state
   const [showCallDropdown, setShowCallDropdown] = useState(false);
   const callDropdownRef = useRef<HTMLDivElement>(null);
+  const [showMessageDropdown, setShowMessageDropdown] = useState(false);
+  const messageDropdownRef = useRef<HTMLDivElement>(null);
   const [quickCallPhones, setQuickCallPhones] = useState<Array<{ fieldName: string; label: string; value: string }>>([]);
 
   // Notes and history state
@@ -1866,17 +1877,21 @@ Best regards`;
     }
   }, [showAddNote]);
 
-  // Close call dropdown on outside click
+  // Close call / message dropdowns on outside click
   useEffect(() => {
-    if (!showCallDropdown) return;
+    if (!showCallDropdown && !showMessageDropdown) return;
     const handler = (e: MouseEvent) => {
-      if (callDropdownRef.current && !callDropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (showCallDropdown && callDropdownRef.current && !callDropdownRef.current.contains(target)) {
         setShowCallDropdown(false);
+      }
+      if (showMessageDropdown && messageDropdownRef.current && !messageDropdownRef.current.contains(target)) {
+        setShowMessageDropdown(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [showCallDropdown]);
+  }, [showCallDropdown, showMessageDropdown]);
 
   // Search for references for About field
   const searchAboutReferences = async (query: string) => {
@@ -4827,18 +4842,7 @@ Best regards`;
       return;
     }
 
-    // Normalize the phone number for Zoom Phone (E.164‑like where possible)
-    const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
-    let normalizedNumber = digitsOnly;
-
-    // If we have exactly 10 digits and no country code, assume US (+1)
-    if (digitsOnly.length === 10) {
-      normalizedNumber = `+1${digitsOnly}`;
-    } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
-      // If it already contains country code digits (no formatting), prefix '+'.
-      normalizedNumber = `+${digitsOnly}`;
-    }
-
+    const normalizedNumber = toZoomE164(String(rawNumber));
     if (!normalizedNumber) {
       toast.error("Phone number format is invalid for Zoom Phone");
       return;
@@ -4880,6 +4884,38 @@ Best regards`;
       console.error("Error starting Zoom Phone call:", error);
       toast.error("Unable to start Zoom call. Please try again.");
     }
+  };
+
+  const handleStartZoomSms = (phoneNumber?: string) => {
+    if (!jobSeeker) {
+      toast.error("Job seeker not loaded");
+      return;
+    }
+
+    const rawNumber =
+      phoneNumber &&
+        phoneNumber !== "-" &&
+        phoneNumber !== "No phone provided"
+        ? phoneNumber
+        : (jobSeeker as any).mobilePhone &&
+          (jobSeeker as any).mobilePhone !== "No phone provided"
+          ? (jobSeeker as any).mobilePhone
+          : (jobSeeker as any).phone;
+
+    if (!rawNumber || rawNumber === "No phone provided") {
+      toast.error("No phone number available for this job seeker");
+      return;
+    }
+
+    const normalizedNumber = toZoomE164(String(rawNumber));
+    if (!normalizedNumber) {
+      toast.error("Phone number format is invalid for Zoom SMS");
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    window.location.href = `zoomphonesms://${normalizedNumber}`;
+    toast.success("Opening Zoom Messages...");
   };
 
   const renderJobSeekerDetailsPanel = () => {
@@ -5275,7 +5311,10 @@ Best regards`;
               <div className="relative" ref={callDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setShowCallDropdown((v) => !v)}
+                  onClick={() => {
+                    setShowMessageDropdown(false);
+                    setShowCallDropdown((v) => !v);
+                  }}
                   className="inline-flex items-center gap-1.5 px-5 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm"
                   title="Call job seeker"
                 >
@@ -5306,18 +5345,45 @@ Best regards`;
                 )}
               </div>
 
-              {/* Message — coming soon */}
-              <button
-                type="button"
-                onClick={() => toast.info("Messaging — coming soon")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium shadow-sm transition-color duration-100"
-                title="Message job seeker"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                Message
-              </button>
+              {/* Message dropdown — opens Zoom Phone SMS with the selected number */}
+              <div className="relative" ref={messageDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCallDropdown(false);
+                    setShowMessageDropdown((v) => !v);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium shadow-sm transition-color duration-100"
+                  title="Message job seeker via Zoom"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Message
+                </button>
+                {showMessageDropdown && (
+                  <div className="absolute right-1/2 left-1/2 -translate-x-1/2 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[220px]">
+                    {quickCallPhones.length === 0 ? (
+                      <div className="px-4 py-3 text-xs text-gray-500">No phone numbers available</div>
+                    ) : (
+                      quickCallPhones.map(({ fieldName, label, value }) => (
+                        <button
+                          key={fieldName}
+                          type="button"
+                          className="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-b-0 cursor-pointer"
+                          onClick={() => {
+                            setShowMessageDropdown(false);
+                            handleStartZoomSms(value);
+                          }}
+                        >
+                          <span className="text-gray-500 font-medium">{label}</span>
+                          <span className="text-gray-800 font-semibold mt-0.5">{value}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
