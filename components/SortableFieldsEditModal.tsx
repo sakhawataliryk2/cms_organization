@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -17,6 +17,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
   sortableKeyboardCoordinates,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
@@ -151,10 +152,9 @@ export default function SortableFieldsEditModal({
 }: SortableFieldsEditModalProps) {
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    if (open) setSearchQuery("");
-  }, [open]);
+  const [draftOrder, setDraftOrder] = useState<string[]>([]);
+  const [draftVisible, setDraftVisible] = useState<Record<string, boolean>>({});
+  const ignoreParentLayoutRef = useRef(false);
 
   const knownKeys = useMemo(() => new Set(fieldCatalog.map((f) => f.key)), [fieldCatalog]);
   const sanitizedOrder = useMemo(() => {
@@ -174,17 +174,62 @@ export default function SortableFieldsEditModal({
     return result;
   }, [order, fieldCatalog, knownKeys]);
 
+  useEffect(() => {
+    if (!open) {
+      ignoreParentLayoutRef.current = false;
+      setSearchQuery("");
+      return;
+    }
+    if (!ignoreParentLayoutRef.current) {
+      setDraftOrder(sanitizedOrder);
+      setDraftVisible({ ...visible });
+      ignoreParentLayoutRef.current = true;
+      return;
+    }
+    setDraftOrder((prev) => {
+      const source = prev.length > 0 ? prev : sanitizedOrder;
+      const seen = new Set<string>();
+      const next: string[] = [];
+      for (const key of source) {
+        if (!knownKeys.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        next.push(key);
+      }
+      for (const field of fieldCatalog) {
+        if (!seen.has(field.key)) {
+          seen.add(field.key);
+          next.push(field.key);
+        }
+      }
+      const same =
+        next.length === source.length && next.every((key, index) => key === source[index]);
+      return same ? source : next;
+    });
+    setDraftVisible((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const field of fieldCatalog) {
+        if (!(field.key in next)) {
+          next[field.key] = visible[field.key] ?? false;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [open, sanitizedOrder, visible, fieldCatalog, knownKeys]);
+
   const getLabel = (key: string) => fieldCatalog.find((f) => f.key === key)?.label ?? key;
   const searchLower = searchQuery.trim().toLowerCase();
+  const listOrder = draftOrder.length > 0 ? draftOrder : sanitizedOrder;
   const filteredOrder = useMemo(
     () =>
       searchLower
-        ? sanitizedOrder.filter(
+        ? listOrder.filter(
           (key) =>
             getLabel(key).toLowerCase().includes(searchLower) || key.toLowerCase().includes(searchLower)
         )
-        : sanitizedOrder,
-    [sanitizedOrder, searchLower, fieldCatalog]
+        : listOrder,
+    [listOrder, searchLower, fieldCatalog]
   );
 
   const sensors = useSensors(
@@ -201,9 +246,29 @@ export default function SortableFieldsEditModal({
     []
   );
 
+  const handleToggle = (key: string) => {
+    setDraftVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+    onToggle(key);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setDragActiveId(null);
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setDraftOrder((prev) => {
+        const base = prev.length > 0 ? prev : sanitizedOrder;
+        const oldIndex = base.indexOf(active.id as string);
+        const newIndex = base.indexOf(over.id as string);
+        if (oldIndex === -1 || newIndex === -1) return prev;
+        return arrayMove(base, oldIndex, newIndex);
+      });
+    }
     onDragEnd(event);
+  };
+
+  const handleReset = () => {
+    ignoreParentLayoutRef.current = false;
+    onReset?.();
   };
 
   if (!open) return null;
@@ -266,8 +331,8 @@ export default function SortableFieldsEditModal({
                         key={`field-${key}-${index}`}
                         id={key}
                         label={getLabel(key)}
-                        checked={visible[key] ?? false}
-                        onToggle={() => onToggle(key)}
+                        checked={draftVisible[key] ?? visible[key] ?? false}
+                        onToggle={() => handleToggle(key)}
                       />
                     ))
                   )}
@@ -278,7 +343,7 @@ export default function SortableFieldsEditModal({
                   <SortableFieldRow
                     id={dragActiveId}
                     label={getLabel(dragActiveId)}
-                    checked={visible[dragActiveId] ?? false}
+                    checked={draftVisible[dragActiveId] ?? visible[dragActiveId] ?? false}
                     onToggle={() => { }}
                     isOverlay
                   />
@@ -288,7 +353,7 @@ export default function SortableFieldsEditModal({
                 {onReset && (
                   <button
                     type="button"
-                    onClick={onReset}
+                    onClick={handleReset}
                     className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-00"
                   >
                     {resetButtonText}
