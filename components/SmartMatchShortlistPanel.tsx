@@ -697,6 +697,7 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
                         onFilterChange={(value) => handleColumnFilter(key, value)}
                         filterType={columnInfo.filterType}
                         filterOptions={key === 'status' ? STATUS_FILTER_OPTIONS : undefined}
+                        className={key === 'match_reason' ? 'min-w-[32rem]' : undefined}
                       />
                     );
                   })}
@@ -746,7 +747,9 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
                     <td
                       key={key}
                       className={`px-6 py-4 text-sm text-gray-500 ${
-                        key === 'match_reason' ? 'max-w-xs' : 'whitespace-nowrap'
+                        key === 'match_reason'
+                          ? 'min-w-[32rem] max-w-[40rem] whitespace-normal leading-5'
+                          : 'whitespace-nowrap'
                       }`}
                     >
                       {renderCell(row, key)}

@@ -27,6 +27,7 @@ type SortableColumnHeaderProps = {
   onFilterChange: (value: string) => void;
   filterType: "text" | "select" | "number";
   filterOptions?: { label: string; value: string }[];
+  className?: string;
   children?: React.ReactNode;
 };
 
@@ -39,6 +40,7 @@ export default function SortableColumnHeader({
   onFilterChange,
   filterType,
   filterOptions,
+  className = "",
 }: SortableColumnHeaderProps) {
   const {
     attributes,
@@ -185,7 +187,7 @@ export default function SortableColumnHeader({
         setNodeRef(node);
       }}
       style={style}
-      className="sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+      className={`sticky top-0 z-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group ${className}`}
     >
       <div className="flex items-center gap-2">
         <button
