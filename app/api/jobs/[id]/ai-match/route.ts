@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * POST /api/jobs/[id]/ai-match
@@ -31,12 +31,14 @@ export async function POST(
     }
 
     const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+    const body = await request.json().catch(() => ({}));
     const response = await fetch(`${apiUrl}/api/jobs/${id}/ai-match`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify(body ?? {}),
     });
 
     const text = await response.text();

@@ -6,6 +6,7 @@ import { useRouter } from "nextjs-toploader/app";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
+import SmartMatchShortlistPanel from "@/components/SmartMatchShortlistPanel";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
@@ -749,11 +750,6 @@ export default function JobSeekerView() {
   const [jobSeeker, setJobSeeker] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAiMatching, setIsAiMatching] = useState(false);
-  const [smartMatchJobs, setSmartMatchJobs] = useState<
-    Array<{ id: number; record_number?: number; title?: string; job_type?: string; score?: number }>
-  >([]);
-  const [smartMatchMessage, setSmartMatchMessage] = useState<string | null>(null);
 
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
@@ -3506,42 +3502,7 @@ Best regards`;
     } else if (action === "password-reset") {
       setShowPasswordResetModal(true);
     } else if (action === "ai-smart-match" && jobSeekerId) {
-      if (isAiMatching) return;
-      (async () => {
-        setIsAiMatching(true);
-        setSmartMatchMessage(null);
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (token) headers.Authorization = `Bearer ${token}`;
-        try {
-          const res = await fetch(`/api/job-seekers/${jobSeekerId}/ai-match`, {
-            method: "POST",
-            headers,
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            toast.error(data?.message || "AI Smart Match failed. Please try again.");
-            return;
-          }
-          const matches = Array.isArray(data?.matches) ? data.matches : [];
-          setSmartMatchJobs(matches);
-          setSmartMatchMessage(typeof data?.message === "string" ? data.message : null);
-          setActiveTab("smart-match");
-          if (matches.length === 0) {
-            toast.info(data?.message || "AI Smart Match found no jobs for this job seeker.");
-          } else {
-            toast.success(`AI Smart Match found ${matches.length} job(s).`);
-          }
-        } catch (e) {
-          console.error("AI Smart Match error:", e);
-          toast.error("AI Smart Match failed. Please try again.");
-        } finally {
-          setIsAiMatching(false);
-        }
-      })();
+      setActiveTab("smart-match");
     }
   };
 
@@ -4171,7 +4132,7 @@ Best regards`;
       { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
       { label: "Add Task", action: () => handleActionSelected("add-task") },
       { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-      { label: isAiMatching ? "AI Smart Match…" : "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
+      { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
       { label: "Password Reset", action: () => handleActionSelected("password-reset") },
       { label: "Transfer", action: () => handleActionSelected("transfer") },
       { label: "Delete", action: () => handleActionSelected("delete") },
@@ -6469,60 +6430,13 @@ Best regards`;
 
           {activeTab === "smart-match" && (
             <div className="col-span-1 lg:col-span-7 min-w-0">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">AI Smart Match</h2>
-                  <button
-                    type="button"
-                    onClick={() => handleActionSelected("ai-smart-match")}
-                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:opacity-50"
-                    disabled={!jobSeekerId || isAiMatching}
-                  >
-                    {isAiMatching ? "Matching…" : "Run Smart Match"}
-                  </button>
+              {jobSeekerId ? (
+                <SmartMatchShortlistPanel mode="seeker" entityId={jobSeekerId} />
+              ) : (
+                <div className="bg-white p-4 rounded shadow-sm text-sm text-gray-500">
+                  Open a job seeker to run Smart Match.
                 </div>
-                {isAiMatching && (
-                  <p className="text-sm text-gray-500 mb-3">Finding jobs from this job seeker’s resume…</p>
-                )}
-                {smartMatchMessage && !isAiMatching && smartMatchJobs.length === 0 && (
-                  <p className="text-sm text-gray-600 mb-3">{smartMatchMessage}</p>
-                )}
-                {!isAiMatching && smartMatchJobs.length === 0 && !smartMatchMessage && (
-                  <p className="text-sm text-gray-500">
-                    Use Actions → AI Smart Match to rank open jobs against this resume.
-                  </p>
-                )}
-                {smartMatchJobs.length > 0 && (
-                  <ul className="divide-y divide-gray-200 border border-gray-200 rounded">
-                    {smartMatchJobs.map((job) => (
-                      <li key={job.id}>
-                        <button
-                          type="button"
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                          onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {formatRecordId(job.record_number ?? job.id, "job")}{" "}
-                                {job.title || "Untitled job"}
-                              </div>
-                              {job.job_type && (
-                                <div className="text-xs text-gray-500 mt-0.5">{job.job_type}</div>
-                              )}
-                            </div>
-                            {typeof job.score === "number" && (
-                              <span className="text-xs text-gray-500 whitespace-nowrap">
-                                {(job.score * 100).toFixed(0)}% match
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              )}
             </div>
           )}
 

@@ -26,6 +26,7 @@ import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultVie
 import RequestActionModal from '@/components/RequestActionModal';
 import { useAuth } from '@/lib/auth';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
+import SmartMatchShortlistPanel from '@/components/SmartMatchShortlistPanel';
 // Drag and drop imports
 import {
   DndContext,
@@ -346,7 +347,7 @@ function stripCatalogKeyPrefix(key: string): string {
   return key.startsWith("custom:") ? key.slice(7) : key;
 }
 
-const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs"];
+const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs", "smart-match"];
 
 export default function JobView() {
   const router = useRouter();
@@ -1976,7 +1977,6 @@ out.sort((a, b) => {
     useState(false);
   const [isLoadingPlacementCandidates, setIsLoadingPlacementCandidates] =
     useState(false);
-  const [isAiMatching, setIsAiMatching] = useState(false);
   const [isSavingPlacement, setIsSavingPlacement] = useState(false);
   const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
   const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
@@ -3548,53 +3548,8 @@ out.sort((a, b) => {
       fetchSubmittedCandidates();
       return;
     } else if (action === "ai-smart-match" && jobId) {
-      if (isAiMatching) return;
-      (async () => {
-        setIsAiMatching(true);
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (token) headers.Authorization = `Bearer ${token}`;
-        try {
-          const res = await fetch(`/api/jobs/${jobId}/ai-match`, {
-            method: "POST",
-            headers,
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            toast.error(data?.message || "AI Smart Match failed. Please try again.");
-            return;
-          }
-          const apiMatches = Array.isArray(data?.matches) ? data.matches : [];
-          const matchedCandidates = apiMatches.map((js: any) => ({
-            id: js.id,
-            name: js.name || `Job Seeker #${js?.record_number || js.id}`,
-            email: js.email,
-            title: js.title,
-            record_number: js.record_number,
-            score: js.score,
-            ...js,
-          }));
-          if (matchedCandidates.length === 0) {
-            setSubmittedCandidates([]);
-            setFilteredCandidates([]);
-            setActiveTab("applied");
-            toast.info(data?.message || "AI Smart Match found no candidates for this job.");
-            return;
-          }
-          setSubmittedCandidates(matchedCandidates);
-          setFilteredCandidates(matchedCandidates);
-          setActiveTab("applied");
-          toast.success(`AI Smart Match found ${matchedCandidates.length} candidate(s).`);
-        } catch (e) {
-          console.error("AI Smart Match error:", e);
-          toast.error("AI Smart Match failed. Please try again.");
-        } finally {
-          setIsAiMatching(false);
-        }
-      })();
+      setActiveTab("smart-match");
+      return;
     }
   };
 
@@ -4418,7 +4373,7 @@ out.sort((a, b) => {
       { label: "Add Task", action: () => handleActionSelected("add-task") },
       { label: "Add Placement", action: () => handleActionSelected("add-placement") },
       { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-      { label: isAiMatching ? "AI Smart Match…" : "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
+      { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
       { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
       { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
       { label: "Clone", action: () => handleActionSelected("clone") },
@@ -4429,6 +4384,7 @@ out.sort((a, b) => {
   const tabs = [
     { id: "summary", label: "Summary" },
     // { id: "applied", label: "Applied" },
+    { id: "smart-match", label: "Smart Match" },
     { id: "modify", label: "Modify" },
     { id: "history", label: "History" },
     { id: "notes", label: "Notes" },
@@ -5846,6 +5802,12 @@ out.sort((a, b) => {
           {/* Applied Tab */}
           {activeTab === "applied" && (
             <div className="col-span-7">{renderAppliedTab()}</div>
+          )}
+
+          {activeTab === "smart-match" && jobId && (
+            <div className="col-span-7">
+              <SmartMatchShortlistPanel mode="job" entityId={jobId} />
+            </div>
           )}
 
           {/* Notes Tab */}
