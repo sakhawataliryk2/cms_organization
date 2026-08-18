@@ -1104,7 +1104,6 @@ const FieldMapping = () => {
   };
 
   const handleConfirmApplyToUsers = async () => {
-    if (!hasUnsavedOrderChanges) return;
     setIsSavingAndApplying(true);
 
     const previousSnapshot = [...savedOrderSnapshot];
@@ -1956,7 +1955,7 @@ const FieldMapping = () => {
           </button>
           <button
             onClick={() => setShowApplyConfirmModal(true)}
-            disabled={!hasUnsavedOrderChanges || isSavingOrder || isSavingAndApplying}
+            disabled={isSavingOrder || isSavingAndApplying}
             className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Save field order and apply configuration to all existing users"
           >
