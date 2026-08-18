@@ -703,7 +703,9 @@ export async function POST(request: NextRequest) {
           // Update/skip still handled per matching record number below.
           // Jobs now use true SQL bulk insert like organizations, so use large chunks.
           const useLargeBulkChunks =
-            entityType === "organizations" || entityType === "jobs";
+            entityType === "organizations" ||
+            entityType === "jobs" ||
+            entityType === "job-seekers";
           const bulkChunkSize = useLargeBulkChunks
             ? ORG_BULK_CHUNK_SIZE
             : DEFAULT_BULK_CHUNK_SIZE;
