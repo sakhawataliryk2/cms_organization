@@ -5416,6 +5416,11 @@ Best regards`;
               }}
             >
               {tab.label}
+              {tab.id === "docs" && documents.length > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-medium bg-gray-500 text-white rounded-full">
+                  {documents.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
