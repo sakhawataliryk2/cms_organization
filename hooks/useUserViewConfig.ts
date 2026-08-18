@@ -281,6 +281,16 @@ export function useUserViewConfig<T extends ConfigKey>({
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(async () => {
+        // If the config key was updated externally (e.g. admin bulk-apply)
+        // since this save was queued, skip saving stale data.
+        const latestValue = state.config[key] as
+          | NonNullable<ViewConfig[T]>
+          | undefined;
+        if (!configValuesEqual(latestValue, resolvedValue)) {
+          state.isSaving = false;
+          notifyListeners(entityType);
+          return;
+        }
         state.isSaving = true;
         notifyListeners(entityType);
         await saveServerConfig(entityType, { [key]: resolvedValue });
@@ -295,6 +305,13 @@ export function useUserViewConfig<T extends ConfigKey>({
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
+    }
+    // Skip if config was updated externally since this save was requested
+    const latestValue = state.config[key] as
+      | NonNullable<ViewConfig[T]>
+      | undefined;
+    if (!configValuesEqual(latestValue, currentValue)) {
+      return false;
     }
     state.isSaving = true;
     notifyListeners(entityType);
