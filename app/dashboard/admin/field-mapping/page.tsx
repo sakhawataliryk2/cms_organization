@@ -263,6 +263,8 @@ const FieldMapping = () => {
   const [savedOrderSnapshot, setSavedOrderSnapshot] = useState<CustomField[]>([]);
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [isSavingAndApplying, setIsSavingAndApplying] = useState(false);
+  const [showApplyConfirmModal, setShowApplyConfirmModal] = useState(false);
   /** Drag-reorder target: overview/panels (sort_order) vs headers (header_sort_order) */
   const [orderingMode, setOrderingMode] = useState<"overview" | "headers">("overview");
   const activeOrderField =
@@ -1101,6 +1103,63 @@ const FieldMapping = () => {
     setDragActiveId(null);
   };
 
+  const handleConfirmApplyToUsers = async () => {
+    if (!hasUnsavedOrderChanges) return;
+    setIsSavingAndApplying(true);
+
+    const previousSnapshot = [...savedOrderSnapshot];
+    try {
+      const payload = {
+        orderField: activeOrderField,
+        items: orderedFields.map((field, index) => ({
+          id: Number(field.id),
+          sort_order: index + 1,
+        })),
+      };
+      const response = await fetch(
+        `/api/admin/field-management/${section}/reorder-apply`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to save and apply configuration");
+      }
+
+      const sortedByOrder = [...(data.customFields || [])].sort(
+        (a: CustomField, b: CustomField) => {
+          if (orderingMode === "headers") {
+            return (a.header_sort_order ?? 0) - (b.header_sort_order ?? 0);
+          }
+          return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+        }
+      );
+      setCustomFields(sortedByOrder);
+      setOrderedFields(sortedByOrder);
+      setSavedOrderSnapshot(sortedByOrder);
+      setShowApplyConfirmModal(false);
+
+      const userCount = data.usersUpdated || 0;
+      const modeLabel = orderingMode === "headers" ? "header" : "column and panel";
+      toast.success(
+        userCount > 0
+          ? `${modeLabel.charAt(0).toUpperCase() + modeLabel.slice(1)} configuration applied to ${userCount} user${userCount === 1 ? "" : "s"}`
+          : `Configuration saved (no existing user configs to update)`
+      );
+    } catch (err) {
+      setOrderedFields(previousSnapshot);
+      setShowApplyConfirmModal(false);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save and apply configuration"
+      );
+    } finally {
+      setIsSavingAndApplying(false);
+    }
+  };
+
   const handleGoBack = () => {
     router.push("/dashboard/admin/field-management");
   };
@@ -1182,6 +1241,81 @@ const FieldMapping = () => {
                   names
                 </li>
               </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Apply-to-Users Confirmation Modal
+  const ApplyConfirmModal = ({
+    isOpen,
+    onConfirm,
+    onClose,
+    isApplying,
+    orderingMode: mode,
+  }: {
+    isOpen: boolean;
+    onConfirm: () => void;
+    onClose: () => void;
+    isApplying: boolean;
+    orderingMode: "overview" | "headers";
+  }) => {
+    if (!isOpen) return null;
+
+    const isHeaders = mode === "headers";
+    const affectedConfig = isHeaders
+      ? "header field configuration"
+      : "column and panel configuration";
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-999">
+        <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
+          <div className="bg-blue-600 p-4 rounded-t flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-white">
+              Apply Configuration to All Users
+            </h2>
+            <button
+              onClick={onClose}
+              disabled={isApplying}
+              className="p-1 rounded hover:bg-blue-700 text-white"
+            >
+              <FiX size={20} />
+            </button>
+          </div>
+          <div className="p-6">
+            <p className="text-gray-700 mb-3">
+              This will save the current field order and apply the{" "}
+              <strong>{affectedConfig}</strong> to all existing users.
+            </p>
+            <p className="text-gray-700 mb-4">
+              Any custom {affectedConfig} that users have saved will be{" "}
+              <strong>overwritten</strong>.
+            </p>
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
+              <p className="text-sm text-yellow-700">
+                This action affects all users in the system and cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={onClose}
+                disabled={isApplying}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirm}
+                disabled={isApplying}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {isApplying && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                )}
+                {isApplying ? "Saving & Applying..." : "Save & Apply"}
+              </button>
             </div>
           </div>
         </div>
@@ -1806,7 +1940,7 @@ const FieldMapping = () => {
           </div>
           <button
             onClick={handleDiscardFieldOrder}
-            disabled={!hasUnsavedOrderChanges || isSavingOrder}
+            disabled={!hasUnsavedOrderChanges || isSavingOrder || isSavingAndApplying}
             className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Discard unsaved order changes"
           >
@@ -1814,11 +1948,19 @@ const FieldMapping = () => {
           </button>
           <button
             onClick={handleSaveFieldOrder}
-            disabled={!hasUnsavedOrderChanges || isSavingOrder}
+            disabled={!hasUnsavedOrderChanges || isSavingOrder || isSavingAndApplying}
             className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Save field order"
           >
             {isSavingOrder ? "Saving..." : "Save Order"}
+          </button>
+          <button
+            onClick={() => setShowApplyConfirmModal(true)}
+            disabled={!hasUnsavedOrderChanges || isSavingOrder || isSavingAndApplying}
+            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Save field order and apply configuration to all existing users"
+          >
+            {isSavingAndApplying ? "Applying..." : "Save & Apply to Users"}
           </button>
           <button
             onClick={handleAddField}
@@ -2482,6 +2624,17 @@ const FieldMapping = () => {
       <FieldNamingModal
         isOpen={showFieldNamingModal}
         onClose={() => setShowFieldNamingModal(false)}
+      />
+
+      {/* Apply to Users Confirmation Modal */}
+      <ApplyConfirmModal
+        isOpen={showApplyConfirmModal}
+        onConfirm={handleConfirmApplyToUsers}
+        onClose={() => {
+          if (!isSavingAndApplying) setShowApplyConfirmModal(false);
+        }}
+        isApplying={isSavingAndApplying}
+        orderingMode={orderingMode}
       />
     </div>
   );
