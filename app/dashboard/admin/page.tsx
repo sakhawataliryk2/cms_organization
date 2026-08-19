@@ -16,7 +16,8 @@ import {
     FiActivity,
     FiFilter,
     FiCheckSquare,
-    FiDatabase
+    FiDatabase,
+    FiInbox
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -658,6 +659,12 @@ export default function AdminCenter() {
             name: 'Email Management',
             icon: <FiMail size={50} color="white" />,
             path: '/dashboard/admin/email-management'
+        },
+        {
+            id: 'email-queue',
+            name: 'Email Queue',
+            icon: <FiInbox size={50} color="white" />,
+            path: '/dashboard/admin/email-queue'
         },
         {
             id: 'activity-tracker',
