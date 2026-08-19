@@ -166,7 +166,7 @@ function cellValue(row: EmailRow, key: string) {
     return names ? `${n}: ${names}` : String(n);
   }
   if (key === "created_at" || key === "scheduled_at" || key === "sent_at") {
-    return formatTs((row as Record<string, string | null>)[key]);
+    return formatTs(row[key]);
   }
   if (key === "template_name") return row.template_name || "Unknown Template";
   const v = (row as Record<string, unknown>)[key];

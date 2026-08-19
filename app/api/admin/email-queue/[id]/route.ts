@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { proxyEmailQueue } from "../../_proxy";
+import { proxyEmailQueue } from "../_proxy";
 
 export const dynamic = "force-dynamic";
 
