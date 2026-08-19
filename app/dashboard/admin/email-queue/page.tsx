@@ -235,6 +235,7 @@ export default function EmailQueuePage() {
 
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<null | "stop" | "resume" | "delay-on" | "delay-off">(null);
   const [delayMenuOpen, setDelayMenuOpen] = useState(false);
   const delayMenuRef = useRef<HTMLDivElement | null>(null);
   const [saving, setSaving] = useState(false);
