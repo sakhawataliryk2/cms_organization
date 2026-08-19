@@ -139,6 +139,40 @@ function formatTime(value: string | null | undefined) {
   return d.toLocaleTimeString();
 }
 
+function formatStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    queued: "Queued",
+    delayed: "Delayed",
+    processing: "Sending",
+    sent: "Sent",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    blocked: "Blocked",
+  };
+  const key = String(status || "").toLowerCase();
+  if (labels[key]) return labels[key];
+  if (!key) return "—";
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function wrapPreviewHtml(html: string) {
+  const fontCss = `
+    html, body { margin: 0; padding: 16px; background: #fff; }
+    body, table, td, th, p, div, span, li, a, strong, em, b, i, u, h1, h2, h3, h4, h5, h6 {
+      font-family: Arial, Helvetica, sans-serif !important;
+    }
+    body { font-size: 14px; line-height: 1.5; color: #111827; }
+  `;
+  const raw = String(html || "");
+  if (/<html[\s>]/i.test(raw)) {
+    if (/<head[\s>]/i.test(raw)) {
+      return raw.replace(/<head([^>]*)>/i, `<head$1><style>${fontCss}</style>`);
+    }
+    return raw.replace(/<html([^>]*)>/i, `<html$1><head><style>${fontCss}</style></head>`);
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${fontCss}</style></head><body>${raw}</body></html>`;
+}
+
 function statusClass(status: string) {
   switch (status) {
     case "sent":
@@ -585,9 +619,9 @@ export default function EmailQueuePage() {
                             >
                               {col.key === "status" ? (
                                 <span
-                                  className={`inline-flex px-2 py-0.5 rounded-full text-xs border ${statusClass(row.status)}`}
+                                  className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusClass(row.status)}`}
                                 >
-                                  {row.status}
+                                  {formatStatusLabel(row.status)}
                                 </span>
                               ) : (
                                 cellValue(row, col.key)
@@ -746,12 +780,12 @@ export default function EmailQueuePage() {
                   <iframe
                     title="Email HTML preview"
                     sandbox=""
-                    srcDoc={preview.html}
+                    srcDoc={wrapPreviewHtml(preview.html)}
                     className="w-full min-h-[480px] border border-gray-200 rounded bg-white"
                   />
                 )}
                 {!preview.loading && !preview.error && !preview.html && (
-                  <pre className="whitespace-pre-wrap text-sm text-gray-800">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
                     {preview.text || "No email body stored."}
                   </pre>
                 )}
