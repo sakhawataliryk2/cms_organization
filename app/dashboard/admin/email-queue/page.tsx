@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { toast } from "sonner";
 import { DndContext, closestCenter } from "@dnd-kit/core";
@@ -235,7 +235,8 @@ export default function EmailQueuePage() {
 
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<null | "stop" | "resume" | "delay-on" | "delay-off">(null);
+  const [delayMenuOpen, setDelayMenuOpen] = useState(false);
+  const delayMenuRef = useRef<HTMLDivElement | null>(null);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{
     open: boolean;
@@ -277,6 +278,17 @@ export default function EmailQueuePage() {
     const t = setInterval(() => void loadStats(), 12_000);
     return () => clearInterval(t);
   }, [loadStats]);
+
+  useEffect(() => {
+    if (!delayMenuOpen) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (!delayMenuRef.current?.contains(event.target as Node)) {
+        setDelayMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [delayMenuOpen]);
 
   const refreshAll = async () => {
     list.clearCache();
@@ -428,6 +440,7 @@ export default function EmailQueuePage() {
                 </button>
               </PermissionGate>
               <PermissionGate permission="admin.email_queue.control">
+                <>
                 <label className="flex items-center gap-2 text-sm text-gray-700 border border-gray-300 rounded-md px-3 py-2 bg-gray-50">
                   <input
                     type="checkbox"
@@ -437,26 +450,41 @@ export default function EmailQueuePage() {
                   />
                   Email Delay {delayEnabled ? "ON" : "OFF"}
                 </label>
-                <select
-                  value={
-                    DELAY_PRESETS.some((p) => p.value === delaySeconds)
-                      ? delaySeconds
-                      : "custom"
-                  }
-                  disabled={saving || !delayEnabled}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "custom") return;
-                    void patchSettings({ delaySeconds: Number(v), delayEnabled: true });
-                  }}
-                  className="px-2 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  {DELAY_PRESETS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative z-30" ref={delayMenuRef}>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setDelayMenuOpen((open) => !open)}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 min-w-[140px] text-left disabled:opacity-50"
+                  >
+                    {DELAY_PRESETS.find((p) => p.value === delaySeconds)?.label ||
+                      `${delaySeconds} seconds`}
+                    <span className="float-right text-gray-500">▾</span>
+                  </button>
+                  {delayMenuOpen && (
+                    <div className="absolute left-0 top-full mt-1 w-full min-w-[160px] bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                      {DELAY_PRESETS.map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
+                            p.value === delaySeconds ? "bg-gray-50 font-medium" : ""
+                          }`}
+                          onClick={() => {
+                            setDelayMenuOpen(false);
+                            void patchSettings({
+                              delaySeconds: p.value,
+                              delayEnabled: true,
+                            });
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                </>
               </PermissionGate>
             </div>
             <button
