@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -492,6 +492,34 @@ export default function AddJobSeeker() {
     () => customFields.find((f) => f.field_name === "Field_40"),
     [customFields]
   );
+
+  const resumePanelRef = useRef<HTMLDivElement>(null);
+  const [resumePanelHeight, setResumePanelHeight] = useState(480);
+
+  useLayoutEffect(() => {
+    if (!resumeField || resumeField.is_hidden) return;
+
+    const measure = () => {
+      const panel = resumePanelRef.current;
+      if (!panel) return;
+      const top = panel.getBoundingClientRect().top;
+      const saveBar = document.querySelector<HTMLElement>(
+        "[data-job-seeker-add-save-bar]"
+      );
+      const saveTop = saveBar?.getBoundingClientRect().top;
+      const viewBottom =
+        saveTop != null ? Math.min(saveTop, window.innerHeight) : window.innerHeight;
+      setResumePanelHeight(Math.max(280, Math.floor(viewBottom - top - 12)));
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [resumeField, customFieldsLoading, error, parseResumeError]);
 
   const emailLabelForDup = useMemo(() => {
     return (
@@ -1989,7 +2017,7 @@ export default function AddJobSeeker() {
           <div
             className={
               resumeField && !resumeField.is_hidden
-                ? "grid grid-cols-1 lg:grid-cols-2 gap-6"
+                ? "grid grid-cols-1 lg:grid-cols-2 gap-6 items-start"
                 : "grid grid-cols-1 gap-6"
             }
           >
@@ -2196,20 +2224,49 @@ export default function AddJobSeeker() {
 
                   {/* Resume Section - only show if Field_40 is not hidden */}
                   {resumeField && !resumeField.is_hidden && (
-                    <div>
-                      <div className="bg-white border border-gray-200 rounded p-4">
-                        <div className="font-semibold mb-3">Resume</div>
-                        <CustomFieldRenderer
-                          field={resumeField}
+                    <div
+                      ref={resumePanelRef}
+                      className="lg:sticky flex flex-col"
+                      style={{
+                        top: "calc(var(--dashboard-top-offset, 48px) + 1rem)",
+                        height: resumePanelHeight,
+                      }}
+                    >
+                      <div className="bg-white border border-gray-200 rounded p-4 flex flex-col h-full min-h-0 overflow-hidden">
+                        <div className="font-semibold mb-3 shrink-0 flex items-center gap-2">
+                          Resume
+                          {resumeField.is_required && (
+                            <span
+                              className={`text-sm font-semibold ${
+                                isCustomFieldValueValid(
+                                  resumeField,
+                                  customFieldValues[resumeField.field_name] || ""
+                                )
+                                  ? "text-green-500"
+                                  : "text-red-500"
+                              }`}
+                            >
+                              {isCustomFieldValueValid(
+                                resumeField,
+                                customFieldValues[resumeField.field_name] || ""
+                              )
+                                ? "✔"
+                                : "*"}
+                            </span>
+                          )}
+                        </div>
+                        <textarea
+                          id={resumeField.field_name}
                           value={customFieldValues[resumeField.field_name] || ""}
-                          onChange={handleCustomFieldChange}
-                          validationIndicator={
-                            resumeField.is_required
-                              ? isCustomFieldValueValid(resumeField, customFieldValues[resumeField.field_name] || "")
-                                ? "valid"
-                                : "required"
-                              : undefined
+                          onChange={(e) =>
+                            handleCustomFieldChange(
+                              resumeField.field_name,
+                              e.target.value
+                            )
                           }
+                          className="w-full flex-1 min-h-0 p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 resize-none text-sm leading-5"
+                          placeholder={resumeField.placeholder || ""}
+                          required={!!resumeField.is_required}
                         />
                       </div>
                     </div>
@@ -2272,7 +2329,10 @@ export default function AddJobSeeker() {
           )}
 
           {/* Form Buttons – sticky to form card like Organizations / HM add */}
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+          <div
+            data-job-seeker-add-save-bar
+            className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4"
+          >
             <button
               type="button"
               onClick={handleGoBack}
