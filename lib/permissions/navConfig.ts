@@ -46,6 +46,11 @@ export const NAV_ROUTE_CONFIG: NavRouteConfig[] = [
     permission: "tearsheets.list.view",
   },
   {
+    name: "Sourcing",
+    path: "/dashboard/sourcing",
+    permission: "global.admin_center.view",
+  },
+  {
     name: "Admin Center",
     path: "/dashboard/admin",
     permission: "global.admin_center.view",
