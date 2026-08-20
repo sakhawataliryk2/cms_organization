@@ -17,7 +17,8 @@ import {
     FiFilter,
     FiCheckSquare,
     FiDatabase,
-    FiInbox
+    FiInbox,
+    FiCalendar
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -677,6 +678,12 @@ export default function AdminCenter() {
             name: 'Onboarding Approvals',
             icon: <FiCheckSquare size={50} color="white" />,
             path: '/dashboard/admin/onboarding-approvals'
+        },
+        {
+            id: 'sick-time-calculator',
+            name: 'Sick Time Calculator',
+            icon: <FiCalendar size={50} color="white" />,
+            path: '/dashboard/admin/sick-time-calculator'
         }
     ];
 
