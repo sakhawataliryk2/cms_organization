@@ -44,6 +44,11 @@ function openPlatform(url: string) {
     window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+function iframeSrc(module: SourcingModule) {
+    if (module.embeddable) return module.url;
+    return `/api/sourcing-proxy?url=${encodeURIComponent(module.url)}`;
+}
+
 export default function SourcingPage() {
     const router = useRouter();
     const [activeModule, setActiveModule] = useState<string | null>(null);
@@ -90,7 +95,7 @@ export default function SourcingPage() {
                     <>
                         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                             <p className="text-gray-600 mb-4">
-                                Select a platform to source candidates. Google loads in this page. Monster and ZipRecruiter block embedding, so use Open in new tab if their frame is blank.
+                                Select a platform to source candidates. Google embeds directly. Monster and ZipRecruiter are loaded through a demo proxy so we can show what an in-window browser would actually look like.
                             </p>
                         </div>
 
@@ -136,19 +141,15 @@ export default function SourcingPage() {
                             )}
                         </div>
 
-                        {!active?.embeddable && (
-                            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
-                                {active?.name} blocks iframes (unlike Google&apos;s <code className="text-xs">igu=1</code> search page). If you see a blank frame, use Open in new tab.
-                            </p>
-                        )}
 
-                        <iframe
-                            src={active?.url}
-                            className="w-full bg-white rounded-lg shadow-md border-0"
-                            style={{ height: 'calc(100vh - 220px)' }}
-                            title={active?.name}
-                            referrerPolicy="no-referrer"
-                        />
+                        {active && (
+                            <iframe
+                                src={iframeSrc(active)}
+                                className="w-full bg-white rounded-lg shadow-md border-0"
+                                style={{ height: 'calc(100vh - 220px)' }}
+                                title={active.name}
+                            />
+                        )}
                     </>
                 )}
             </div>
