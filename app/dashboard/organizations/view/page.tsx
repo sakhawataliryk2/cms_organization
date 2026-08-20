@@ -3973,8 +3973,15 @@ export default function OrganizationView() {
                   </button>
                 </div>
               ) : (
-                <div className="p-2">
-                  <p className="text-gray-500 italic">No jobs found</p>
+                <div className="p-4 text-center">
+                  <p className="text-gray-500 italic mb-3">No jobs found</p>
+                  <button
+                    type="button"
+                    onClick={() => handleActionSelected("add-job")}
+                    className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                  >
+                    Add Job
+                  </button>
                 </div>
               )}
             </div>
