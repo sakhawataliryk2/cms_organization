@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
-import { SiMonster } from "react-icons/si";
+import { SiMonster, SiGoogle } from "react-icons/si";
 import { PiOfficeChairDuotone } from "react-icons/pi";
-import { FiX, FiArrowLeft } from "react-icons/fi";
+import { FiX, FiArrowLeft, FiExternalLink } from "react-icons/fi";
 
 const STORAGE_KEY = 'sourcing_active_module';
 
@@ -13,22 +13,36 @@ interface SourcingModule {
     name: string;
     icon: React.ReactNode;
     url: string;
+    embeddable: boolean;
 }
 
 const sourcingModules: SourcingModule[] = [
     {
+        id: 'google',
+        name: 'Google',
+        icon: <SiGoogle size={50} color="white" />,
+        url: 'https://www.google.com/search?igu=1',
+        embeddable: true,
+    },
+    {
         id: 'monster',
         name: 'Monster',
         icon: <SiMonster size={50} color="white" />,
-        url: 'https://hiring-identity.monster.com/login?state=hKFo2SBjV0U3ZkRFNUxmLWkzMVZabHVEekRCODRQXzRuRmVkLaFupWxvZ2luo3RpZNkgQmFWdWlyejYwWW1yal9VTHdNUVdGWDR1b2pIaUdzd2ijY2lk2SAybmszc2JORnlaR0VmczZvRjlYcGF1SUx4VUEyRmhKNg&client=2nk3sbNFyZGEfs6oF9XpauILxUA2FhJ6&protocol=oauth2&callbackURL=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback&scope=openid%20email%20profile%20offline_access&keepSessionInfo=true&loginAction=&apigeeApiKey=4u8nirp5l6ugasm1im1itrg0er&deviceId=f1f7c950-2c2c-4318-aef7-442e58a155e3&employerEnvironment=prod-ams&employerLocale=en-US&employerHost=https%3A%2F%2Fmanage.monster.com&employerBffDomain=https%3A%2F%2Fappsapi.monster.io%2Femployer-bff%2Fv1&clientId=1171520291.1787231904&sessionId=1787231949&productRatePlanId=&audience=employer-bff-api-gateway&nonce=afc133bf7b7c296f1b72f921b40da9ba&response_type=code&redirect_uri=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback'
+        url: 'https://hiring.monster.com/',
+        embeddable: false,
     },
     {
         id: 'ziprecruiter',
         name: 'ZipRecruiter',
         icon: <PiOfficeChairDuotone size={50} color="white" />,
-        url: 'https://www.ziprecruiter.com/authn/employer/login?next_url=%2Femp%2F'
-    }
+        url: 'https://www.ziprecruiter.com/authn/employer/login?next_url=%2Femp%2F',
+        embeddable: false,
+    },
 ];
+
+function openPlatform(url: string) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 export default function SourcingPage() {
     const router = useRouter();
@@ -60,7 +74,7 @@ export default function SourcingPage() {
 
     return (
         <div className="bg-gray-200 min-h-screen p-8">
-            <div className="max-w-5xl mx-auto">
+            <div className={`mx-auto ${activeModule ? 'max-w-[1400px]' : 'max-w-5xl'}`}>
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-2xl font-bold text-gray-800">Sourcing</h1>
                     <button
@@ -76,11 +90,11 @@ export default function SourcingPage() {
                     <>
                         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                             <p className="text-gray-600 mb-4">
-                                Select a job board to source candidates. You can search and import talent from the platforms below.
+                                Select a platform to source candidates. Google loads in this page. Monster and ZipRecruiter block embedding, so use Open in new tab if their frame is blank.
                             </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {sourcingModules.map((module) => (
                                 <div
                                     key={module.id}
@@ -99,7 +113,7 @@ export default function SourcingPage() {
                     </>
                 ) : (
                     <>
-                        <div className="flex items-center gap-4 mb-6">
+                        <div className="flex flex-wrap items-center gap-4 mb-4">
                             <button
                                 onClick={handleBack}
                                 className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-md hover:bg-gray-100 transition duration-150 ease-in-out"
@@ -110,13 +124,30 @@ export default function SourcingPage() {
                             <p className="text-gray-600">
                                 <span className="font-semibold">{active?.name}</span> — Use the platform below to search and source candidates.
                             </p>
+                            {active?.url && (
+                                <button
+                                    type="button"
+                                    onClick={() => openPlatform(active.url)}
+                                    className="ml-auto inline-flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+                                >
+                                    <FiExternalLink size={16} />
+                                    Open in new tab
+                                </button>
+                            )}
                         </div>
+
+                        {!active?.embeddable && (
+                            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
+                                {active?.name} blocks iframes (unlike Google&apos;s <code className="text-xs">igu=1</code> search page). If you see a blank frame, use Open in new tab.
+                            </p>
+                        )}
 
                         <iframe
                             src={active?.url}
                             className="w-full bg-white rounded-lg shadow-md border-0"
-                            style={{ height: 'calc(100vh - 260px)' }}
+                            style={{ height: 'calc(100vh - 220px)' }}
                             title={active?.name}
+                            referrerPolicy="no-referrer"
                         />
                     </>
                 )}
