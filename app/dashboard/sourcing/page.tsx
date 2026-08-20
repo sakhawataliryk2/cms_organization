@@ -46,7 +46,7 @@ function openPlatform(url: string) {
 
 function iframeSrc(module: SourcingModule) {
     if (module.embeddable) return module.url;
-    return `/api/sourcing-proxy?url=${encodeURIComponent(module.url)}`;
+    return `/dashboard/sourcing/bridge?url=${encodeURIComponent(module.url)}`;
 }
 
 export default function SourcingPage() {
@@ -141,6 +141,13 @@ export default function SourcingPage() {
                             )}
                         </div>
 
+
+                        {/* {active && !active.embeddable && (
+                            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
+                                Demo proxy: our server fetches {active.name} and shows it here.
+                                If login or search breaks, that is the point to show the client — this is not a real in-window browser.
+                            </p>
+                        )} */}
 
                         {active && (
                             <iframe
