@@ -896,9 +896,7 @@ export default function OrganizationView() {
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
-  // Zoom Phone click-to-call (Call dropdown + phone field buttons)
-  const [showCallDropdown, setShowCallDropdown] = useState(false);
-  const callDropdownRef = useRef<HTMLDivElement>(null);
+  // Zoom Phone click-to-call (phone field buttons)
   const [quickCallPhones, setQuickCallPhones] = useState<
     Array<{ fieldName: string; label: string; value: string }>
   >([]);
@@ -1337,18 +1335,6 @@ export default function OrganizationView() {
       cancelled = true;
     };
   }, [organization]);
-
-  // Close the Call dropdown when clicking outside
-  useEffect(() => {
-    if (!showCallDropdown) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (callDropdownRef.current && !callDropdownRef.current.contains(event.target as Node)) {
-        setShowCallDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showCallDropdown]);
 
   // Start a Zoom Phone click-to-call for this organization
   const handleStartZoomCall = async (phoneNumber?: string, fieldName?: string) => {
@@ -6176,41 +6162,6 @@ export default function OrganizationView() {
 
           {/* RIGHT: actions */}
           <div className="flex items-center space-x-2 shrink-0">
-            {/* Call dropdown */}
-            <div className="relative" ref={callDropdownRef}>
-              <button
-                type="button"
-                onClick={() => setShowCallDropdown((v) => !v)}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-medium shadow-sm"
-                title="Call organization"
-              >
-                <FiPhone size={16} />
-                Call
-              </button>
-              {showCallDropdown && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg min-w-[220px]">
-                  {quickCallPhones.length === 0 ? (
-                    <div className="px-4 py-3 text-xs text-gray-500">No phone numbers available</div>
-                  ) : (
-                    quickCallPhones.map(({ fieldName, label, value }) => (
-                      <button
-                        key={fieldName}
-                        type="button"
-                        className="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 flex flex-col border-b border-gray-100 last:border-b-0 cursor-pointer"
-                        onClick={() => {
-                          setShowCallDropdown(false);
-                          handleStartZoomCall(value, fieldName);
-                        }}
-                      >
-                        <span className="text-gray-500 font-medium">{label}</span>
-                        <span className="text-gray-800 font-semibold mt-0.5">{value}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-
             <button
               onClick={() => setShowHeaderFieldModal(true)}
               className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
