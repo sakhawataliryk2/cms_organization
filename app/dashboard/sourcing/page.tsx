@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react';
 import { useRouter } from 'nextjs-toploader/app';
 import { SiMonster } from "react-icons/si";
 import { PiOfficeChairDuotone } from "react-icons/pi";
@@ -10,7 +9,7 @@ interface SourcingModule {
     id: string;
     name: string;
     icon: React.ReactNode;
-    path: string;
+    url: string;
 }
 
 export default function SourcingPage() {
@@ -21,19 +20,15 @@ export default function SourcingPage() {
             id: 'monster',
             name: 'Monster',
             icon: <SiMonster size={50} color="white" />,
-            path: '/dashboard/sourcing/monster'
+            url: 'https://hiring-identity.monster.com/login?state=hKFo2SBjV0U3ZkRFNUxmLWkzMVZabHVEekRCODRQXzRuRmVkLaFupWxvZ2luo3RpZNkgQmFWdWlyejYwWW1yal9VTHdNUVdGWDR1b2pIaUdzd2ijY2lk2SAybmszc2JORnlaR0VmczZvRjlYcGF1SUx4VUEyRmhKNg&client=2nk3sbNFyZGEfs6oF9XpauILxUA2FhJ6&protocol=oauth2&callbackURL=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback&scope=openid%20email%20profile%20offline_access&keepSessionInfo=true&loginAction=&apigeeApiKey=4u8nirp5l6ugasm1im1itrg0er&deviceId=f1f7c950-2c2c-4318-aef7-442e58a155e3&employerEnvironment=prod-ams&employerLocale=en-US&employerHost=https%3A%2F%2Fmanage.monster.com&employerBffDomain=https%3A%2F%2Fappsapi.monster.io%2Femployer-bff%2Fv1&clientId=1171520291.1787231904&sessionId=1787231949&productRatePlanId=&audience=employer-bff-api-gateway&nonce=afc133bf7b7c296f1b72f921b40da9ba&response_type=code&redirect_uri=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback'
         },
         {
             id: 'ziprecruiter',
             name: 'ZipRecruiter',
             icon: <PiOfficeChairDuotone size={50} color="white" />,
-            path: '/dashboard/sourcing/ziprecruiter'
+            url: 'https://www.ziprecruiter.com/authn/employer/login?next_url=%2Femp%2F'
         }
     ];
-
-    const handleModuleClick = (path: string) => {
-        router.push(path);
-    };
 
     const handleGoBack = () => {
         router.push('/dashboard');
@@ -61,10 +56,12 @@ export default function SourcingPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {sourcingModules.map((module) => (
-                        <div
+                        <a
                             key={module.id}
+                            href={module.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => handleModuleClick(module.path)}
                         >
                             {/* Module Icon - Black square with white icon */}
                             <div className="w-28 h-28 bg-black flex items-center justify-center mb-3 rounded-sm">
@@ -75,7 +72,7 @@ export default function SourcingPage() {
                             <span className="text-base text-center text-black leading-tight">
                                 {module.name}
                             </span>
-                        </div>
+                        </a>
                     ))}
                 </div>
             </div>
