@@ -16,7 +16,7 @@ export type ResumeWorkExperience = {
 };
 
 export type OrganizationNameCandidate = {
-  id: string | number;
+  id?: string | number | null;
   name?: string | null;
   nicknames?: string | null;
 };
@@ -149,6 +149,6 @@ export function pickBestOrganizationMatch(
     }
   }
 
-  if (!best || bestScore < 50) return null;
+  if (!best || best.id == null || bestScore < 50) return null;
   return best;
 }
