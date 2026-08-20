@@ -1029,6 +1029,29 @@ export default function OrganizationView() {
     );
   };
 
+  /** custom_fields is keyed by the Admin Center label, not Field_17. */
+  const getAboutOrganizationFieldLabel = () => {
+    const aboutField = (availableFields || []).find(
+      (f: any) => String(f?.field_name || "") === ABOUT_ORGANIZATION_FIELD_NAME
+    );
+    const label = String(aboutField?.field_label || "").trim();
+    return label || ABOUT_ORGANIZATION_FIELD_NAME;
+  };
+
+  const readAboutOrganizationText = (customFields?: Record<string, any> | null, fallback = "") => {
+    const cf = customFields && typeof customFields === "object" ? customFields : {};
+    const label = getAboutOrganizationFieldLabel();
+    const candidates = [
+      cf[label],
+      cf[ABOUT_ORGANIZATION_FIELD_NAME],
+      fallback,
+    ];
+    for (const value of candidates) {
+      if (value != null && String(value).trim() !== "") return String(value);
+    }
+    return "";
+  };
+
   const handleUpdateDocument = async () => {
     if (!editingDocument?.id || !organizationId || !editDocumentName.trim()) return;
 
@@ -1200,14 +1223,13 @@ export default function OrganizationView() {
     }
   }, [showAddNote]);
 
-  // Initialize about text from organization
+  // Initialize about text from organization (Field_17, keyed by current label)
   useEffect(() => {
     if (!organization) return;
-    const aboutFieldName = getAboutOrganizationFieldName();
-    const aboutValue =
-      organization?.customFields?.[aboutFieldName] ??
-      organization?.about ??
-      "";
+    const aboutValue = readAboutOrganizationText(
+      organization.customFields,
+      organization.about || ""
+    );
     setAboutText(String(aboutValue || ""));
   }, [organization, availableFields]);
 
@@ -2041,6 +2063,7 @@ export default function OrganizationView() {
         },
         about:
           customFieldsObj?.[ABOUT_ORGANIZATION_FIELD_NAME] ||
+          customFieldsObj?.["Organization Overview"] ||
           data.organization.overview ||
           "",
         customFields: customFieldsObj,
@@ -4125,7 +4148,8 @@ export default function OrganizationView() {
         body: JSON.stringify({
           custom_fields: {
             ...(organization?.customFields || {}),
-            [getAboutOrganizationFieldName()]: tempAboutText,
+            [getAboutOrganizationFieldLabel()]: tempAboutText,
+            [ABOUT_ORGANIZATION_FIELD_NAME]: tempAboutText,
           },
         }),
       });
@@ -4138,11 +4162,13 @@ export default function OrganizationView() {
       setIsEditingAbout(false);
       if (organization) {
         const aboutFieldName = getAboutOrganizationFieldName();
+        const aboutFieldLabel = getAboutOrganizationFieldLabel();
         setOrganization({
           ...organization,
           about: tempAboutText,
           customFields: {
             ...(organization.customFields || {}),
+            [aboutFieldLabel]: tempAboutText,
             [aboutFieldName]: tempAboutText,
           },
         });
