@@ -240,7 +240,11 @@ function applyParsedResumeToForm(
   parsed: ParsedResume,
   setFormFields: React.Dispatch<React.SetStateAction<FormField[]>>,
   setCustomFieldValues: (values: React.SetStateAction<Record<string, any>>) => void,
-  customFields: Array<{ field_name: string; field_label?: string | null }>
+  customFields: Array<{
+    field_name: string;
+    field_label?: string | null;
+    options?: string[] | string | Record<string, unknown> | null;
+  }>
 ): void {
   const resumeText = formatResumeSections(parsed);
   const skillsStr = Array.isArray(parsed.skills) ? parsed.skills.join(", ") : "";
