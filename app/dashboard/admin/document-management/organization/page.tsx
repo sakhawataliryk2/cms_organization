@@ -34,6 +34,7 @@ export default function DocumentManagementOrganizationPage() {
   const [loadingOrgDefaults, setLoadingOrgDefaults] = useState(false);
   const [loadingPush, setLoadingPush] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [showPdfViewer, setShowPdfViewer] = useState(false);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -87,6 +88,33 @@ export default function DocumentManagementOrganizationPage() {
       toast.error(e.message || "Failed to push");
     } finally {
       setLoadingPush(false);
+    }
+  };
+
+  const removeWelcomeDoc = async () => {
+    if (
+      !confirm(
+        "Remove the current Welcome document? New organizations will not receive one until you upload a file."
+      )
+    )
+      return;
+    setRemoving(true);
+    try {
+      const res = await fetch("/api/organization-default-documents/welcome", {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success)
+        throw new Error(data?.message || "Failed to remove document");
+      toast.success(
+        data.message || "Welcome document removed. Nothing will be attached until you upload."
+      );
+      setShowPdfViewer(false);
+      fetchWelcomeDefault();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to remove document");
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -229,14 +257,24 @@ export default function DocumentManagementOrganizationPage() {
             </div>
 
             {hasWelcomeFile ? (
-              <div className="text-sm text-gray-700 mb-3">
-                Current: <strong>{displayName}</strong>
-                <span className="ml-2 text-gray-500">(PDF)</span>
+              <div className="text-sm text-gray-700 mb-3 flex items-center flex-wrap gap-2">
+                <span>
+                  Current: <strong>{displayName}</strong>
+                  <span className="ml-2 text-gray-500">(PDF)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={removeWelcomeDoc}
+                  disabled={removing || uploading}
+                  className="px-3 py-1 text-sm border border-red-300 text-red-700 rounded hover:bg-red-50 disabled:opacity-50"
+                >
+                  {removing ? "Removing..." : "Remove Doc"}
+                </button>
               </div>
             ) : (
               <div className="text-sm text-gray-600 mb-3">
-                No Welcome document uploaded. New organizations will receive a
-                default text placeholder. Upload a PDF below.
+                No Welcome document uploaded. New organizations will not receive
+                a Welcome document until you upload a PDF below.
               </div>
             )}
 

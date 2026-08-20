@@ -77,13 +77,14 @@ function ValidationIndicator({ type }: { type: "required" | "valid" }) {
 /** Wraps content with optional validation indicator before the input */
 function withValidationWrapper(
   content: React.ReactNode,
-  validationIndicator?: "required" | "valid"
+  validationIndicator?: "required" | "valid",
+  fillHeight?: boolean
 ): React.ReactNode {
   if (!validationIndicator) return content;
   return (
-    <div className="flex items-center gap-3 w-full">
+    <div className={`flex gap-3 w-full ${fillHeight ? "items-stretch h-full min-h-0" : "items-center"}`}>
       <ValidationIndicator type={validationIndicator} />
-      <div className="flex-1 min-w-0">{content}</div>
+      <div className={`flex-1 min-w-0 ${fillHeight ? "h-full min-h-0" : ""}`}>{content}</div>
     </div>
   );
 }
@@ -130,6 +131,8 @@ interface CustomFieldRendererProps {
   validationIndicator?: "required" | "valid";
   /** When true, render this field as read-only regardless of field config */
   forceReadOnly?: boolean;
+  /** Stretch a textarea to fill its parent (used by the job-seeker Resume panel). */
+  fillHeight?: boolean;
 }
 
 export default function CustomFieldRenderer({
@@ -143,6 +146,7 @@ export default function CustomFieldRenderer({
   context,
   validationIndicator,
   forceReadOnly = false,
+  fillHeight = false,
 }: CustomFieldRendererProps) {
   const rawValueStr = String(value ?? "").trim();
   const hasRealDateValue =
@@ -618,17 +622,22 @@ export default function CustomFieldRenderer({
   switch (field.field_type) {
     case "textarea":
       return withValidationWrapper(
-        <div className="relative w-full">
+        <div className={`relative w-full ${fillHeight ? "h-full min-h-0 flex flex-col" : ""}`}>
           <textarea
             {...fieldProps}
-            className="w-full p-2 pr-8 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-            rows={textareaRows}
+            className={
+              fillHeight
+                ? "w-full flex-1 min-h-0 h-full p-2 pr-8 border border-gray-300 rounded focus:outline-none focus:border-blue-500 resize-none"
+                : "w-full p-2 pr-8 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+            }
+            rows={fillHeight ? undefined : textareaRows}
           />
           {(value ?? "") !== "" && !readOnly && (
             <ClearButton onClick={() => onChange(field.field_name, "")} className="right-2 top-2" />
           )}
         </div>,
-        validationIndicator
+        validationIndicator,
+        fillHeight
       );
     case "select":
       if (isCredentialsMultiSelect) {
