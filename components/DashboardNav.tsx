@@ -899,6 +899,7 @@ export default function DashboardNav() {
     "/dashboard/goals": <FiBarChart2 size={20} />,
     "/dashboard/placements": <FiDollarSign size={20} />,
     "/dashboard/tearsheets": <FiFile size={20} />,
+    "/dashboard/sourcing": <FiSearch size={20} />,
     "/dashboard/admin": <FiSettings size={20} />,
   };
 
