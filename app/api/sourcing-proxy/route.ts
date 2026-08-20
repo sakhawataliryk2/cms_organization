@@ -218,7 +218,9 @@ async function proxyRequest(request: NextRequest, method: "GET" | "POST") {
     headers.set(key, value);
   });
 
-  return new NextResponse(payload, { status: upstream.status, headers });
+  const body: BodyInit =
+    typeof payload === "string" ? payload : new Uint8Array(payload);
+  return new NextResponse(body, { status: upstream.status, headers });
 }
 
 export async function GET(request: NextRequest) {
