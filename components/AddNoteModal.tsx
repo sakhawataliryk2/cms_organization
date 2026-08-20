@@ -99,6 +99,8 @@ export default function AddNoteModal({
     const [isLoading, setIsLoading] = useState(false);
     const [actionFields, setActionFields] = useState<any[]>([]);
     const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
+    const [showNoteDateTime, setShowNoteDateTime] = useState(false);
+    const noteTextRef = useRef<HTMLTextAreaElement>(null);
 
     // When defaultAction is provided, try to pre-select the closest matching action
     useEffect(() => {
@@ -181,6 +183,10 @@ export default function AddNoteModal({
             setAdditionalRefSearchQuery("");
             setEmailSearchQuery("");
             setShowAdditionalRefDropdown(false);
+            setShowNoteDateTime(false);
+            requestAnimationFrame(() => {
+                noteTextRef.current?.focus();
+            });
         }
     }, [open, entityType, entityId, entityDisplay]);
 
@@ -718,6 +724,13 @@ export default function AddNoteModal({
                 value: ref.value,
             }));
 
+            const noteDateTime =
+                entityType === "organization"
+                    ? (showNoteDateTime && noteForm.note_date_time
+                        ? noteForm.note_date_time
+                        : new Date().toISOString())
+                    : noteForm.note_date_time;
+
             // Create note on the primary record first
             const primaryNoteBody = {
                 text: noteForm.text,
@@ -728,7 +741,7 @@ export default function AddNoteModal({
                 additional_references: noteForm.additionalReferences,
                 schedule_next_action: noteForm.scheduleNextAction,
                 email_notification: noteForm.emailNotification,
-                note_date_time: noteForm.note_date_time,
+                note_date_time: noteDateTime,
                             };
 
             const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
@@ -810,7 +823,7 @@ export default function AddNoteModal({
                                 additional_references: noteForm.additionalReferences,
                                 schedule_next_action: noteForm.scheduleNextAction,
                                 email_notification: noteForm.emailNotification,
-                                note_date_time: noteForm.note_date_time,
+                                note_date_time: noteDateTime,
                                                             }),
                         });
                         
@@ -854,6 +867,7 @@ export default function AddNoteModal({
 
     const handleCloseModal = () => {
         setNoteFormErrors({});
+        setShowNoteDateTime(false);
         onClose();
     };
 
@@ -879,8 +893,8 @@ export default function AddNoteModal({
                 {/* Form Content */}
                 <div className="p-6">
                     <div className="space-y-4">
-                        {/* Note Date & Time (admin only) */}
-                        {canManageNoteDateTime && (
+                        {/* Note Date & Time (admin only; organization notes use a toggle at the bottom) */}
+                        {canManageNoteDateTime && entityType !== "organization" && (
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Note Date & Time
@@ -906,6 +920,7 @@ export default function AddNoteModal({
                                 )}
                             </label>
                             <textarea
+                                ref={noteTextRef}
                                 value={noteForm.text}
                                 autoFocus
                                 onChange={(e) => {
@@ -1061,6 +1076,46 @@ export default function AddNoteModal({
                                 }}
                             />
                         </div>
+
+                        {canManageNoteDateTime && entityType === "organization" && (
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowNoteDateTime((prev) => {
+                                            if (!prev) {
+                                                setNoteForm((form) => ({
+                                                    ...form,
+                                                    note_date_time: getCurrentLocalDateTime(),
+                                                }));
+                                            }
+                                            return !prev;
+                                        });
+                                    }}
+                                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                    {showNoteDateTime ? "Hide date & time" : "Set date & time"}
+                                </button>
+                                {showNoteDateTime && (
+                                    <div className="mt-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Note Date & Time
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={noteForm.note_date_time}
+                                            onChange={(e) =>
+                                                setNoteForm((prev) => ({
+                                                    ...prev,
+                                                    note_date_time: e.target.value,
+                                                }))
+                                            }
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Form Actions */}
