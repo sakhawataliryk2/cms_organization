@@ -105,6 +105,7 @@ const STATUS_OPTIONS = [
   { label: "Stopped", value: "stopped" },
 ];
 
+type QueueTab = "pending" | "history" | "sources";
 type DatePreset = "today" | "yesterday" | "7d" | "30d" | "custom";
 
 function startOfDay(d: Date) {
@@ -296,7 +297,7 @@ export default function EmailQueuePage() {
   const [customTo, setCustomTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
-  const [queueTab, setQueueTab] = useState<"pending" | "history">("pending");
+  const [queueTab, setQueueTab] = useState<QueueTab>("pending");
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo],
@@ -308,12 +309,12 @@ export default function EmailQueuePage() {
     if (range.dateTo) q.dateTo = range.dateTo;
     if (statusFilter) q.status = statusFilter;
     if (sourceFilter) q.source = sourceFilter;
-    q.bucket = queueTab;
+    q.bucket = queueTab === "history" ? "history" : "pending";
     return q;
   }, [range, statusFilter, sourceFilter, queueTab]);
 
   const tabStatusOptions = useMemo(() => {
-    const allowed = queueTab === "pending" ? PENDING_STATUSES : HISTORY_STATUSES;
+    const allowed = queueTab === "history" ? HISTORY_STATUSES : PENDING_STATUSES;
     return STATUS_OPTIONS.filter((o) => !o.value || allowed.includes(o.value));
   }, [queueTab]);
 
@@ -321,6 +322,7 @@ export default function EmailQueuePage() {
     apiPath: "/api/admin/email-queue",
     responseKey: "emails",
     extraQueryParams,
+    enabled: queueTab !== "sources",
   });
 
   const [stats, setStats] = useState<QueueStats | null>(null);
@@ -707,11 +709,12 @@ export default function EmailQueuePage() {
     });
   };
 
-  const switchQueueTab = (tab: "pending" | "history") => {
+  const switchQueueTab = (tab: QueueTab) => {
     if (tab === queueTab) return;
-    const allowed = tab === "pending" ? PENDING_STATUSES : HISTORY_STATUSES;
     setQueueTab(tab);
     setSelectedIds(new Set());
+    if (tab === "sources") return;
+    const allowed = tab === "pending" ? PENDING_STATUSES : HISTORY_STATUSES;
     if (statusFilter && !allowed.includes(statusFilter)) setStatusFilter("");
     const colStatus = String(list.columnFilters.status || "").trim();
     if (colStatus && !allowed.includes(colStatus)) {
@@ -878,79 +881,6 @@ export default function EmailQueuePage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
-            <h2 className="text-sm font-semibold text-gray-800 mb-1">Source pause (crons and modules)</h2>
-            <p className="text-xs text-gray-500 mb-3">
-              Pause a source to stop that type only — including future cron runs. Leave the time empty for a permanent pause, or pick a time (up to 7 days) to auto-resume.
-            </p>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase text-gray-500">
-                    <th className="py-2 pr-3">Source</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Resume at</th>
-                    <th className="py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sourceControls.map((row) => (
-                    <tr key={row.source} className="border-t border-gray-100">
-                      <td className="py-2 pr-3 font-medium text-gray-800">{formatSourceLabel(row.source)}</td>
-                      <td className="py-2 pr-3">
-                        {row.paused ? (
-                          <span className="text-red-700">Paused</span>
-                        ) : (
-                          <span className="text-green-700">Active</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-gray-600">
-                        {row.paused_until ? formatTs(row.paused_until) : row.paused ? "Until resume" : "—"}
-                      </td>
-                      <td className="py-2">
-                        <PermissionGate permission="admin.email_queue.control">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {row.paused ? (
-                              <button
-                                type="button"
-                                disabled={sourceSaving === row.source}
-                                onClick={() => void resumeSource(row.source)}
-                                className="px-2 py-1 text-xs rounded-md bg-green-600 text-white disabled:opacity-50"
-                              >
-                                Resume source
-                              </button>
-                            ) : (
-                              <>
-                                <input
-                                  type="datetime-local"
-                                  value={sourceUntil[row.source] || ""}
-                                  min={getNowDatetimeLocal()}
-                                  max={getMaxPauseDatetimeLocal()}
-                                  onChange={(e) =>
-                                    setSourceUntil((prev) => ({ ...prev, [row.source]: e.target.value }))
-                                  }
-                                  className="px-2 py-1 border border-gray-300 rounded text-xs"
-                                />
-                                <button
-                                  type="button"
-                                  disabled={sourceSaving === row.source}
-                                  onClick={() => void pauseSource(row.source, sourceUntil[row.source])}
-                                  className="px-2 py-1 text-xs rounded-md bg-red-600 text-white disabled:opacity-50"
-                                >
-                                  {sourceUntil[row.source] ? "Pause until" : "Pause permanently"}
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </PermissionGate>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           <div className="bg-white rounded-lg shadow-sm overflow-hidden">
             <div className="flex border-b border-gray-200">
               <button
@@ -975,12 +905,122 @@ export default function EmailQueuePage() {
               >
                 Sent
               </button>
+              <button
+                type="button"
+                onClick={() => switchQueueTab("sources")}
+                className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${
+                  queueTab === "sources"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Source pause
+              </button>
               <p className="ml-auto px-4 py-3 text-xs text-gray-500 hidden sm:block">
                 {queueTab === "pending"
                   ? "Queued, delayed, processing, blocked, and stopped"
-                  : "Delivered, failed, and cancelled"}
+                  : queueTab === "history"
+                    ? "Delivered, failed, and cancelled"
+                    : "Pause crons and modules by source"}
               </p>
             </div>
+            {queueTab === "sources" ? (
+            <div className="p-4">
+            <p className="text-xs text-gray-500 mb-3">
+              Pause a source to stop that type only — including future cron runs. Leave the time empty for a permanent pause, or pick a time (up to 7 days) to auto-resume.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase text-gray-500">
+                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Resume at</th>
+                    <th className="py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceControls.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-sm text-gray-500">
+                        No sources found yet.
+                      </td>
+                    </tr>
+                  ) : sourceControls.map((row) => (
+                    <tr key={row.source} className="border-t border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-800">{formatSourceLabel(row.source)}</td>
+                      <td className="py-2 pr-3">
+                        {row.paused ? (
+                          <span className="text-red-700">Paused</span>
+                        ) : (
+                          <span className="text-green-700">Active</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {row.paused_until ? formatTs(row.paused_until) : row.paused ? "Until resume" : "—"}
+                      </td>
+                      <td className="py-2">
+                        <PermissionGate permission="admin.email_queue.control">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {row.paused ? (
+                              <button
+                                type="button"
+                                disabled={sourceSaving === row.source}
+                                onClick={() => void resumeSource(row.source)}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-green-600 text-white disabled:opacity-50"
+                              >
+                                {sourceSaving === row.source ? (
+                                  <>
+                                    <ModalSpinner />
+                                    Resuming…
+                                  </>
+                                ) : (
+                                  "Resume source"
+                                )}
+                              </button>
+                            ) : (
+                              <>
+                                <input
+                                  type="datetime-local"
+                                  value={sourceUntil[row.source] || ""}
+                                  min={getNowDatetimeLocal()}
+                                  max={getMaxPauseDatetimeLocal()}
+                                  disabled={sourceSaving === row.source}
+                                  onChange={(e) =>
+                                    setSourceUntil((prev) => ({ ...prev, [row.source]: e.target.value }))
+                                  }
+                                  className="px-2 py-1 border border-gray-300 rounded text-xs disabled:opacity-50"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={sourceSaving === row.source}
+                                  onClick={() => void pauseSource(row.source, sourceUntil[row.source])}
+                                  className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded-md bg-red-600 text-white disabled:opacity-50"
+                                >
+                                  {sourceSaving === row.source ? (
+                                    <>
+                                      <ModalSpinner />
+                                      Pausing…
+                                    </>
+                                  ) : sourceUntil[row.source] ? (
+                                    "Pause until"
+                                  ) : (
+                                    "Pause permanently"
+                                  )}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </PermissionGate>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            </div>
+            ) : (
+            <>
             <div className="p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-gray-200">
               <input
                 type="search"
@@ -1302,6 +1342,8 @@ export default function EmailQueuePage() {
                 </button>
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
 
