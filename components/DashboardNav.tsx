@@ -41,7 +41,6 @@ import {
   FiBriefcase,
   FiX,
   FiLogOut,
-  FiUpload,
   FiMenu,
   FiLayers,
   FiChevronDown,
@@ -1740,20 +1739,6 @@ export default function DashboardNav() {
           />
           <div className="flex justify-between items-center cursor-pointer">
             <span className="text-blue-300 text-sm" >Parse Resume</span>
-            <button
-              type="button"
-              className="text-white bg-slate-700 p-1 rounded hover:bg-slate-600"
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push('/dashboard/admin/data-uploader');
-                setIsSidebarOpen(false);
-              }}
-              aria-label="Parse Resume"
-              title="Click to Open Data Uploader"
-
-            >
-              <FiUpload size={16} />
-            </button>
           </div>
           <p className="text-xs text-slate-400 mt-1">Drop CSV/Excel or resume (PDF / DOC / DOCX / TXT)</p>
         </div>

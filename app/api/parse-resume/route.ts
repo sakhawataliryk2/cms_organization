@@ -11,6 +11,16 @@ import {
   normalizeOptions,
   normalizeStr,
 } from "@/lib/aiParsing";
+import { extractUsStateFromText, matchStateToOption } from "@/lib/usStates";
+import {
+  pickBestOrganizationMatch,
+  pickCurrentOrganizationName,
+} from "@/lib/resumeOrganizationLookup";
+import { ORGANIZATION_LOOKUP_FIELD_BY_ENTITY } from "@/lib/entitySummaryFieldMaps";
+
+const JOB_SEEKER_ORG_FIELD_NAME =
+  ORGANIZATION_LOOKUP_FIELD_BY_ENTITY["job-seekers"]; // Field_5
+const JOB_SEEKER_STATE_FIELD_NAME = "Field_18";
 
 export const runtime = "nodejs";
 
@@ -60,13 +70,24 @@ ADDRESS PARSING:
   - "address": street line 1
   - "address_2": line 2 if any
   - "city": city
-  - "state": 2-letter code
-- "zip": postal code
+  - "state": 2-letter USPS code (e.g. MA, CA, NY). NEVER leave state empty if a code or full name appears next to the city or ZIP (e.g. "Dracut, MA 01826" → city "Dracut", state "MA", zip "01826").
+  - "zip": postal code
 - If only one line like "San Francisco, CA", put city in "city" and state in "state".
+- Also fill the State custom field (usually Field_18) with the EXACT allowed select option (typically the full name, e.g. "Massachusetts" for MA).
+
+CURRENT ORGANIZATION:
+- Identify the candidate's CURRENT / most recent employer (end date "present"/"current", or the latest date range). Do not use an older job when a newer one exists.
+- Resume experience headers often look like "AUTOFAIR TOYOTA, TEWKSBURY, MA (2023-present)". In that pattern the company is the text BEFORE the city/state.
+- Return the company NAME ONLY in "current_organization" (no city, state, dates, or job title).
+- Example: "AUTOFAIR TOYOTA, TEWKSBURY, MA (2023-present)" → current_organization = "AUTOFAIR TOYOTA".
+- Leave custom_fields Field_5 empty. A name-based CRM lookup fills Current Organization after parsing.
 `;
 
 function buildSystemPrompt(customFields: CustomFieldDef[]): string {
-  const { selectBlock, customBlock } = buildCustomFieldPromptInfo(customFields);
+  const promptFields = customFields.filter(
+    (f) => f.field_name !== JOB_SEEKER_ORG_FIELD_NAME
+  );
+  const { selectBlock, customBlock } = buildCustomFieldPromptInfo(promptFields);
 
   return `${BASE_SYSTEM_PROMPT}${selectBlock}
 
@@ -87,6 +108,7 @@ Return JSON in this exact structure:
   "linkedin": "",
   "portfolio": "",
   "current_job_title": "",
+  "current_organization": "",
   "total_experience_years": "",
   "skills": [],
   "education": [
@@ -163,8 +185,14 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
     const custom_fields: Record<string, string> = {};
 
     for (const name of customFieldNames) {
+      if (name === JOB_SEEKER_ORG_FIELD_NAME) continue;
       let val = parsed[name] ?? "";
       const meta = selectFieldMeta.find((m) => m.name === name);
+      if (name === JOB_SEEKER_STATE_FIELD_NAME) {
+        // State is mapped after parse via USPS code ↔ full-name options.
+        if (val) custom_fields[name] = val;
+        continue;
+      }
       if (meta && meta.options.length > 0) {
         const exact = meta.options.find((o) => normalizeStr(o) === normalizeStr(val));
         if (exact) val = exact;
@@ -192,6 +220,7 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
       linkedin: toStr(obj.linkedin),
       portfolio: toStr(obj.portfolio),
       current_job_title: toStr(obj.current_job_title),
+      current_organization: toStr(obj.current_organization),
       total_experience_years: toStr(obj.total_experience_years),
       skills: toStrArray(obj.skills),
       education,
@@ -201,6 +230,91 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
   } catch (err) {
     debugLog("Failed to parse AI JSON", raw);
     return null;
+  }
+}
+
+function applyParsedState(
+  parsed: ParsedResume,
+  customFields: CustomFieldDef[],
+  resumeText?: string
+): void {
+  const stateDef = customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME);
+  const options = stateDef ? normalizeOptions(stateDef.options) : [];
+  const locationBlob = [parsed.address, parsed.address_2, parsed.city, parsed.state, parsed.zip, parsed.location]
+    .filter(Boolean)
+    .join(", ");
+
+  const extracted =
+    extractUsStateFromText(parsed.state) ||
+    extractUsStateFromText(locationBlob) ||
+    extractUsStateFromText(parsed.custom_fields?.[JOB_SEEKER_STATE_FIELD_NAME]) ||
+    extractUsStateFromText(resumeText);
+
+  if (extracted && !parsed.state) parsed.state = extracted.code;
+
+  const matched = matchStateToOption(
+    parsed.state || parsed.custom_fields?.[JOB_SEEKER_STATE_FIELD_NAME] || "",
+    options,
+    `${locationBlob} ${resumeText || ""}`
+  );
+  if (!matched) return;
+
+  parsed.custom_fields = { ...(parsed.custom_fields || {}), [JOB_SEEKER_STATE_FIELD_NAME]: matched };
+  if (!parsed.state) parsed.state = extracted?.code || matched;
+}
+
+async function lookupCurrentOrganizationId(
+  orgName: string,
+  token: string
+): Promise<string | null> {
+  const q = orgName.trim();
+  if (!q) return null;
+
+  const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+  const queries = [q];
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length > 2) queries.push(tokens.slice(0, 2).join(" "));
+
+  for (const query of queries) {
+    const url = `${apiUrl}/api/organizations?q=${encodeURIComponent(query)}&limit=50`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) continue;
+
+    const data = (await res.json().catch(() => null)) as {
+      organizations?: Array<{ id?: string | number; name?: string; nicknames?: string | null }>;
+    } | null;
+    const orgs = Array.isArray(data?.organizations) ? data.organizations : [];
+    const best = pickBestOrganizationMatch(q, orgs);
+    if (best?.id != null) return String(best.id);
+  }
+
+  return null;
+}
+
+async function applyParsedOrganization(
+  parsed: ParsedResume,
+  token: string,
+  resumeText?: string
+): Promise<void> {
+  const orgName = pickCurrentOrganizationName(parsed, resumeText);
+  if (orgName) parsed.current_organization = orgName;
+
+  const existing = parsed.custom_fields?.[JOB_SEEKER_ORG_FIELD_NAME];
+  if (existing && /^\d+$/.test(existing)) return;
+  if (!orgName) return;
+
+  try {
+    const orgId = await lookupCurrentOrganizationId(orgName, token);
+    if (!orgId) return;
+    parsed.custom_fields = { ...(parsed.custom_fields || {}), [JOB_SEEKER_ORG_FIELD_NAME]: orgId };
+  } catch (err) {
+    debugLog("Organization name lookup failed", err);
   }
 }
 
@@ -286,11 +400,11 @@ export async function POST(request: NextRequest) {
     if (!rawExtractedText || !rawExtractedText.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
 
     const text = rawExtractedText
-      .replace(/\r/g, " ")
-      .replace(/\n/g, " ")
+      .replace(/\r\n?/g, "\n")
       .replace(/\t/g, " ")
-      .replace(/\s+/g, " ") // collapse spaces
-      .replace(/[^\x00-\x7F]/g, "") // remove weird unicode
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[^\x00-\x7F\n]/g, "")
       .trim()
       .slice(0, MAX_RESUME_CHARS);
 
@@ -314,6 +428,9 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       );
     }
+
+    applyParsedState(parsed, customFields, text);
+    await applyParsedOrganization(parsed, token, text);
 
     debugLog("Final Parsed Resume", parsed);
     return NextResponse.json({ success: true, parsed });
@@ -345,6 +462,7 @@ export interface ParsedResume {
   linkedin: string;
   portfolio: string;
   current_job_title: string;
+  current_organization: string;
   total_experience_years: string;
   skills: string[];
   education: Array<{ degree: string; institution: string; year: string }>;

@@ -7,8 +7,11 @@ const SUPER_USER_TYPES = new Set([
   "developer",
 ]);
 
-export function inferIsSuperFromUser(): boolean {
-  const userType = getUser()?.userType;
+export function isSuperUserType(userType?: string | null): boolean {
   if (!userType) return false;
   return SUPER_USER_TYPES.has(String(userType).trim().toLowerCase());
+}
+
+export function inferIsSuperFromUser(): boolean {
+  return isSuperUserType(getUser()?.userType);
 }
