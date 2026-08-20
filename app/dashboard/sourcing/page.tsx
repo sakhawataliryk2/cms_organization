@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'nextjs-toploader/app';
-import { SiMonster, SiGoogle } from "react-icons/si";
+import { SiMonster } from "react-icons/si";
 import { PiOfficeChairDuotone } from "react-icons/pi";
 import { FiX } from "react-icons/fi";
 
@@ -14,16 +14,10 @@ interface SourcingModule {
 
 const sourcingModules: SourcingModule[] = [
     {
-        id: 'google',
-        name: 'Google',
-        icon: <SiGoogle size={50} color="white" />,
-        url: 'https://www.google.com/',
-    },
-    {
         id: 'monster',
         name: 'Monster',
         icon: <SiMonster size={50} color="white" />,
-        url: 'https://hiring.monster.com/',
+        url: 'https://hiring-identity.monster.com/login?state=hKFo2SBjV0U3ZkRFNUxmLWkzMVZabHVEekRCODRQXzRuRmVkLaFupWxvZ2luo3RpZNkgQmFWdWlyejYwWW1yal9VTHdNUVdGWDR1b2pIaUdzd2ijY2lk2SAybmszc2JORnlaR0VmczZvRjlYcGF1SUx4VUEyRmhKNg&client=2nk3sbNFyZGEfs6oF9XpauILxUA2FhJ6&protocol=oauth2&callbackURL=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback&scope=openid%20email%20profile%20offline_access&keepSessionInfo=true&loginAction=&apigeeApiKey=4u8nirp5l6ugasm1im1itrg0er&deviceId=f1f7c950-2c2c-4318-aef7-442e58a155e3&employerEnvironment=prod-ams&employerLocale=en-US&employerHost=https%3A%2F%2Fmanage.monster.com&employerBffDomain=https%3A%2F%2Fappsapi.monster.io%2Femployer-bff%2Fv1&clientId=1171520291.1787231904&sessionId=1787231949&productRatePlanId=&audience=employer-bff-api-gateway&nonce=afc133bf7b7c296f1b72f921b40da9ba&response_type=code&redirect_uri=https%3A%2F%2Fmanage.monster.com%2Fauth%2Fcallback',
     },
     {
         id: 'ziprecruiter',
@@ -56,7 +50,7 @@ export default function SourcingPage() {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {sourcingModules.map((module) => (
                         <a
                             key={module.id}
