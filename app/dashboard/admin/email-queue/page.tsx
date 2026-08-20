@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "nextjs-toploader/app";
 import { toast } from "sonner";
 import { DndContext, closestCenter } from "@dnd-kit/core";
@@ -12,6 +12,12 @@ import {
   FiX,
   FiRefreshCw,
   FiAlertTriangle,
+  FiClock,
+  FiCalendar,
+  FiStopCircle,
+  FiPlay,
+  FiTrash2,
+  FiLoader,
 } from "react-icons/fi";
 import ModuleListGuard from "@/components/ModuleListGuard";
 import PermissionGate from "@/components/PermissionGate";
@@ -36,6 +42,9 @@ type EmailRow = {
   created_at: string | null;
   scheduled_at: string | null;
   sent_at: string | null;
+  stopped_at: string | null;
+  resume_at: string | null;
+  stop_reason: string | null;
   attachments?: Array<{ filename?: string; contentType?: string; size?: number }>;
   source: string | null;
   last_error?: string | null;
@@ -49,13 +58,24 @@ type QueueStats = {
   failed: number;
   blocked: number;
   cancelled: number;
+  stopped: number;
   nextScheduledAt: string | null;
   sendingEnabled: boolean;
   delayEnabled: boolean;
   delaySeconds: number;
 };
 
-type DatePreset = "today" | "yesterday" | "7d" | "30d" | "custom";
+type SourceControl = {
+  source: string;
+  paused: boolean;
+  paused_until: string | null;
+};
+
+function getMaxPauseDatetimeLocal() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return toDatetimeLocal(d);
+}
 
 const COLUMNS = [
   { key: "status", label: "Status", filterType: "select" as const },
@@ -70,6 +90,9 @@ const COLUMNS = [
   { key: "source", label: "Source", filterType: "text" as const },
 ];
 
+const PENDING_STATUSES = ["queued", "delayed", "processing", "blocked", "stopped"];
+const HISTORY_STATUSES = ["sent", "failed", "cancelled"];
+
 const STATUS_OPTIONS = [
   { label: "All", value: "" },
   { label: "Queued", value: "queued" },
@@ -79,15 +102,10 @@ const STATUS_OPTIONS = [
   { label: "Failed", value: "failed" },
   { label: "Cancelled", value: "cancelled" },
   { label: "Blocked", value: "blocked" },
+  { label: "Stopped", value: "stopped" },
 ];
 
-const DELAY_PRESETS = [
-  { label: "5 seconds", value: 5 },
-  { label: "10 seconds", value: 10 },
-  { label: "30 seconds", value: 30 },
-  { label: "1 minute", value: 60 },
-  { label: "5 minutes", value: 300 },
-];
+type DatePreset = "today" | "yesterday" | "7d" | "30d" | "custom";
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -95,6 +113,27 @@ function startOfDay(d: Date) {
 
 function toIsoLocal(d: Date) {
   return d.toISOString();
+}
+
+function toDatetimeLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getNowDatetimeLocal() {
+  return toDatetimeLocal(new Date());
+}
+
+function getMaxDatetimeLocal() {
+  const d = new Date();
+  d.setHours(d.getHours() + 24);
+  return toDatetimeLocal(d);
+}
+
+function addHours(d: Date, h: number) {
+  const r = new Date(d);
+  r.setHours(r.getHours() + h);
+  return r;
 }
 
 function dateRangeForPreset(preset: DatePreset, customFrom: string, customTo: string) {
@@ -148,6 +187,7 @@ function formatStatusLabel(status: string) {
     failed: "Failed",
     cancelled: "Cancelled",
     blocked: "Blocked",
+    stopped: "Stopped",
   };
   const key = String(status || "").toLowerCase();
   if (labels[key]) return labels[key];
@@ -187,9 +227,49 @@ function statusClass(status: string) {
       return "bg-blue-100 text-blue-800 border-blue-200";
     case "cancelled":
       return "bg-gray-200 text-gray-700 border-gray-300";
+    case "stopped":
+      return "bg-purple-100 text-purple-800 border-purple-200";
     default:
       return "bg-sky-50 text-sky-800 border-sky-200";
   }
+}
+
+function ModalSpinner() {
+  return <FiLoader className="animate-spin shrink-0" size={16} aria-hidden />;
+}
+
+function formatSourceLabel(source: string | null | undefined) {
+  const raw = String(source || "").trim();
+  if (!raw) return "—";
+  const labels: Record<string, string> = {
+    "benefit-package": "Benefit Package",
+    "credit-check": "Credit Check",
+    "duplicate-check-report": "Duplicate Check Report",
+    "hm-portal-sync": "Hiring Manager Portal Sync",
+    "hm-portal-auth": "Hiring Manager Portal Auth",
+    "js-portal-auth": "Job Seeker Portal Auth",
+    "insurance-request": "Insurance Request",
+    "onboarding": "Onboarding",
+    "onboarding-missing-report": "Onboarding Missing Report",
+    "onboarding-reminder": "Onboarding Reminder",
+    "task-reminder": "Task Reminder",
+    "job-distribution": "Job Distribution",
+    "public-job-apply": "Public Job Apply",
+    "client-submission": "Client Submission",
+    "delete-request": "Delete Request",
+    "hiring-manager": "Hiring Manager",
+    "job-seeker": "Job Seeker",
+    "hm-transfer": "Hiring Manager Transfer",
+    "js-transfer": "Job Seeker Transfer",
+    "auth-2fa": "Auth 2FA",
+    "auth-reset": "Auth Reset",
+  };
+  if (labels[raw]) return labels[raw];
+  return raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function cellValue(row: EmailRow, key: string) {
@@ -203,6 +283,7 @@ function cellValue(row: EmailRow, key: string) {
     return formatTs(row[key]);
   }
   if (key === "template_name") return row.template_name || "Unknown Template";
+  if (key === "source") return formatSourceLabel(row.source);
   const v = (row as Record<string, unknown>)[key];
   if (v == null || v === "") return "—";
   return String(v);
@@ -214,6 +295,8 @@ export default function EmailQueuePage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [queueTab, setQueueTab] = useState<"pending" | "history">("pending");
   const range = useMemo(
     () => dateRangeForPreset(datePreset, customFrom, customTo),
     [datePreset, customFrom, customTo],
@@ -224,8 +307,15 @@ export default function EmailQueuePage() {
     if (range.dateFrom) q.dateFrom = range.dateFrom;
     if (range.dateTo) q.dateTo = range.dateTo;
     if (statusFilter) q.status = statusFilter;
+    if (sourceFilter) q.source = sourceFilter;
+    q.bucket = queueTab;
     return q;
-  }, [range, statusFilter]);
+  }, [range, statusFilter, sourceFilter, queueTab]);
+
+  const tabStatusOptions = useMemo(() => {
+    const allowed = queueTab === "pending" ? PENDING_STATUSES : HISTORY_STATUSES;
+    return STATUS_OPTIONS.filter((o) => !o.value || allowed.includes(o.value));
+  }, [queueTab]);
 
   const list = useServerEntityList<EmailRow>({
     apiPath: "/api/admin/email-queue",
@@ -235,10 +325,27 @@ export default function EmailQueuePage() {
 
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<null | "stop" | "resume" | "delay-on" | "delay-off">(null);
-  const [delayMenuOpen, setDelayMenuOpen] = useState(false);
-  const delayMenuRef = useRef<HTMLDivElement | null>(null);
+  const [confirm, setConfirm] = useState<null | "stop" | "resume" | "delay-on" | "delay-off" | "clear-history">(null);
   const [saving, setSaving] = useState(false);
+  const [customDelayValue, setCustomDelayValue] = useState("");
+  const [rescheduleModal, setRescheduleModal] = useState<{
+    open: boolean;
+    emailId: number | null;
+    subject: string;
+  }>({ open: false, emailId: null, subject: "" });
+  const [rescheduleValue, setRescheduleValue] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [availableSources, setAvailableSources] = useState<string[]>([]);
+  const [sourceControls, setSourceControls] = useState<SourceControl[]>([]);
+  const [sourceSaving, setSourceSaving] = useState<string | null>(null);
+  const [sourceUntil, setSourceUntil] = useState<Record<string, string>>({});
+  const [stopModal, setStopModal] = useState<{ open: boolean; ids: number[]; until: string }>({
+    open: false,
+    ids: [],
+    until: "",
+  });
+  const [batchSaving, setBatchSaving] = useState(false);
   const [preview, setPreview] = useState<{
     open: boolean;
     loading: boolean;
@@ -263,6 +370,7 @@ export default function EmailQueuePage() {
         failed: data.failed ?? 0,
         blocked: data.blocked ?? 0,
         cancelled: data.cancelled ?? 0,
+        stopped: data.stopped ?? 0,
         nextScheduledAt: data.nextScheduledAt ?? null,
         sendingEnabled: Boolean(data.sendingEnabled),
         delayEnabled: Boolean(data.delayEnabled),
@@ -281,19 +389,33 @@ export default function EmailQueuePage() {
   }, [loadStats]);
 
   useEffect(() => {
-    if (!delayMenuOpen) return;
-    const onDocClick = (event: MouseEvent) => {
-      if (!delayMenuRef.current?.contains(event.target as Node)) {
-        setDelayMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [delayMenuOpen]);
+    fetch("/api/admin/email-queue/sources", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setAvailableSources(d.sources || []); })
+      .catch(() => {});
+  }, []);
+
+  const loadSourceControls = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/email-queue/source-controls", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (data.success) setSourceControls(data.sources || []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSourceControls();
+  }, [loadSourceControls]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [list.currentPage]);
 
   const refreshAll = async () => {
     list.clearCache();
-    await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    await Promise.all([loadStats(), loadSourceControls(), list.fetchPage(list.currentPage)]);
   };
 
   const patchSettings = async (body: Record<string, unknown>) => {
@@ -312,6 +434,24 @@ export default function EmailQueuePage() {
       await loadStats();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to update settings");
+    } finally {
+      setSaving(false);
+      setConfirm(null);
+    }
+  };
+
+  const clearHistory = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/email-queue/clear-history", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to clear history");
+      }
+      toast.success(`${data.deleted || 0} history email(s) removed`);
+      await refreshAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to clear history");
     } finally {
       setSaving(false);
       setConfirm(null);
@@ -370,9 +510,214 @@ export default function EmailQueuePage() {
     }
   };
 
+  const openReschedule = (id: number, subject: string) => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 5);
+    setRescheduleValue(toDatetimeLocal(now));
+    setRescheduleModal({ open: true, emailId: id, subject });
+  };
+
+  const rescheduleEmail = async () => {
+    if (!rescheduleModal.emailId || !rescheduleValue) return;
+    setRescheduleSaving(true);
+    try {
+      const scheduledAt = new Date(rescheduleValue).toISOString();
+      const res = await fetch(`/api/admin/email-queue/${rescheduleModal.emailId}/reschedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledAt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Could not reschedule");
+      }
+      toast.success("Email rescheduled");
+      setRescheduleModal({ open: false, emailId: null, subject: "" });
+      list.clearCache();
+      await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reschedule");
+    } finally {
+      setRescheduleSaving(false);
+    }
+  };
+
   const sendingEnabled = stats?.sendingEnabled !== false;
   const delayEnabled = Boolean(stats?.delayEnabled);
   const delaySeconds = stats?.delaySeconds || 30;
+
+  const openStopModal = (ids: number[]) => {
+    if (!ids.length) return;
+    setStopModal({ open: true, ids, until: "" });
+  };
+
+  const confirmStop = async () => {
+    const ids = stopModal.ids;
+    if (!ids.length) return;
+    const resumeAt = stopModal.until ? new Date(stopModal.until).toISOString() : undefined;
+    setBatchSaving(true);
+    try {
+      if (ids.length === 1) {
+        const res = await fetch(`/api/admin/email-queue/${ids[0]}/stop`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resumeAt }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.message || "Could not stop");
+        toast.success(resumeAt ? "Email stopped until the selected time" : "Email stopped");
+      } else {
+        const res = await fetch("/api/admin/email-queue/batch-stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, resumeAt }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.message || "Batch stop failed");
+        toast.success(`${data.stopped || 0} email(s) stopped`);
+        setSelectedIds(new Set());
+      }
+      setStopModal({ open: false, ids: [], until: "" });
+      list.clearCache();
+      await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not stop");
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
+  const stopEmail = (id: number) => openStopModal([id]);
+
+  const resumeEmail = async (id: number) => {
+    try {
+      const res = await fetch(`/api/admin/email-queue/${id}/resume`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || "Could not resume");
+      toast.success("Email resumed");
+      list.clearCache();
+      await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not resume email");
+    }
+  };
+
+  const batchStop = () => openStopModal(Array.from(selectedIds));
+
+  const batchResume = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    setBatchSaving(true);
+    try {
+      const res = await fetch("/api/admin/email-queue/batch-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || "Batch resume failed");
+      toast.success(`${data.resumed || 0} email(s) resumed`);
+      setSelectedIds(new Set());
+      list.clearCache();
+      await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Batch resume failed");
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
+  const delayEmail = async (id: number, minutes: number) => {
+    try {
+      const scheduledAt = new Date(Date.now() + minutes * 60_000).toISOString();
+      const res = await fetch(`/api/admin/email-queue/${id}/reschedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledAt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || "Could not delay");
+      toast.success(`Delayed ${minutes} minutes`);
+      list.clearCache();
+      await Promise.all([loadStats(), list.fetchPage(list.currentPage)]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delay email");
+    }
+  };
+
+  const pauseSource = async (source: string, until?: string) => {
+    setSourceSaving(source);
+    try {
+      const res = await fetch("/api/admin/email-queue/source-controls/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source,
+          until: until ? new Date(until).toISOString() : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || "Could not pause source");
+      toast.success(
+        until
+          ? `Paused ${source} until the selected time (${data.stopped || 0} queued email(s) stopped)`
+          : `Paused ${source} permanently (${data.stopped || 0} queued email(s) stopped)`,
+      );
+      await Promise.all([loadSourceControls(), refreshAll()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not pause source");
+    } finally {
+      setSourceSaving(null);
+    }
+  };
+
+  const resumeSource = async (source: string) => {
+    setSourceSaving(source);
+    try {
+      const res = await fetch("/api/admin/email-queue/source-controls/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.message || "Could not resume source");
+      toast.success(`Resumed ${source} (${data.resumed || 0} email(s) queued)`);
+      await Promise.all([loadSourceControls(), refreshAll()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not resume source");
+    } finally {
+      setSourceSaving(null);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === list.items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(list.items.map((r) => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const switchQueueTab = (tab: "pending" | "history") => {
+    if (tab === queueTab) return;
+    const allowed = tab === "pending" ? PENDING_STATUSES : HISTORY_STATUSES;
+    setQueueTab(tab);
+    setSelectedIds(new Set());
+    if (statusFilter && !allowed.includes(statusFilter)) setStatusFilter("");
+    const colStatus = String(list.columnFilters.status || "").trim();
+    if (colStatus && !allowed.includes(colStatus)) {
+      list.handleColumnFilter("status", "");
+    }
+  };
 
   const cards = [
     { label: "Queue", value: stats?.queued ?? "—", hint: "Waiting to send" },
@@ -381,6 +726,7 @@ export default function EmailQueuePage() {
     { label: "Sent today", value: stats?.sentToday ?? "—", hint: "Graph accepted" },
     { label: "Failed", value: stats?.failed ?? "—", hint: "Not accepted" },
     { label: "Blocked", value: stats?.blocked ?? "—", hint: "Held during stop" },
+    { label: "Stopped", value: stats?.stopped ?? "—", hint: "Manually stopped" },
   ];
 
   return (
@@ -451,58 +797,71 @@ export default function EmailQueuePage() {
                   />
                   Email Delay {delayEnabled ? "ON" : "OFF"}
                 </label>
-                <div className="relative z-30" ref={delayMenuRef}>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => setDelayMenuOpen((open) => !open)}
-                    className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 min-w-[140px] text-left disabled:opacity-50"
-                  >
-                    {DELAY_PRESETS.find((p) => p.value === delaySeconds)?.label ||
-                      `${delaySeconds} seconds`}
-                    <span className="float-right text-gray-500">▾</span>
-                  </button>
-                  {delayMenuOpen && (
-                    <div className="absolute left-0 top-full mt-1 w-full min-w-[160px] bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                      {DELAY_PRESETS.map((p) => (
-                        <button
-                          key={p.value}
-                          type="button"
-                          className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${
-                            p.value === delaySeconds ? "bg-gray-50 font-medium" : ""
-                          }`}
-                          onClick={() => {
-                            setDelayMenuOpen(false);
-                            void patchSettings({
-                              delaySeconds: p.value,
-                              delayEnabled: true,
-                            });
-                          }}
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {delayEnabled && (
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-sm text-gray-600">
+                      <FiClock size={14} />
+                      Send at:
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={customDelayValue}
+                      min={getNowDatetimeLocal()}
+                      max={getMaxDatetimeLocal()}
+                      disabled={saving}
+                      onChange={(e) => setCustomDelayValue(e.target.value)}
+                      className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      disabled={saving || !customDelayValue}
+                      onClick={() => {
+                        if (!customDelayValue) return;
+                        const now = new Date();
+                        const target = new Date(customDelayValue);
+                        const secs = Math.max(5, Math.round((target.getTime() - now.getTime()) / 1000));
+                        void patchSettings({
+                          delaySeconds: secs,
+                          delayEnabled: true,
+                        });
+                      }}
+                      className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                )}
                 </>
               </PermissionGate>
             </div>
-            <button
-              type="button"
-              onClick={() => void refreshAll()}
-              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50"
-            >
-              <FiRefreshCw size={16} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <PermissionGate permission="admin.email_queue.control">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setConfirm("clear-history")}
+                  className="inline-flex items-center gap-2 px-3 py-2 border border-red-200 text-red-700 rounded-md text-sm bg-white hover:bg-red-50 disabled:opacity-50"
+                >
+                  <FiTrash2 size={16} />
+                  Clear history
+                </button>
+              </PermissionGate>
+              <button
+                type="button"
+                onClick={() => void refreshAll()}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50"
+              >
+                <FiRefreshCw size={16} />
+                Refresh
+              </button>
+            </div>
           </div>
 
           {statsError && (
             <p className="text-sm text-red-600 mb-3">{statsError}</p>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
             {cards.map((c) => (
               <div key={c.label} className="bg-white rounded-lg shadow-sm p-3">
                 <p className="text-xs uppercase tracking-wide text-gray-500">{c.label}</p>
@@ -519,7 +878,109 @@ export default function EmailQueuePage() {
             </div>
           </div>
 
+          <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+            <h2 className="text-sm font-semibold text-gray-800 mb-1">Source pause (crons and modules)</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Pause a source to stop that type only — including future cron runs. Leave the time empty for a permanent pause, or pick a time (up to 7 days) to auto-resume.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase text-gray-500">
+                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Resume at</th>
+                    <th className="py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceControls.map((row) => (
+                    <tr key={row.source} className="border-t border-gray-100">
+                      <td className="py-2 pr-3 font-medium text-gray-800">{formatSourceLabel(row.source)}</td>
+                      <td className="py-2 pr-3">
+                        {row.paused ? (
+                          <span className="text-red-700">Paused</span>
+                        ) : (
+                          <span className="text-green-700">Active</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-600">
+                        {row.paused_until ? formatTs(row.paused_until) : row.paused ? "Until resume" : "—"}
+                      </td>
+                      <td className="py-2">
+                        <PermissionGate permission="admin.email_queue.control">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {row.paused ? (
+                              <button
+                                type="button"
+                                disabled={sourceSaving === row.source}
+                                onClick={() => void resumeSource(row.source)}
+                                className="px-2 py-1 text-xs rounded-md bg-green-600 text-white disabled:opacity-50"
+                              >
+                                Resume source
+                              </button>
+                            ) : (
+                              <>
+                                <input
+                                  type="datetime-local"
+                                  value={sourceUntil[row.source] || ""}
+                                  min={getNowDatetimeLocal()}
+                                  max={getMaxPauseDatetimeLocal()}
+                                  onChange={(e) =>
+                                    setSourceUntil((prev) => ({ ...prev, [row.source]: e.target.value }))
+                                  }
+                                  className="px-2 py-1 border border-gray-300 rounded text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={sourceSaving === row.source}
+                                  onClick={() => void pauseSource(row.source, sourceUntil[row.source])}
+                                  className="px-2 py-1 text-xs rounded-md bg-red-600 text-white disabled:opacity-50"
+                                >
+                                  {sourceUntil[row.source] ? "Pause until" : "Pause permanently"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </PermissionGate>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="flex border-b border-gray-200">
+              <button
+                type="button"
+                onClick={() => switchQueueTab("pending")}
+                className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${
+                  queueTab === "pending"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                To be sent
+              </button>
+              <button
+                type="button"
+                onClick={() => switchQueueTab("history")}
+                className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${
+                  queueTab === "history"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Sent
+              </button>
+              <p className="ml-auto px-4 py-3 text-xs text-gray-500 hidden sm:block">
+                {queueTab === "pending"
+                  ? "Queued, delayed, processing, blocked, and stopped"
+                  : "Delivered, failed, and cancelled"}
+              </p>
+            </div>
             <div className="p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-gray-200">
               <input
                 type="search"
@@ -534,10 +995,23 @@ export default function EmailQueuePage() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="px-2 py-2 border border-gray-300 rounded-md text-sm"
                 >
-                  {STATUS_OPTIONS.map((o) => (
+                  {tabStatusOptions.map((o) => (
                     <option key={o.label} value={o.value}>
                       {o.label}
                     </option>
+                  ))}
+                </select>
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => {
+                    setSourceFilter(e.target.value);
+                    list.clearCache();
+                  }}
+                  className="px-2 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="">All sources</option>
+                  {availableSources.map((s) => (
+                    <option key={s} value={s}>{formatSourceLabel(s)}</option>
                   ))}
                 </select>
                 <select
@@ -575,10 +1049,56 @@ export default function EmailQueuePage() {
             )}
 
             <div className="overflow-x-auto">
+              {queueTab === "pending" && selectedIds.size > 0 && (
+                <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
+                  <span className="text-sm text-blue-800 font-medium">
+                    {selectedIds.size} email(s) selected
+                  </span>
+                  <PermissionGate permission="admin.email_queue.control">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={batchSaving}
+                        onClick={() => void batchStop()}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 disabled:opacity-50"
+                      >
+                        <FiStopCircle size={13} />
+                        Stop Selected
+                      </button>
+                      <button
+                        type="button"
+                        disabled={batchSaving}
+                        onClick={() => void batchResume()}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 disabled:opacity-50"
+                      >
+                        <FiPlay size={13} />
+                        Resume Selected
+                      </button>
+                    </div>
+                  </PermissionGate>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline ml-auto"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              )}
               <DndContext collisionDetection={closestCenter} onDragEnd={() => {}}>
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
+                      {queueTab === "pending" && (
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-10">
+                        <input
+                          type="checkbox"
+                          checked={list.items.length > 0 && selectedIds.size === list.items.length}
+                          onChange={toggleSelectAll}
+                          className="rounded border-gray-300"
+                        />
+                      </th>
+                      )}
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                         Actions
                       </th>
@@ -598,7 +1118,7 @@ export default function EmailQueuePage() {
                             onFilterChange={(v) => list.handleColumnFilter(col.key, v)}
                             filterType={col.filterType}
                             filterOptions={
-                              col.key === "status" ? STATUS_OPTIONS.filter((o) => o.value) : undefined
+                              col.key === "status" ? tabStatusOptions.filter((o) => o.value) : undefined
                             }
                           />
                         ))}
@@ -611,34 +1131,78 @@ export default function EmailQueuePage() {
                     ) : list.items.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={COLUMNS.length + 2}
+                          colSpan={COLUMNS.length + (queueTab === "pending" ? 3 : 2)}
                           className="px-6 py-10 text-center text-sm text-gray-500"
                         >
                           {list.searchTerm || statusFilter
                             ? "No emails match this search or filter."
-                            : "No emails in the last 30 days."}
+                            : queueTab === "pending"
+                              ? "No emails waiting to send."
+                              : "No sent, failed, or cancelled emails in this date range."}
                         </td>
                       </tr>
                     ) : (
                       list.items.map((row) => (
-                        <tr key={row.id} className="hover:bg-gray-50">
+                        <tr key={row.id} className={`hover:bg-gray-50 ${selectedIds.has(row.id) ? "bg-blue-50" : ""}`}>
+                          {queueTab === "pending" && (
+                          <td className="px-4 py-3 whitespace-nowrap w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(row.id)}
+                              onChange={() => toggleSelect(row.id)}
+                              className="rounded border-gray-300"
+                            />
+                          </td>
+                          )}
                           <td className="px-4 py-3 whitespace-nowrap">
                             <ActionDropdown
-                              options={[
-                                {
-                                  label: "Preview",
-                                  action: () => void openPreview(row.id),
-                                },
-                                ...(["queued", "delayed", "blocked"].includes(row.status)
-                                  ? [
-                                      {
-                                        label: "Cancel",
-                                        action: () => void cancelEmail(row.id),
-                                      },
-                                    ]
-                                  : []),
-                              ]}
-                            />
+                                options={[
+                                  {
+                                    label: "Preview",
+                                    action: () => void openPreview(row.id),
+                                  },
+                                  ...(["queued", "delayed", "blocked"].includes(row.status)
+                                    ? [
+                                        {
+                                          label: "Stop",
+                                          action: () => void stopEmail(row.id),
+                                        },
+                                        {
+                                          label: "Delay 15 min",
+                                          action: () => void delayEmail(row.id, 15),
+                                        },
+                                        {
+                                          label: "Delay 1 hour",
+                                          action: () => void delayEmail(row.id, 60),
+                                        },
+                                      ]
+                                    : []),
+                                  ...(row.status === "stopped"
+                                    ? [
+                                        {
+                                          label: "Resume",
+                                          action: () => void resumeEmail(row.id),
+                                        },
+                                      ]
+                                    : []),
+                                  ...(["queued", "delayed", "cancelled", "stopped"].includes(row.status)
+                                    ? [
+                                        {
+                                          label: "Reschedule",
+                                          action: () => void openReschedule(row.id, row.subject || ""),
+                                        },
+                                      ]
+                                    : []),
+                                  ...(["queued", "delayed", "blocked", "stopped"].includes(row.status)
+                                    ? [
+                                        {
+                                          label: "Cancel",
+                                          action: () => void cancelEmail(row.id),
+                                        },
+                                      ]
+                                    : []),
+                                ]}
+                              />
                           </td>
                           {COLUMNS.map((col) => (
                             <td
@@ -649,8 +1213,14 @@ export default function EmailQueuePage() {
                               {col.key === "status" ? (
                                 <span
                                   className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusClass(row.status)}`}
+                                  title={
+                                    row.status === "stopped" && row.resume_at
+                                      ? `Resumes ${formatTs(row.resume_at)}`
+                                      : undefined
+                                  }
                                 >
                                   {formatStatusLabel(row.status)}
+                                  {row.status === "stopped" && row.resume_at ? " until time" : ""}
                                 </span>
                               ) : (
                                 cellValue(row, col.key)
@@ -743,6 +1313,7 @@ export default function EmailQueuePage() {
                 {confirm === "resume" && "Resume system emails?"}
                 {confirm === "delay-on" && "Turn email delay on?"}
                 {confirm === "delay-off" && "Turn email delay off?"}
+                {confirm === "clear-history" && "Clear email queue history?"}
               </h2>
               <p className="text-sm text-gray-600 mt-2">
                 {confirm === "stop" &&
@@ -750,30 +1321,52 @@ export default function EmailQueuePage() {
                 {confirm === "resume" &&
                   "Queued and delayed emails will send according to schedule. Blocked emails stay blocked."}
                 {confirm === "delay-on" &&
-                  `Outgoing emails will wait ${delaySeconds} seconds before Graph send.`}
+                  "Outgoing emails will be delayed. Use the time picker to set exactly when delayed emails should send (up to 24 hours ahead)."}
                 {confirm === "delay-off" &&
                   "New emails will send immediately when the system is running."}
+                {confirm === "clear-history" &&
+                  "This deletes sent, failed, and cancelled emails from the queue log. Queued, delayed, stopped, and blocked emails are kept."}
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-md"
-                  onClick={() => setConfirm(null)}
+                  disabled={saving}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-md disabled:opacity-50"
+                  onClick={() => {
+                    if (!saving) setConfirm(null);
+                  }}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="px-3 py-2 text-sm rounded-md bg-gray-900 text-white"
+                  disabled={saving}
+                  aria-busy={saving}
+                  className="inline-flex items-center justify-center gap-2 min-w-[7.5rem] px-3 py-2 text-sm rounded-md bg-gray-900 text-white disabled:opacity-70"
                   onClick={() => {
+                    if (saving) return;
                     if (confirm === "stop") void patchSettings({ sendingEnabled: false });
                     if (confirm === "resume") void patchSettings({ sendingEnabled: true });
                     if (confirm === "delay-on")
                       void patchSettings({ delayEnabled: true, delaySeconds });
                     if (confirm === "delay-off") void patchSettings({ delayEnabled: false });
+                    if (confirm === "clear-history") void clearHistory();
                   }}
                 >
-                  Confirm
+                  {saving ? (
+                    <>
+                      <ModalSpinner />
+                      {confirm === "clear-history"
+                        ? "Clearing…"
+                        : confirm === "stop"
+                          ? "Stopping…"
+                          : confirm === "resume"
+                            ? "Resuming…"
+                            : "Saving…"}
+                    </>
+                  ) : (
+                    "Confirm"
+                  )}
                 </button>
               </div>
             </div>
@@ -818,6 +1411,134 @@ export default function EmailQueuePage() {
                     {preview.text || "No email body stored."}
                   </pre>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {rescheduleModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-900">Reschedule Email</h2>
+                <button
+                  type="button"
+                  disabled={rescheduleSaving}
+                  onClick={() => {
+                    if (!rescheduleSaving) {
+                      setRescheduleModal({ open: false, emailId: null, subject: "" });
+                    }
+                  }}
+                  className="p-1 hover:bg-gray-100 rounded-full disabled:opacity-50"
+                >
+                  <FiX size={18} />
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mb-1 truncate">
+                {rescheduleModal.subject || "(no subject)"}
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Pick a new send time within the next 24 hours.
+              </p>
+              <div className="flex items-center gap-3 mb-4">
+                <FiCalendar size={16} className="text-gray-400 shrink-0" />
+                <input
+                  type="datetime-local"
+                  value={rescheduleValue}
+                  min={getNowDatetimeLocal()}
+                  max={getMaxDatetimeLocal()}
+                  disabled={rescheduleSaving}
+                  onChange={(e) => setRescheduleValue(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm disabled:opacity-50"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={rescheduleSaving}
+                  onClick={() => {
+                    if (!rescheduleSaving) {
+                      setRescheduleModal({ open: false, emailId: null, subject: "" });
+                    }
+                  }}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-md disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={rescheduleSaving || !rescheduleValue}
+                  aria-busy={rescheduleSaving}
+                  onClick={() => {
+                    if (!rescheduleSaving) void rescheduleEmail();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 min-w-[8.5rem] px-4 py-2 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-70"
+                >
+                  {rescheduleSaving ? (
+                    <>
+                      <ModalSpinner />
+                      Saving…
+                    </>
+                  ) : (
+                    "Reschedule"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {stopModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-5">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Stop {stopModal.ids.length} email{stopModal.ids.length === 1 ? "" : "s"}?
+              </h2>
+              <p className="text-sm text-gray-600 mt-2">
+                Leave the time empty to stop until you resume. Or pick a time (up to 7 days) to auto-resume.
+              </p>
+              <div className="flex items-center gap-3 mt-4">
+                <FiClock size={16} className="text-gray-400 shrink-0" />
+                <input
+                  type="datetime-local"
+                  value={stopModal.until}
+                  min={getNowDatetimeLocal()}
+                  max={getMaxPauseDatetimeLocal()}
+                  disabled={batchSaving}
+                  onChange={(e) => setStopModal((prev) => ({ ...prev, until: e.target.value }))}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm disabled:opacity-50"
+                />
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={batchSaving}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-md disabled:opacity-50"
+                  onClick={() => {
+                    if (!batchSaving) setStopModal({ open: false, ids: [], until: "" });
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={batchSaving}
+                  aria-busy={batchSaving}
+                  className="inline-flex items-center justify-center gap-2 min-w-[9.5rem] px-3 py-2 text-sm rounded-md bg-red-600 text-white disabled:opacity-70"
+                  onClick={() => {
+                    if (!batchSaving) void confirmStop();
+                  }}
+                >
+                  {batchSaving ? (
+                    <>
+                      <ModalSpinner />
+                      Stopping…
+                    </>
+                  ) : stopModal.until ? (
+                    "Stop until time"
+                  ) : (
+                    "Stop permanently"
+                  )}
+                </button>
               </div>
             </div>
           </div>

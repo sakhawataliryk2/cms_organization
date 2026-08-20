@@ -45,6 +45,7 @@ type PlacementRecord = {
   custom_fields?: Record<string, unknown> | null;
   [key: string]: unknown;
 };
+import { toast } from "sonner";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import {
@@ -68,6 +69,19 @@ import OrganizationDetailPanel from "./OrganizationDetailPanel";
 import HiringManagerDetailPanel from "./HiringManagerDetailPanel";
 import { useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  calculateSickTimeHours,
+  formatSickTimeHours,
+  lookupHoursToEarnSickTime,
+  type SickTimeRate,
+} from "@/lib/sickTimeCalculator";
+import {
+  DAY_KEYS,
+  formatDayLabel,
+  statusLabel,
+  toYmd,
+  type DayDetail,
+} from "@/lib/timesheetWeek";
 
 type TimePeriodType = "week" | "customRange" | "all";
 
@@ -118,6 +132,125 @@ type OnboardingSummary = {
   submitted: number;
   approved: number;
 };
+
+function getFromCustomFields(
+  cf: Record<string, unknown> | null | undefined,
+  keys: string[],
+): string {
+  if (!cf || typeof cf !== "object") return "";
+  for (const key of keys) {
+    const v = cf[key];
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      return String(v);
+    }
+  }
+  return "";
+}
+
+type PortalDayDetail = Partial<DayDetail> & { total_hours?: number };
+
+type PortalTimecard = {
+  id: number;
+  placement_id: number;
+  job_seeker_id?: number;
+  week_start_date: string;
+  week_end_date?: string | null;
+  total_hours: number;
+  status: string;
+  payroll_eligible?: boolean;
+  pay_rate?: number;
+  bill_rate?: number;
+  job_seeker_name?: string | null;
+  job_seeker_email?: string | null;
+  job_seeker_phone?: string | null;
+  job_seeker_custom_fields?: Record<string, unknown> | null;
+  placement_custom_fields?: Record<string, unknown> | null;
+  placement_end_date?: string | null;
+  placement_record_number?: number | string | null;
+  day_details?: Record<string, PortalDayDetail> | null;
+  rejection_reason?: string | null;
+};
+
+const OT_HOUR_THRESHOLD = 40;
+
+function formatMoney(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return "";
+  return Number(n).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+}
+
+function formatHoursNum(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return "";
+  return Number(n).toFixed(2);
+}
+
+function timecardToTimesheetRow(
+  t: PortalTimecard,
+  placement: PlacementRecord | undefined,
+  sickTimeRates?: SickTimeRate[],
+): TimesheetRow {
+  const placementCf = (t.placement_custom_fields ||
+    placement?.customFields ||
+    placement?.custom_fields) as Record<string, unknown> | null;
+  const state =
+    getFromCustomFields(placementCf, ["State", "Work State"]) ||
+    getFromCustomFields(t.job_seeker_custom_fields, ["State"]) ||
+    (placement ? getFromPlacementCustomFields(placement, ["State"]) : "");
+  const total = Number(t.total_hours || 0);
+  const regularHours = Math.min(total, OT_HOUR_THRESHOLD);
+  const otHours = Math.max(0, total - OT_HOUR_THRESHOLD);
+  const payRate = Number(t.pay_rate ?? placement?.payRate ?? 0) || 0;
+  const hoursToEarn = lookupHoursToEarnSickTime(sickTimeRates, state);
+  const sickTime = calculateSickTimeHours(total, hoursToEarn);
+  const status = String(t.status || "").toLowerCase();
+  const payrollEligible =
+    t.payroll_eligible !== false && status !== "late" && status !== "missing";
+  const expenses = payrollEligible ? total * payRate : 0;
+
+  return {
+    id: t.id,
+    "Placement Number": String(
+      t.placement_record_number ??
+        placement?.recordNumber ??
+        t.placement_id,
+    ),
+    Organization: placement?.organizationName ?? "",
+    "Job Seeker": t.job_seeker_name || placement?.jobSeekerName || "",
+    "Regular Pay": formatMoney(regularHours * payRate),
+    "Overtime Pay": formatMoney(otHours * payRate * 1.5),
+    PTO: "",
+    "Timesheet Type": "Job Seeker Portal",
+    "Regular Hours": formatHoursNum(regularHours),
+    "Overtime Hours": formatHoursNum(otHours),
+    "PTO Hours": "",
+    "Bill Regular Hours": formatHoursNum(regularHours),
+    "Bill Overtime Hours": formatHoursNum(otHours),
+    "End Date": t.week_end_date || "",
+    Status: statusLabel(t.status),
+    "Worker Comp Code": getFromCustomFields(placementCf, ["Worker Comp Code"]),
+    "Job Title": placement?.jobTitle ?? "",
+    "PO Number": "",
+    "Deduction Code": "",
+    "Deduction Amount": "",
+    State: state,
+    "Hours to Earn Sick Time": formatSickTimeHours(hoursToEarn),
+    "Sick Time": formatSickTimeHours(sickTime),
+    "Pay Double Time": "",
+    "Time Card Approver(s)": getFromCustomFields(placementCf, [
+      "Primary Approver",
+      "Time Card Approver(s)",
+      "Timecard Approver",
+    ]),
+    "Bill Double Time": "",
+    "Double time": "",
+    Expenses: formatMoney(expenses),
+    "Approved By": status === "approved" ? "Hiring manager" : "",
+    "Time Card": String(t.id),
+    "Score Card": "",
+  };
+}
 
 function getFromPlacementCustomFields(
   p: PlacementRecord,
@@ -251,7 +384,22 @@ function resolvePlacementHiringManagerName(
   return str.length > 0 ? str : null;
 }
 
-function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
+function placementToTimesheetRow(
+  p: PlacementRecord,
+  sickTimeRates?: SickTimeRate[],
+): TimesheetRow {
+  const state = getFromPlacementCustomFields(p, [
+    "State",
+    "Work State",
+    "Job Seeker State",
+  ]);
+  const regularHoursRaw =
+    getFromPlacementCustomFields(p, ["Regular Hours"]) || "";
+  const hoursToEarn = lookupHoursToEarnSickTime(sickTimeRates, state);
+  const sickTime = calculateSickTimeHours(
+    regularHoursRaw || undefined,
+    hoursToEarn,
+  );
   const row: TimesheetRow = {
     id: p.id,
     "Placement Number": String(p.id),
@@ -261,7 +409,7 @@ function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
     "Overtime Pay": "",
     PTO: "",
     "Timesheet Type": "",
-    "Regular Hours": "",
+    "Regular Hours": regularHoursRaw,
     "Overtime Hours": "",
     "PTO Hours": "",
     "Bill Regular Hours": "",
@@ -273,7 +421,9 @@ function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
     "PO Number": "",
     "Deduction Code": "",
     "Deduction Amount": "",
-    State: "",
+    State: state,
+    "Hours to Earn Sick Time": formatSickTimeHours(hoursToEarn),
+    "Sick Time": formatSickTimeHours(sickTime),
     "Pay Double Time": "",
     "Time Card Approver(s)": "",
     "Bill Double Time": "",
@@ -398,9 +548,11 @@ const TIMESHEETS_TABLE_COLUMNS_LIST = [
   "Job Title",
   "PO Number",
   "Deduction Code",
-  "Deduction Amount",
-  "State",
-  "Pay Double Time",
+    "Deduction Amount",
+    "State",
+    "Hours to Earn Sick Time",
+    "Sick Time",
+    "Pay Double Time",
   "Time Card Approver(s)",
   "Bill Double Time",
   "Double time",
@@ -872,6 +1024,8 @@ const TBI_COLUMN_HEADERS_MAP: Record<string, string[]> = {
     "Email",
     "Week Ending",
     "Hours",
+    "Hours to Earn Sick Time",
+    "Sick Time",
   ],
   Exports: [
     "Documents",
@@ -1105,6 +1259,14 @@ export default function TbiPage() {
   >([]);
   const [timesheetsLoading, setTimesheetsLoading] = useState(false);
   const [timesheetsError, setTimesheetsError] = useState<string | null>(null);
+  const [sickTimeRates, setSickTimeRates] = useState<SickTimeRate[]>([]);
+  const [portalTimecards, setPortalTimecards] = useState<PortalTimecard[]>([]);
+  const [timesheetDetail, setTimesheetDetail] = useState<PortalTimecard | null>(
+    null,
+  );
+  const [timesheetReviewingId, setTimesheetReviewingId] = useState<number | null>(
+    null,
+  );
   const [timesheetsColumnSorts, setTimesheetsColumnSorts] = useState<
     Record<string, ColumnSortState>
   >({});
@@ -1249,48 +1411,43 @@ export default function TbiPage() {
     };
   }, [selectedRow, approvedPlacements]);
 
-  // Each row = one approved contract placement whose schedule end date is on or before the selected calendar range
+  // Each row = one job-seeker portal timesheet for the selected week
   const timesheetsRows = useMemo(() => {
-    let byDate: PlacementRecord[] = approvedPlacements;
-    if (timePeriod === "week") {
-      const rangeEnd = timesheetsWeekEnd.getTime();
-      byDate = approvedPlacements.filter((p) => {
-        const end = p.endDate;
-        if (!end) return true; // no end date = include (e.g. ongoing)
-        const endTime = new Date(end).getTime();
-        return endTime <= rangeEnd;
-      });
+    const placementsById = new Map<number, PlacementRecord>();
+    for (const p of timesheetsPlacements) {
+      placementsById.set(p.id, p);
     }
-    if (timePeriod === "customRange") {
-      const rangeEnd = timesheetsWeekEnd.getTime();
-      byDate = approvedPlacements.filter((p) => {
-        const end = p.endDate;
-        if (!end) return true;
-        return new Date(end).getTime() <= rangeEnd;
-      });
-    }
+
+    let result = [...portalTimecards];
     const term = timesheetsSearchTerm.trim().toLowerCase();
-    let result = byDate;
     if (term) {
-      result = byDate.filter((p) => {
-        const name = (p.jobSeekerName || "").toLowerCase();
-        const id = String(p.jobSeekerId ?? p.id ?? "").toLowerCase();
-        const email = (p.jobSeekerEmail || "").toLowerCase();
-        const title = (p.jobTitle || "").toLowerCase();
+      result = result.filter((t) => {
+        const placement = placementsById.get(t.placement_id);
+        const name = (t.job_seeker_name || placement?.jobSeekerName || "").toLowerCase();
+        const org = (placement?.organizationName || "").toLowerCase();
+        const title = (placement?.jobTitle || "").toLowerCase();
+        const email = (t.job_seeker_email || placement?.jobSeekerEmail || "").toLowerCase();
+        const id = String(t.id);
+        const status = statusLabel(t.status).toLowerCase();
         return (
           name.includes(term) ||
-          id.includes(term) ||
+          org.includes(term) ||
+          title.includes(term) ||
           email.includes(term) ||
-          title.includes(term)
+          id.includes(term) ||
+          status.includes(term)
         );
       });
     }
 
-    // Apply column filters
     Object.entries(timesheetsColumnFilters).forEach(([header, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
-      result = result.filter((p) => {
-        const row = placementToTimesheetRow(p);
+      result = result.filter((t) => {
+        const row = timecardToTimesheetRow(
+          t,
+          placementsById.get(t.placement_id),
+          sickTimeRates,
+        );
         const cellValue = row[header] ?? "";
         return String(cellValue)
           .toLowerCase()
@@ -1298,40 +1455,49 @@ export default function TbiPage() {
       });
     });
 
-    // Apply sorting
     const activeSortColumn = Object.keys(timesheetsColumnSorts).find(
       (key) => timesheetsColumnSorts[key] !== null,
     );
     if (activeSortColumn) {
       const direction = timesheetsColumnSorts[activeSortColumn];
       result.sort((a, b) => {
-        const aRow = placementToTimesheetRow(a);
-        const bRow = placementToTimesheetRow(b);
-        let aValue = aRow[activeSortColumn];
-        let bValue = bRow[activeSortColumn];
-
+        const aRow = timecardToTimesheetRow(
+          a,
+          placementsById.get(a.placement_id),
+          sickTimeRates,
+        );
+        const bRow = timecardToTimesheetRow(
+          b,
+          placementsById.get(b.placement_id),
+          sickTimeRates,
+        );
+        const aValue = aRow[activeSortColumn];
+        const bValue = bRow[activeSortColumn];
         if (aValue === null || aValue === undefined) return 1;
         if (bValue === null || bValue === undefined) return -1;
-
         if (aValue === bValue) return 0;
-
         const aString = String(aValue).toLowerCase();
         const bString = String(bValue).toLowerCase();
-
         return direction === "asc"
           ? aString.localeCompare(bString)
           : bString.localeCompare(aString);
       });
     }
 
-    return result.map(placementToTimesheetRow);
+    return result.map((t) =>
+      timecardToTimesheetRow(
+        t,
+        placementsById.get(t.placement_id),
+        sickTimeRates,
+      ),
+    );
   }, [
-    approvedPlacements,
-    timePeriod,
-    timesheetsWeekEnd,
+    portalTimecards,
+    timesheetsPlacements,
     timesheetsSearchTerm,
     timesheetsColumnFilters,
     timesheetsColumnSorts,
+    sickTimeRates,
   ]);
 
   const timesheetsCalendarDays = useMemo(() => {
@@ -1458,6 +1624,62 @@ export default function TbiPage() {
       });
   }, []);
 
+  const closeTimesheetActions = useCallback(() => {
+    setTimesheetsActionsRowId(null);
+    setTimesheetsActionsMenuPosition(null);
+  }, []);
+
+  const openTimesheetDetail = useCallback(
+    (row: TimesheetRow) => {
+      const card = portalTimecards.find((t) => t.id === row.id) || null;
+      setTimesheetDetail(card);
+      closeTimesheetActions();
+    },
+    [portalTimecards, closeTimesheetActions],
+  );
+
+  const reviewTimesheet = useCallback(
+    async (row: TimesheetRow, action: "approve" | "reject") => {
+      setTimesheetReviewingId(row.id);
+      try {
+        const res = await fetch(
+          `/api/timesheets/${encodeURIComponent(String(row.id))}/review`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(data?.message || `Could not ${action} timesheet`);
+          return;
+        }
+        if (data?.timecard) {
+          setPortalTimecards((prev) =>
+            prev.map((t) =>
+              t.id === row.id ? { ...t, ...(data.timecard as PortalTimecard) } : t,
+            ),
+          );
+          setTimesheetDetail((prev) =>
+            prev && prev.id === row.id
+              ? { ...prev, ...(data.timecard as PortalTimecard) }
+              : prev,
+          );
+        }
+        toast.success(
+          action === "approve" ? "Timesheet approved" : "Timesheet rejected",
+        );
+      } catch {
+        toast.error("Server error");
+      } finally {
+        setTimesheetReviewingId(null);
+        closeTimesheetActions();
+      }
+    },
+    [closeTimesheetActions],
+  );
+
   useEffect(() => {
     if (selectedRow !== "Organization") {
       setTbiOrganizations((prev) => (prev.length === 0 ? prev : []));
@@ -1506,13 +1728,16 @@ export default function TbiPage() {
       return;
     }
     let cancelled = false;
-    setTimesheetsLoading(true);
-    setTimesheetsError(null);
+    const manageLoading = selectedRow !== "TimeSheets";
+    if (manageLoading) {
+      setTimesheetsLoading(true);
+      setTimesheetsError(null);
+    }
     fetch("/api/placements")
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
-        setTimesheetsLoading(false);
+        if (manageLoading) setTimesheetsLoading(false);
         if (data?.placements && Array.isArray(data.placements)) {
           const mappedPlacements: PlacementRecord[] = data.placements.map(
             (p: Record<string, unknown>) => ({
@@ -1530,9 +1755,29 @@ export default function TbiPage() {
               jobTitle: p.jobTitle ?? p.job_title ?? undefined,
               organizationName:
                 p.organizationName ?? p.organization_name ?? undefined,
+              recordNumber:
+                p.recordNumber != null
+                  ? Number(p.recordNumber)
+                  : p.record_number != null
+                    ? Number(p.record_number)
+                    : undefined,
+              payRate:
+                p.payRate != null
+                  ? Number(p.payRate)
+                  : p.pay_rate != null
+                    ? Number(p.pay_rate)
+                    : undefined,
               hiringManagerId: resolvePlacementHiringManagerId(p) ?? undefined,
               hiringManagerName:
                 resolvePlacementHiringManagerName(p) ?? undefined,
+              customFields:
+                (p.customFields as Record<string, unknown> | undefined) ??
+                (p.custom_fields as Record<string, unknown> | undefined) ??
+                null,
+              custom_fields:
+                (p.custom_fields as Record<string, unknown> | undefined) ??
+                (p.customFields as Record<string, unknown> | undefined) ??
+                null,
             }),
           );
           setTimesheetsPlacements(mappedPlacements);
@@ -1563,14 +1808,68 @@ export default function TbiPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setTimesheetsLoading(false);
-        setTimesheetsError(err?.message || "Failed to load placements");
+        if (manageLoading) {
+          setTimesheetsLoading(false);
+          setTimesheetsError(err?.message || "Failed to load placements");
+        }
         setTimesheetsPlacements([]);
       });
     return () => {
       cancelled = true;
     };
   }, [selectedRow, isPlacementDrivenView]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/sick-time-rates")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setSickTimeRates(Array.isArray(data?.rates) ? data.rates : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSickTimeRates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedRow !== "TimeSheets") {
+      setPortalTimecards((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    let cancelled = false;
+    setTimesheetsLoading(true);
+    setTimesheetsError(null);
+    const params = new URLSearchParams();
+    if (timePeriod !== "all") {
+      params.set("week_start_date", toYmd(timesheetsWeekStart));
+    }
+    const qs = params.toString();
+    fetch(`/api/timesheets${qs ? `?${qs}` : ""}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setTimesheetsLoading(false);
+        if (Array.isArray(data?.timecards)) {
+          setPortalTimecards(data.timecards as PortalTimecard[]);
+        } else {
+          setPortalTimecards([]);
+          if (data?.message) setTimesheetsError(data.message);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTimesheetsLoading(false);
+        setTimesheetsError(err?.message || "Failed to load timesheets");
+        setPortalTimecards([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRow, timePeriod, timesheetsWeekStart]);
 
   function getOrgCellValue(org: OrganizationRecord, header: string): string {
     const cf = org.custom_fields as Record<string, string> | undefined;
@@ -2186,9 +2485,9 @@ export default function TbiPage() {
 
                   {timesheetsRows.length === 0 ? (
                     <div className="flex items-center justify-center py-8 text-sm text-gray-500 px-4">
-                      {timesheetsPlacements.length === 0
-                        ? "No placements loaded."
-                        : "No approved contract placements with schedule end date on or before the selected period."}
+                      {portalTimecards.length === 0
+                        ? "No job seeker portal timesheets for this week."
+                        : "No timesheets match the current filters."}
                     </div>
                   ) : (
                     timesheetsRows.map((row, rowIndex) => {
@@ -2261,7 +2560,7 @@ export default function TbiPage() {
                                           }}
                                         />
                                         <div
-                                          className="fixed w-40 bg-white border border-gray-200 rounded shadow-lg text-xs z-20"
+                                          className="fixed w-44 bg-white border border-gray-200 rounded shadow-lg text-xs z-20"
                                           style={{
                                             top: timesheetsActionsMenuPosition.top,
                                             left: timesheetsActionsMenuPosition.left,
@@ -2270,47 +2569,38 @@ export default function TbiPage() {
                                           <button
                                             type="button"
                                             className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openTimesheetDetail(row);
+                                            }}
                                           >
-                                            Create
+                                            View portal timesheet
                                           </button>
-                                          <button
-                                            type="button"
-                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                          >
-                                            View
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100 text-red-600"
-                                          >
-                                            Delete
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                          >
-                                            Approve
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                          >
-                                            Submit
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
-                                          >
-                                            Create Supplemental
-                                          </button>
+                                          {["submitted", "resubmitted", "late"].includes(
+                                            String(
+                                              portalTimecards.find((t) => t.id === row.id)
+                                                ?.status || "",
+                                            ).toLowerCase(),
+                                          ) && (
+                                            <button
+                                              type="button"
+                                              className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
+                                              disabled={timesheetReviewingId === row.id}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                void reviewTimesheet(row, "approve");
+                                              }}
+                                            >
+                                              {timesheetReviewingId === row.id
+                                                ? "Approving..."
+                                                : "Approve"}
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setTimesheetsActionsRowId(null);
-                                              setTimesheetsActionsMenuPosition(
-                                                null,
-                                              );
+                                              closeTimesheetActions();
                                               openTimesheetHistory(row);
                                             }}
                                             className="w-full text-left px-3 py-1.5 hover:bg-gray-100"
@@ -2324,12 +2614,14 @@ export default function TbiPage() {
                                 </>
                               )}
                             </div>
-                            <span
-                              className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300"
-                              aria-hidden
+                            <button
+                              type="button"
+                              className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-600 hover:text-teal-700"
+                              title="View portal timesheet"
+                              onClick={() => openTimesheetDetail(row)}
                             >
                               <TbBinoculars size={20} />
-                            </span>
+                            </button>
                           </div>
                           {timesheetsColumnOrder.map((col, colIndex) => {
                             const colW = getColumnWidth(col, "TimeSheets");
@@ -2757,6 +3049,93 @@ export default function TbiPage() {
                     })}
                   </div>
                 )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {timesheetDetail && (
+        <div
+          className="fixed inset-0 z-200 flex items-center justify-center bg-black/50"
+          onClick={() => setTimesheetDetail(null)}
+        >
+          <div
+            className="bg-white rounded-sm shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Job seeker portal timesheet
+              </h3>
+              <button
+                type="button"
+                onClick={() => setTimesheetDetail(null)}
+                className="p-1 rounded hover:bg-gray-200 text-gray-600"
+                aria-label="Close"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            <div className="px-4 py-4 space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs uppercase text-gray-500">Job seeker</p>
+                  <p className="font-medium">{timesheetDetail.job_seeker_name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">Status</p>
+                  <p className="font-medium">{statusLabel(timesheetDetail.status)}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">Week</p>
+                  <p className="font-medium">
+                    {timesheetDetail.week_start_date}
+                    {timesheetDetail.week_end_date
+                      ? ` – ${timesheetDetail.week_end_date}`
+                      : ""}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">Total hours</p>
+                  <p className="font-medium">
+                    {Number(timesheetDetail.total_hours || 0).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              {timesheetDetail.rejection_reason ? (
+                <p className="text-red-600">
+                  Rejection reason: {timesheetDetail.rejection_reason}
+                </p>
+              ) : null}
+              <table className="w-full text-sm border border-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-2 border-b">Day</th>
+                    <th className="text-left p-2 border-b">Time in</th>
+                    <th className="text-left p-2 border-b">Time out</th>
+                    <th className="text-left p-2 border-b">Hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DAY_KEYS.map((day, index) => {
+                    const detail = timesheetDetail.day_details?.[day];
+                    return (
+                      <tr key={day} className="border-t border-gray-100">
+                        <td className="p-2">
+                          {timesheetDetail.week_start_date
+                            ? formatDayLabel(timesheetDetail.week_start_date, index)
+                            : day.toUpperCase()}
+                        </td>
+                        <td className="p-2">{detail?.time_in || "—"}</td>
+                        <td className="p-2">{detail?.time_out || "—"}</td>
+                        <td className="p-2">
+                          {Number(detail?.total_hours || 0).toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
