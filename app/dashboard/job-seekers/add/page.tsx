@@ -13,6 +13,12 @@ import CustomFieldRenderer, {
 import AddressGroupRenderer, {
   getAddressFields,
 } from "@/components/AddressGroupRenderer";
+import { matchStateToOption } from "@/lib/usStates";
+import {
+  pickBestOrganizationMatch,
+  pickCurrentOrganizationName,
+} from "@/lib/resumeOrganizationLookup";
+import { ORGANIZATION_LOOKUP_FIELD_BY_ENTITY } from "@/lib/entitySummaryFieldMaps";
 
 interface CustomFieldDefinition {
   id: string;
@@ -151,6 +157,7 @@ interface ParsedResume {
   linkedin: string;
   portfolio: string;
   current_job_title: string;
+  current_organization?: string;
   total_experience_years: string;
   skills: string[];
   education: Array<{ degree: string; institution: string; year: string }>;
@@ -181,6 +188,34 @@ const LABELS_FOR_SKILLS = ["Skills", "Skill Set", "Technical Skills"];
 const LABELS_FOR_LINKEDIN = ["LinkedIn", "LinkedIn URL"];
 const LABELS_FOR_PORTFOLIO = ["Portfolio", "Portfolio URL"];
 const LABELS_FOR_EXPERIENCE_YEARS = ["Years of Experience", "Total Experience", "Experience (Years)"];
+const JOB_SEEKER_ORG_FIELD_NAME =
+  ORGANIZATION_LOOKUP_FIELD_BY_ENTITY["job-seekers"]; // Field_5
+const JOB_SEEKER_STATE_FIELD_NAME = "Field_18";
+
+function fieldOptionsList(options: unknown): string[] {
+  if (!options) return [];
+  if (Array.isArray(options)) {
+    return options.map((o) => String(o).trim()).filter(Boolean);
+  }
+  if (typeof options === "string") {
+    const trimmed = options.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return fieldOptionsList(parsed);
+    } catch {
+      // newline-delimited
+    }
+    return trimmed.split(/\r?\n/).map((o) => o.trim()).filter(Boolean);
+  }
+  if (typeof options === "object") {
+    return Object.values(options as Record<string, unknown>)
+      .filter((o) => typeof o === "string")
+      .map((o) => String(o).trim())
+      .filter(Boolean);
+  }
+  return [];
+}
 
 function formatResumeSections(parsed: ParsedResume): string {
   const parts: string[] = [];
@@ -245,6 +280,7 @@ function applyParsedResumeToForm(
   const parsedCity = parsed.city || "";
   const parsedState = parsed.state || "";
   const parsedZip = parsed.zip || "";
+  const parsedOrgId = parsed.custom_fields?.[JOB_SEEKER_ORG_FIELD_NAME] || "";
 
   setFormFields((prev) => {
     let next = prev;
@@ -260,6 +296,7 @@ function applyParsedResumeToForm(
     next = updateField(next, "title", parsed.current_job_title || "");
     next = updateField(next, "resumeText", resumeText);
     next = updateField(next, "skills", skillsStr);
+    if (parsedOrgId) next = updateField(next, "currentOrganization", parsedOrgId);
     return next;
   });
 
@@ -273,6 +310,21 @@ function applyParsedResumeToForm(
         next[field.field_name] = valueByLabel[field.field_label];
       }
     }
+
+    const stateField = customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME);
+    if (stateField) {
+      const options = fieldOptionsList(stateField.options);
+      const locationBlob = [streetAddr, parsedCity, parsedState, parsedZip].filter(Boolean).join(", ");
+      const matched = matchStateToOption(
+        next[stateField.field_name] || parsedState,
+        options,
+        locationBlob
+      );
+      if (matched) next[stateField.field_name] = matched;
+    }
+
+    if (parsedOrgId) next[JOB_SEEKER_ORG_FIELD_NAME] = parsedOrgId;
+
     return next;
   });
 }
@@ -1312,6 +1364,44 @@ export default function AddJobSeeker() {
         setCustomFieldValues,
         customFields
       );
+
+      const parsedResume = data.parsed as ParsedResume;
+      const existingOrg = String(parsedResume.custom_fields?.[JOB_SEEKER_ORG_FIELD_NAME] || "");
+      if (!/^\d+$/.test(existingOrg)) {
+        const orgName = pickCurrentOrganizationName(parsedResume);
+        if (orgName) {
+          try {
+            const orgRes = await fetch(
+              `/api/organizations?q=${encodeURIComponent(orgName)}&limit=50`,
+              { signal: abort.signal }
+            );
+            if (orgRes.ok) {
+              const orgData = await orgRes.json();
+              const best = pickBestOrganizationMatch(
+                orgName,
+                Array.isArray(orgData?.organizations) ? orgData.organizations : []
+              );
+              if (best?.id != null) {
+                const orgId = String(best.id);
+                setCustomFieldValues((prev) => ({
+                  ...prev,
+                  [JOB_SEEKER_ORG_FIELD_NAME]: orgId,
+                }));
+                setFormFields((prev) =>
+                  prev.map((f) =>
+                    f.id === "currentOrganization" ? { ...f, value: orgId } : f
+                  )
+                );
+              }
+            }
+          } catch (orgErr) {
+            if (!(orgErr instanceof DOMException && orgErr.name === "AbortError")) {
+              console.error("Organization name lookup:", orgErr);
+            }
+          }
+        }
+      }
+
       setResumeFile(file);
       setParseResumeProgress(100);
     } catch (err) {

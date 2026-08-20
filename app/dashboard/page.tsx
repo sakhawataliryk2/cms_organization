@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
+import { isSuperUserType } from '@/lib/permissions/superUser';
 import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2, FiMonitor } from 'react-icons/fi';
 import { useRouter } from 'nextjs-toploader/app';
 import Link from 'next/link';
@@ -56,6 +57,7 @@ interface Appointment {
 
 export default function Dashboard() {
     const { user } = useAuth();
+    const canPostBroadcast = isSuperUserType(user?.userType);
     const router = useRouter();
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -1005,6 +1007,10 @@ export default function Dashboard() {
 
     // Post broadcast message
     const handlePostMessage = async () => {
+        if (!canPostBroadcast) {
+            toast.error('Only owners, admins, and developers can post broadcast messages');
+            return;
+        }
         if (!newMessage.trim()) {
             toast.error('Please enter a message');
             return;
@@ -1065,6 +1071,10 @@ export default function Dashboard() {
 
     // Delete broadcast message
     const handleDeleteMessage = async (id: number) => {
+        if (!canPostBroadcast) {
+            toast.error('Only owners, admins, and developers can delete broadcast messages');
+            return;
+        }
         if (!confirm('Are you sure you want to delete this message?')) {
             return;
         }
@@ -1145,6 +1155,10 @@ export default function Dashboard() {
 
     // Update message
     const handleUpdateMessage = async (id: number) => {
+        if (!canPostBroadcast) {
+            toast.error('Only owners, admins, and developers can edit broadcast messages');
+            return;
+        }
         if (!editMessageText.trim()) {
             toast.error('Please enter a message');
             return;
@@ -1687,7 +1701,8 @@ export default function Dashboard() {
                                 Broadcast Messages
                             </h3>
 
-                            {/* Post Message Form */}
+                            {/* Post Message Form — owners, admins, and developers only */}
+                            {canPostBroadcast && (
                             <div className="mb-3">
                                 <textarea
                                     value={newMessage}
@@ -1704,6 +1719,7 @@ export default function Dashboard() {
                                     {isPostingMessage ? 'Posting...' : 'Post Message'}
                                 </button>
                             </div>
+                            )}
 
                             {/* Messages List */}
                             {isLoadingMessages ? (
@@ -1717,7 +1733,7 @@ export default function Dashboard() {
                                             key={msg.id}
                                             className="p-2 bg-gray-50 rounded text-xs"
                                         >
-                                            {editingMessageId === msg.id ? (
+                                            {canPostBroadcast && editingMessageId === msg.id ? (
                                                 <div className="space-y-2">
                                                     <textarea
                                                         value={editMessageText}
@@ -1753,6 +1769,7 @@ export default function Dashboard() {
                                                             {msg.created_by_name || 'Unknown'} • {new Date(msg.created_at).toLocaleDateString()}
                                                         </div>
                                                     </div>
+                                                    {canPostBroadcast && (
                                                     <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
                                                         <button
                                                             onClick={() => handleEditMessage(msg)}
@@ -1769,6 +1786,7 @@ export default function Dashboard() {
                                                             <FiTrash2 size={12} />
                                                         </button>
                                                     </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>

@@ -4061,8 +4061,15 @@ export default function OrganizationView() {
                   ))}
                 </div>
               ) : (
-                <div className="p-4 text-center text-gray-500 italic">
-                  No open tasks
+                <div className="p-4 text-center">
+                  <p className="text-gray-500 italic mb-3">No open tasks</p>
+                  <button
+                    type="button"
+                    onClick={() => handleActionSelected("add-task")}
+                    className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                  >
+                    Add Task
+                  </button>
                 </div>
               )}
             </div>
