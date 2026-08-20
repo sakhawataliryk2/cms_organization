@@ -99,18 +99,17 @@ export default function SourcingPage() {
                     </>
                 ) : (
                     <>
-                        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={handleBack}
-                                    className="p-2 hover:bg-gray-200 rounded-full transition duration-150 ease-in-out"
-                                >
-                                    <FiArrowLeft size={20} />
-                                </button>
-                                <p className="text-gray-600">
-                                    <span className="font-semibold">{active?.name}</span> — Use the platform below to search and source candidates.
-                                </p>
-                            </div>
+                        <div className="flex items-center gap-4 mb-6">
+                            <button
+                                onClick={handleBack}
+                                className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-md hover:bg-gray-100 transition duration-150 ease-in-out"
+                            >
+                                <FiArrowLeft size={18} />
+                                <span className="font-medium text-gray-700">Back to Sourcing</span>
+                            </button>
+                            <p className="text-gray-600">
+                                <span className="font-semibold">{active?.name}</span> — Use the platform below to search and source candidates.
+                            </p>
                         </div>
 
                         <iframe
