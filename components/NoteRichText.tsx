@@ -71,7 +71,7 @@ export default function NoteRichText({
             className={`${MENTION_PILL_BASE_CLASS} ${mentionPillClass(part.type)} hover:underline`}
             onClick={(e) => e.stopPropagation()}
           >
-            {part.label}
+            #{part.label}
           </Link>
         );
       })}

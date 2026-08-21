@@ -59,6 +59,77 @@ function mentionFromNode(node: Node | null): HTMLElement | null {
   return (node.parentElement as HTMLElement | null)?.closest("[data-mention]") ?? null;
 }
 
+function skipEmptyText(node: Node | null, direction: "prev" | "next"): Node | null {
+  let current = node;
+  while (
+    current &&
+    current.nodeType === Node.TEXT_NODE &&
+    !(current.textContent || "").length
+  ) {
+    current = direction === "prev" ? current.previousSibling : current.nextSibling;
+  }
+  return current;
+}
+
+function findMentionForDelete(sel: Selection, backward: boolean): HTMLElement | null {
+  if (!sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+
+  if (!sel.isCollapsed) {
+    const ancestor = range.commonAncestorContainer;
+    const host =
+      ancestor.nodeType === Node.ELEMENT_NODE
+        ? (ancestor as HTMLElement)
+        : ancestor.parentElement;
+    if (isMentionNode(host)) return host;
+    if (isMentionNode(range.startContainer)) return range.startContainer;
+    if (!host) return null;
+    const mentions = Array.from(host.querySelectorAll("[data-mention]")).filter((node) =>
+      range.intersectsNode(node),
+    );
+    if (mentions.length !== 1) return null;
+    const selectedText = range.toString().replace(/\s/g, "");
+    const mentionText = (mentions[0].textContent || "").replace(/\s/g, "");
+    if (selectedText === mentionText) return mentions[0] as HTMLElement;
+    return null;
+  }
+
+  const node = range.startContainer;
+  const offset = range.startOffset;
+  if (isMentionNode(node)) return node;
+  if (mentionFromNode(node) && node.nodeType !== Node.TEXT_NODE) {
+    return mentionFromNode(node);
+  }
+
+  if (backward) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const before = (node.textContent || "").slice(0, offset);
+      if (before.trim().length > 0) return null;
+      const prev = skipEmptyText(node.previousSibling, "prev");
+      return isMentionNode(prev) ? prev : null;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const prev = skipEmptyText(
+        (node as HTMLElement).childNodes[offset - 1] || null,
+        "prev",
+      );
+      return isMentionNode(prev) ? prev : null;
+    }
+    return null;
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    if (offset < (node.textContent || "").length) return null;
+    const next = skipEmptyText(node.nextSibling, "next");
+    return isMentionNode(next) ? next : null;
+  }
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const next = skipEmptyText((node as HTMLElement).childNodes[offset] || null, "next");
+    return isMentionNode(next) ? next : null;
+  }
+  return null;
+}
+
 function unwrapMentionPill(mention: HTMLElement, sel: Selection) {
   const text = mention.textContent || "";
   const textNode = document.createTextNode(text);
@@ -350,39 +421,20 @@ export default function NoteMentionTextarea({
     emitChange();
   };
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+  const unwrapIfNeeded = (backward: boolean) => {
     const sel = window.getSelection();
-    if ((event.key === "Backspace" || event.key === "Delete") && sel?.rangeCount) {
-      const range = sel.getRangeAt(0);
-      let mention: HTMLElement | null = mentionFromNode(range.startContainer);
-      if (!mention && !sel.isCollapsed) {
-        mention = mentionFromNode(range.endContainer);
-      }
-      if (!mention && sel.isCollapsed) {
-        const node = range.startContainer;
-        if (event.key === "Backspace") {
-          if (node.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
-            const prev = node.previousSibling;
-            if (isMentionNode(prev)) mention = prev;
-          } else if (node.nodeType === Node.ELEMENT_NODE) {
-            const prev = (node as HTMLElement).childNodes[range.startOffset - 1];
-            if (isMentionNode(prev)) mention = prev;
-          }
-        } else if (
-          node.nodeType === Node.TEXT_NODE &&
-          range.startOffset === (node.textContent || "").length
-        ) {
-          const next = node.nextSibling;
-          if (isMentionNode(next)) mention = next;
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          const next = (node as HTMLElement).childNodes[range.startOffset];
-          if (isMentionNode(next)) mention = next;
-        }
-      }
-      if (mention) {
+    if (!sel) return false;
+    const mention = findMentionForDelete(sel, backward);
+    if (!mention) return false;
+    unwrapMentionPill(mention, sel);
+    emitChange();
+    return true;
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Backspace" || event.key === "Delete") {
+      if (unwrapIfNeeded(event.key === "Backspace")) {
         event.preventDefault();
-        unwrapMentionPill(mention, sel);
-        emitChange();
         return;
       }
     }
@@ -461,6 +513,18 @@ export default function NoteMentionTextarea({
         contentEditable
         suppressContentEditableWarning
         onKeyDown={handleKeyDown}
+        onBeforeInput={(event) => {
+          const inputType = (event.nativeEvent as InputEvent).inputType;
+          if (
+            inputType !== "deleteContentBackward" &&
+            inputType !== "deleteContentForward"
+          ) {
+            return;
+          }
+          if (unwrapIfNeeded(inputType === "deleteContentBackward")) {
+            event.preventDefault();
+          }
+        }}
         onKeyUp={(event) => {
           if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return;
           updatePickerFromCaret();
