@@ -234,9 +234,10 @@ export default function NoteMentionTextarea({
     const prev = pickerRef.current;
     if (found.char === "@") {
       const next: PickerState = { char: "@", query: found.query };
+      const same = prev?.char === "@" && prev.query === found.query;
       pickerRef.current = next;
       setPicker(next);
-      setActiveIndex(0);
+      if (!same) setActiveIndex(0);
       return;
     }
     if (prev?.char === "#" && prev.stage === "record") {
@@ -246,15 +247,17 @@ export default function NoteMentionTextarea({
         module: prev.module,
         query: found.query,
       };
+      const same = prev.query === found.query;
       pickerRef.current = next;
       setPicker(next);
-      setActiveIndex(0);
+      if (!same) setActiveIndex(0);
       return;
     }
     const next: PickerState = { char: "#", stage: "module", query: found.query };
+    const same = prev?.char === "#" && prev.stage === "module" && prev.query === found.query;
     pickerRef.current = next;
     setPicker(next);
-    setActiveIndex(0);
+    if (!same) setActiveIndex(0);
   }, []);
 
   const deleteTriggerText = (length: number) => {
@@ -279,7 +282,36 @@ export default function NoteMentionTextarea({
     if (!editor || !found) return;
     deleteTriggerText(found.length);
     editor.focus();
-    document.execCommand("insertHTML", false, `${html} `);
+
+    const wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    const pill = wrap.firstElementChild;
+    if (!pill) return;
+
+    const sel = window.getSelection();
+    if (!sel) return;
+    let range: Range;
+    if (sel.rangeCount) {
+      range = sel.getRangeAt(0);
+    } else {
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+    }
+    range.collapse(true);
+
+    const space = document.createTextNode(" ");
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(pill);
+    fragment.appendChild(space);
+    range.insertNode(fragment);
+
+    const after = document.createRange();
+    after.setStart(space, 1);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+
     closePicker();
     emitChange();
   };
@@ -390,14 +422,14 @@ export default function NoteMentionTextarea({
     }
 
     if (event.key === "ArrowDown") {
-      if (!optionCount) return;
       event.preventDefault();
+      if (!optionCount) return;
       setActiveIndex((i) => (i + 1) % optionCount);
       return;
     }
     if (event.key === "ArrowUp") {
-      if (!optionCount) return;
       event.preventDefault();
+      if (!optionCount) return;
       setActiveIndex((i) => (i - 1 + optionCount) % optionCount);
       return;
     }
@@ -429,7 +461,10 @@ export default function NoteMentionTextarea({
         contentEditable
         suppressContentEditableWarning
         onKeyDown={handleKeyDown}
-        onKeyUp={updatePickerFromCaret}
+        onKeyUp={(event) => {
+          if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return;
+          updatePickerFromCaret();
+        }}
         onClick={updatePickerFromCaret}
         onInput={() => {
           emitChange();
@@ -461,7 +496,7 @@ export default function NoteMentionTextarea({
           role="listbox"
         >
           {picker.char === "@" && (
-            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border-b">
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-blue-700 bg-sky-50 border-b">
               Internal users
             </div>
           )}
@@ -488,7 +523,7 @@ export default function NoteMentionTextarea({
                   key={`${user.id ?? user.email ?? user.name}-${index}`}
                   data-mention-index={index}
                   className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
-                    active ? "bg-violet-50 text-violet-900" : "hover:bg-gray-50"
+                    active ? "bg-sky-50 text-blue-800" : "hover:bg-gray-50"
                   }`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseDown={(e) => {
@@ -519,7 +554,7 @@ export default function NoteMentionTextarea({
                   key={mod.type}
                   data-mention-index={index}
                   className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
-                    active ? "bg-slate-100 text-slate-900" : "hover:bg-gray-50"
+                    active ? "bg-sky-50 text-blue-800" : "hover:bg-gray-50"
                   }`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseDown={(e) => {
@@ -549,7 +584,7 @@ export default function NoteMentionTextarea({
                   key={`${record.type}:${record.id}`}
                   data-mention-index={index}
                   className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
-                    active ? "bg-blue-50 text-blue-900" : "hover:bg-gray-50"
+                    active ? "bg-sky-50 text-blue-800" : "hover:bg-gray-50"
                   }`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseDown={(e) => {
