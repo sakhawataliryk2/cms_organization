@@ -181,8 +181,7 @@ export default function LookupField({
         lookupType === 'leads' ? 'L' :
         lookupType === 'placements' ? 'P' : '';
 
-      const ownerLabel = option.email ? `${option.name} (${option.email})` : option.name;
-      const baseLabel = lookupType === 'owner' ? ownerLabel : option.name;
+      const baseLabel = option.name;
       const label = option.record_number ? `${prefix}${option.record_number} - ${baseLabel}` : baseLabel;
 
       return {
