@@ -143,11 +143,12 @@ export function mentionPillHtml(
   meta: { type?: string; id?: string; email?: string; token: string },
 ): string {
   const color = mentionPillClass(kind === "user" ? "user" : meta.type || "");
-  const prefix = kind === "user" ? "@" : "";
+  const prefix = kind === "user" ? "@" : "#";
+  const visible = label.startsWith(prefix) ? label : `${prefix}${label}`;
   const typeAttr = meta.type ? ` data-type="${escapeHtml(meta.type)}"` : "";
   const idAttr = meta.id ? ` data-id="${escapeHtml(meta.id)}"` : "";
   const emailAttr = meta.email ? ` data-email="${escapeHtml(meta.email)}"` : "";
-  return `<span contenteditable="false" class="${MENTION_PILL_BASE_CLASS} ${color}" data-mention="${kind}" data-token="${escapeHtml(meta.token)}" data-label="${escapeHtml(label)}"${typeAttr}${idAttr}${emailAttr}>${prefix}${escapeHtml(label)}</span>`;
+  return `<span contenteditable="false" class="${MENTION_PILL_BASE_CLASS} ${color}" data-mention="${kind}" data-token="${escapeHtml(meta.token)}" data-label="${escapeHtml(label)}"${typeAttr}${idAttr}${emailAttr}>${escapeHtml(visible)}</span>`;
 }
 
 export function htmlFromSerializedNote(text: string): string {
