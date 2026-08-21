@@ -181,10 +181,7 @@ export default function MultiSelectLookupField({
               lookupType === "leads" ? "L" :
                 lookupType === "placements" ? "P" : "";
 
-    const baseLabel =
-      lookupType === 'owner'
-        ? `${opt.name} (${opt.email || ""})` || opt.email
-        : opt.name;
+    const baseLabel = opt.name || opt.email || "";
     return opt.record_number ? `${prefix}${opt.record_number} - ${baseLabel}` : baseLabel;
   };
 
