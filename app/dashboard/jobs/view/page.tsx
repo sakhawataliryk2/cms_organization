@@ -8,6 +8,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
+import NoteRichText from '@/components/NoteRichText';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
@@ -1743,11 +1744,7 @@ out.sort((a, b) => {
                             ))}
                           </div>
                         )}
-                        <p className="text-sm text-gray-700">
-                          {note.text.length > 100
-                            ? `${note.text.substring(0, 100)}...`
-                            : note.text}
-                        </p>
+                        <NoteRichText text={note.text} note={note} compact className="text-sm text-gray-700 whitespace-pre-wrap" />
                       </div>
                     );
                   })}
@@ -1924,7 +1921,24 @@ out.sort((a, b) => {
                   ))}
                 </div>
               ) : (
-                <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+                <div className="p-2">
+                  {!job?.archived_at && jobId && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${jobId}`
+                          )
+                        }
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Add Task
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-gray-500 italic text-center">No open tasks</p>
+                </div>
               )}
             </div>
           </PanelWithHeader>
@@ -1932,7 +1946,7 @@ out.sort((a, b) => {
       );
     }
     return null;
-  }, [job, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields]); // Dependencies for inner renderers
+  }, [job, jobId, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields, router]); // Dependencies for inner renderers
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -4366,7 +4380,7 @@ out.sort((a, b) => {
     { id: "modify", label: "Modify" },
     { id: "history", label: "History" },
     { id: "notes", label: "Notes" },
-    { id: "docs", label: "Docs" },
+    { id: "docs", label: `Docs ( ${documents.length} )` },
   ];
 
   // Quick action tabs
@@ -4565,7 +4579,7 @@ out.sort((a, b) => {
                   </div>
                 )}
                 <div className="mt-2">
-                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                  <NoteRichText text={note.text} note={note} />
                 </div>
               </div>
             );

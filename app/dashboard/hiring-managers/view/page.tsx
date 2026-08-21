@@ -374,6 +374,7 @@ out.sort((a, b) => {
   const [fileDetailsName, setFileDetailsName] = useState("");
   const [fileDetailsType, setFileDetailsType] = useState("General");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const quoteFileInputRef = useRef<HTMLInputElement>(null);
 
   const [noteForm, setNoteForm] = useState<NoteFormState>({
     text: "",
@@ -932,7 +933,7 @@ out.sort((a, b) => {
                     ) : isZoomInfoNote(note.action, (note as any).note_type, note.text) ? (
                       <ZoomInfoNoteBody text={note.text} compact />
                     ) : (
-                      <ZoomPhoneNoteBody text={note.text} compact />
+                      <ZoomPhoneNoteBody text={note.text} compact note={note} />
                     )}
                   </div>
                 </div>
@@ -1041,8 +1042,23 @@ out.sort((a, b) => {
                   ))}
                 </div>
               ) : (
-                <div className="p-4 text-center text-gray-500 italic">
-                  No open tasks
+                <div className="p-2">
+                  {!hiringManager?.archived_at && hiringManagerId && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/tasks/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`
+                          )
+                        }
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Add Task
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-gray-500 italic text-center">No open tasks</p>
                 </div>
               )}
             </div>
@@ -2431,13 +2447,11 @@ out.sort((a, b) => {
     if (files && files.length > 0) {
       const fileArray = Array.from(files);
       setPendingFiles(fileArray);
-      // If single file, pre-fill modal with its name
-      if (fileArray.length === 1) {
-        setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
-        setFileDetailsType("General");
-      }
+      setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
+      setFileDetailsType(activeTab === "quotes" ? "Quote" : "General");
       setShowFileDetailsModal(true);
     }
+    event.target.value = "";
   };
 
   // Drag and drop handlers
@@ -2468,11 +2482,8 @@ out.sort((a, b) => {
     if (files && files.length > 0) {
       const fileArray = Array.from(files);
       setPendingFiles(fileArray);
-      // Pre-fill modal
-      if (fileArray.length === 1) {
-        setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
-        setFileDetailsType("General");
-      }
+      setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
+      setFileDetailsType(activeTab === "quotes" ? "Quote" : "General");
       setShowFileDetailsModal(true);
     }
   };
@@ -2508,7 +2519,7 @@ out.sort((a, b) => {
         // Strip file extension from name
         const fileNameWithoutExt = filesToUpload.length === 1 ? fileDetailsName : file.name.replace(/\.[^/.]+$/, "");
         formData.append("document_name", fileNameWithoutExt);
-        formData.append("document_type", filesToUpload.length === 1 ? fileDetailsType : "General");
+        formData.append("document_type", activeTab === "quotes" ? "Quote" : (filesToUpload.length === 1 ? fileDetailsType : "General"));
 
         // Simulate progress for UI feedback since fetch doesn't support it natively without XHR
         const progressInterval = setInterval(() => {
@@ -3604,16 +3615,23 @@ out.sort((a, b) => {
       { label: "Delete", action: () => handleActionSelected("delete") },
     ];
 
+  const quoteDocuments = (documents || []).filter(
+    (d: any) => (d.document_type || "").toLowerCase() === "quote"
+  );
+  const quoteCount = quoteDocuments.length;
+  const docsCount = (documents || []).length;
+  const opportunitiesCount = 0;
+
   // Tabs from the interface
   const tabs = [
     { id: "summary", label: "Summary" },
     { id: "modify", label: "Modify" },
     { id: "history", label: "History" },
     { id: "notes", label: "Notes" },
-    { id: "docs", label: "Docs" },
+    { id: "docs", label: `Docs ( ${docsCount} )` },
     { id: "active-applicants", label: "Active Applicants" },
-    { id: "opportunities", label: "Opportunities" },
-    { id: "quotes", label: "Quotes" },
+    { id: "opportunities", label: `Opportunities ( ${opportunitiesCount} )` },
+    { id: "quotes", label: `Quotes ( ${quoteCount} )` },
     { id: "invoices", label: "Invoices" },
   ];
 
@@ -3761,6 +3779,7 @@ out.sort((a, b) => {
                   <option value="Agreement">Agreement</option>
                   <option value="Policy">Policy</option>
                   <option value="Welcome">Welcome</option>
+                  <option value="Quote">Quote</option>
                 </select>
               </div>
               <div>
@@ -4122,7 +4141,7 @@ out.sort((a, b) => {
                     {zoomInfoNote ? (
                       <ZoomInfoNoteBody text={note.text} />
                     ) : (
-                      <ZoomPhoneNoteBody text={note.text} />
+                      <ZoomPhoneNoteBody text={note.text} note={note} />
                     )}
                   </div>
                 </div>
@@ -4686,64 +4705,135 @@ out.sort((a, b) => {
           {activeTab === "quotes" && (
             <div className="col-span-2">
               <div className="bg-white p-4 rounded shadow-sm">
-                <h2 className="text-lg font-semibold mb-4">Quotes</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold">Quotes</h2>
+                  <button
+                    onClick={() => quoteFileInputRef.current?.click()}
+                    className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                  >
+                    Upload Quote
+                  </button>
+                </div>
+
+                <input
+                  ref={quoteFileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                />
+
+                <div
+                  onDragEnter={handleDocDragEnter}
+                  onDragOver={handleDocDragOver}
+                  onDragLeave={handleDocDragLeave}
+                  onDrop={handleDocDrop}
+                  className={`border-2 border-dashed rounded-lg p-6 text-center mb-6 transition-colors ${isDragging
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                    }`}
+                >
+                  <p className="text-gray-600 mb-1">
+                    Drag and drop quote files here, or{" "}
+                    <button
+                      type="button"
+                      onClick={() => quoteFileInputRef.current?.click()}
+                      className="text-blue-500 hover:underline"
+                    >
+                      browse
+                    </button>
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Files are saved as Quotes on this hiring manager. Supported: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB)
+                  </p>
+                </div>
+
+                {Object.keys(uploadProgress).length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                      <div key={fileName} className="bg-gray-100 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">{fileName}</span>
+                          <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-500 h-2 rounded-full transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {Object.keys(uploadErrors).length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    {Object.entries(uploadErrors).map(([fileName, error]) => (
+                      <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                        <p className="text-sm text-red-800">
+                          <strong>{fileName}:</strong> {error}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {isLoadingDocuments ? (
                   <div className="flex justify-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                   </div>
                 ) : documentError ? (
                   <p className="text-red-500 py-2">{documentError}</p>
-                ) : (() => {
-                  const quoteDocs = (documents || []).filter(
-                    (d: any) => (d.document_type || "").toLowerCase() === "quote"
-                  );
-                  return quoteDocs.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-gray-100 border-b">
-                            <th className="text-left p-3 font-medium">Actions</th>
-                            <th className="text-left p-3 font-medium">Document Name</th>
-                            <th className="text-left p-3 font-medium">Created By</th>
-                            <th className="text-left p-3 font-medium">Created At</th>
+                ) : quoteDocuments.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left p-3 font-medium">Actions</th>
+                          <th className="text-left p-3 font-medium">Document Name</th>
+                          <th className="text-left p-3 font-medium">Created By</th>
+                          <th className="text-left p-3 font-medium">Created At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quoteDocuments.map((doc: any) => (
+                          <tr key={doc.id} className="border-b hover:bg-gray-50">
+                            <td className="p-3">
+                              <ActionDropdown
+                                label="Actions"
+                                options={[
+                                  { label: "View", action: () => setSelectedDocument(doc) },
+                                  { label: "Download", action: () => handleDownloadDocument(doc) },
+                                  { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                                ]}
+                              />
+                            </td>
+                            <td className="p-3">
+                              <button
+                                onClick={() => setSelectedDocument(doc)}
+                                className="text-blue-600 hover:underline font-medium"
+                              >
+                                {doc.document_name || "Unnamed"}
+                              </button>
+                            </td>
+                            <td className="p-3">{doc.created_by_name || "—"}</td>
+                            <td className="p-3">
+                              {doc.created_at
+                                ? new Date(doc.created_at).toLocaleString()
+                                : "—"}
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {quoteDocs.map((doc: any) => (
-                            <tr key={doc.id} className="border-b hover:bg-gray-50">
-                              <td className="p-3">
-                                <ActionDropdown
-                                  label="Actions"
-                                  options={[
-                                    { label: "View", action: () => setSelectedDocument(doc) },
-                                    { label: "Download", action: () => handleDownloadDocument(doc) },
-                                    { label: "Delete", action: () => handleDeleteDocument(doc.id) },
-                                  ]}
-                                />
-                              </td>
-                              <td className="p-3">
-                                <button
-                                  onClick={() => setSelectedDocument(doc)}
-                                  className="text-blue-600 hover:underline font-medium"
-                                >
-                                  {doc.document_name || "Unnamed"}
-                                </button>
-                              </td>
-                              <td className="p-3">{doc.created_by_name || "—"}</td>
-                              <td className="p-3">
-                                {doc.created_at
-                                  ? new Date(doc.created_at).toLocaleString()
-                                  : "—"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 italic">No quotes available. Upload quotes from Admin Center → Document Management → Quotes.</p>
-                  );
-                })()}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 italic">
+                    No quotes available. Upload a quote above, or use Admin Center → Document Management → Quotes to attach one to many records.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -5815,13 +5905,19 @@ out.sort((a, b) => {
         onFileNameChange={setFileDetailsName}
         onFileTypeChange={setFileDetailsType}
         pendingFiles={pendingFiles}
-        documentTypeOptions={[
-          { value: "Contract", label: "Contract" },
-          { value: "Invoice", label: "Invoice" },
-          { value: "Report", label: "Report" },
-          { value: "ID", label: "Record Number" },
-          { value: "General", label: "General" },
-        ]}
+        documentTypeOptions={
+          activeTab === "quotes"
+            ? [{ value: "Quote", label: "Quote" }]
+            : [
+                { value: "Contract", label: "Contract" },
+                { value: "Invoice", label: "Invoice" },
+                { value: "Report", label: "Report" },
+                { value: "ID", label: "Record Number" },
+                { value: "General", label: "General" },
+                { value: "Quote", label: "Quote" },
+              ]
+        }
+        title={activeTab === "quotes" ? "Confirm Quote Details" : "Confirm File Details"}
         confirmButtonText="Save & Upload"
         zIndex={100}
       />

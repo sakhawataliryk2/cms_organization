@@ -13,6 +13,7 @@ import { HiOutlineUser } from 'react-icons/hi';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
+import NoteRichText from '@/components/NoteRichText';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
@@ -1865,7 +1866,7 @@ export default function TaskView() {
                                         </div>
                                     )}
                                     <div className="mt-2">
-                                        <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                                        <NoteRichText text={note.text} note={note} />
                                     </div>
                                 </div>
                             );
@@ -2403,11 +2404,7 @@ export default function TaskView() {
                                                 <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
                                                 <span className="text-gray-500">{formatNoteDateTime(note)}</span>
                                             </div>
-                                            <p className="text-sm text-gray-700">
-                                                {note.text.length > 100
-                                                    ? `${note.text.substring(0, 100)}...`
-                                                    : note.text}
-                                            </p>
+                                            <NoteRichText text={note.text} note={note} compact className="text-sm text-gray-700 whitespace-pre-wrap" />
                                         </div>
                                     ))}
                                     {notes.length > 2 && (

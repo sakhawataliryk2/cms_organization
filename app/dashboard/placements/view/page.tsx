@@ -11,6 +11,7 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import BenefitPackagePanel from "@/components/BenefitPackagePanel";
 import LoadingScreen from "@/components/LoadingScreen";
+import NoteRichText from "@/components/NoteRichText";
 import { FiBriefcase, FiLock, FiUnlock, FiSearch } from "react-icons/fi";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
@@ -3549,7 +3550,7 @@ export default function PlacementView() {
                     </div>
                   )}
                   <div className="mt-2">
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                    <NoteRichText text={note.text} note={note} />
                   </div>
                 </div>
               );
@@ -4199,11 +4200,7 @@ export default function PlacementView() {
                         <span className="font-medium">{note.created_by_name || "Unknown User"}</span>
                         <span className="text-gray-500">{formatNoteDateTime(note)}</span>
                       </div>
-                      <p className="text-sm text-gray-700">
-                        {note.text.length > 100
-                          ? `${note.text.substring(0, 100)}...`
-                          : note.text}
-                      </p>
+                      <NoteRichText text={note.text} note={note} compact className="text-sm text-gray-700 whitespace-pre-wrap" />
                     </div>
                   ))}
                   {notes.length > 3 && (
@@ -4216,7 +4213,20 @@ export default function PlacementView() {
                   )}
                 </div>
               ) : (
-                <p className="text-gray-500 italic">No recent notes</p>
+                <div>
+                  {!placement?.archived_at && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNote(true)}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Add Note
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-gray-500 italic text-center">No recent notes</p>
+                </div>
               )}
             </div>
           )}
@@ -4329,7 +4339,24 @@ export default function PlacementView() {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+                  <div className="p-2">
+                    {!placement?.archived_at && placementId && (
+                      <div className="flex justify-end mb-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/tasks/add?relatedEntity=placement&relatedEntityId=${placementId}`
+                            )
+                          }
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          Add Task
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-gray-500 italic text-center">No open tasks</p>
+                  </div>
                 )}
               </div>
             </PanelWithHeader>
@@ -4338,7 +4365,7 @@ export default function PlacementView() {
       }
       return null;
     },
-    [availableFields, notes, placement, visibleFields, tasks, isLoadingTasks, tasksError, candidate, company, job, billingContact, timesheetApprover, candidateAvailableFields, companyAvailableFields, hiringManagerAvailableFields, jobAvailableFields]
+    [availableFields, notes, placement, placementId, visibleFields, tasks, isLoadingTasks, tasksError, candidate, company, job, billingContact, timesheetApprover, candidateAvailableFields, companyAvailableFields, hiringManagerAvailableFields, jobAvailableFields, router]
   );
 
   // Render history tab content
@@ -4514,7 +4541,7 @@ export default function PlacementView() {
     { id: "summary", label: "Summary" },
     { id: "modify", label: "Modify" },
     { id: "notes", label: "Notes" },
-    { id: "docs", label: "Docs" },
+    { id: "docs", label: `Docs ( ${documents.length} )` },
     { id: "history", label: "History" },
   ];
 
