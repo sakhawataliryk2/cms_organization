@@ -58,6 +58,172 @@ export function userNotifyValue(user: NoteMentionUser): string | null {
   return name || null;
 }
 
+export const NOTE_MENTION_MODULES = [
+  {
+    type: "Organization",
+    label: "Organizations",
+    hint: "Name or record number",
+    aliases: ["o", "org", "organization"],
+  },
+  {
+    type: "Job",
+    label: "Jobs",
+    hint: "Title or record number",
+    aliases: ["j", "job"],
+  },
+  {
+    type: "Job Seeker",
+    label: "Job Seekers",
+    hint: "Name or record number",
+    aliases: ["js", "jobseeker", "candidate"],
+  },
+  {
+    type: "Lead",
+    label: "Leads",
+    hint: "Name or record number",
+    aliases: ["l", "lead"],
+  },
+  {
+    type: "Hiring Manager",
+    label: "Hiring Managers",
+    hint: "Name or record number",
+    aliases: ["hm", "hiring", "manager"],
+  },
+  {
+    type: "Task",
+    label: "Tasks",
+    hint: "Title or record number",
+    aliases: ["t", "task"],
+  },
+  {
+    type: "Placement",
+    label: "Placements",
+    hint: "Name, job title, or record number",
+    aliases: ["p", "placement"],
+  },
+] as const;
+
+export type NoteMentionModule = (typeof NOTE_MENTION_MODULES)[number];
+
+export function filterMentionModules(query: string): NoteMentionModule[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...NOTE_MENTION_MODULES];
+  return NOTE_MENTION_MODULES.filter((mod) => {
+    if (mod.label.toLowerCase().includes(q) || mod.type.toLowerCase().includes(q)) {
+      return true;
+    }
+    return mod.aliases.some((alias) => alias.startsWith(q) || q.startsWith(alias));
+  });
+}
+
+export function mentionPillClass(kind: string): string {
+  const key = String(kind || "")
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  const map: Record<string, string> = {
+    user: "bg-violet-50 text-violet-800 border-violet-200",
+    internal: "bg-violet-50 text-violet-800 border-violet-200",
+    organization: "bg-sky-50 text-sky-800 border-sky-200",
+    organizations: "bg-sky-50 text-sky-800 border-sky-200",
+    job: "bg-amber-50 text-amber-900 border-amber-200",
+    jobs: "bg-amber-50 text-amber-900 border-amber-200",
+    jobseeker: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    jobseekers: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    candidate: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    lead: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
+    leads: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
+    hiringmanager: "bg-orange-50 text-orange-800 border-orange-200",
+    hiringmanagers: "bg-orange-50 text-orange-800 border-orange-200",
+    contact: "bg-orange-50 text-orange-800 border-orange-200",
+    task: "bg-slate-50 text-slate-700 border-slate-200",
+    tasks: "bg-slate-50 text-slate-700 border-slate-200",
+    placement: "bg-teal-50 text-teal-800 border-teal-200",
+    placements: "bg-teal-50 text-teal-800 border-teal-200",
+  };
+  return map[key] || "bg-gray-50 text-gray-700 border-gray-200";
+}
+
+export const MENTION_PILL_BASE_CLASS =
+  "mention-pill inline-flex items-baseline rounded border px-1.5 py-0 mx-px text-[13px] font-medium leading-5 align-baseline select-none";
+
+export function formatUserMentionToken(user: NoteMentionUser): string {
+  const label = userMentionLabel(user).replace(/[\]|]/g, "");
+  const email = userNotifyValue(user)?.replace(/[\]|]/g, "") || label;
+  return `@[[${email}|${label}]]`;
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function mentionPillHtml(
+  kind: "user" | "record",
+  label: string,
+  meta: { type?: string; id?: string; email?: string; token: string },
+): string {
+  const color = mentionPillClass(kind === "user" ? "user" : meta.type || "");
+  const prefix = kind === "user" ? "@" : "#";
+  const typeAttr = meta.type ? ` data-type="${escapeHtml(meta.type)}"` : "";
+  const idAttr = meta.id ? ` data-id="${escapeHtml(meta.id)}"` : "";
+  const emailAttr = meta.email ? ` data-email="${escapeHtml(meta.email)}"` : "";
+  return `<span contenteditable="false" class="${MENTION_PILL_BASE_CLASS} ${color}" data-mention="${kind}" data-token="${escapeHtml(meta.token)}" data-label="${escapeHtml(label)}"${typeAttr}${idAttr}${emailAttr}>${prefix}${escapeHtml(label)}</span>`;
+}
+
+export function htmlFromSerializedNote(text: string): string {
+  const raw = text ?? "";
+  if (!raw) return "";
+  const parts = parseNoteTextParts(raw, []);
+  if (!parts.length) {
+    return escapeHtml(raw).replace(/\n/g, "<br>");
+  }
+  return parts
+    .map((part) => {
+      if (part.kind === "text") return escapeHtml(part.text).replace(/\n/g, "<br>");
+      if (part.kind === "user") {
+        return mentionPillHtml("user", part.label, {
+          email: part.email,
+          token: `@[[${part.email}|${part.label}]]`,
+        });
+      }
+      return mentionPillHtml("record", part.label, {
+        type: part.type,
+        id: part.id,
+        token: `#[[${part.type}:${part.id}|${part.label}]]`,
+      });
+    })
+    .join("");
+}
+
+export function serializeNoteEditor(root: HTMLElement): string {
+  let out = "";
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent || "";
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    if (el.dataset?.token) {
+      out += el.dataset.token;
+      return;
+    }
+    if (el.tagName === "BR") {
+      out += "\n";
+      return;
+    }
+    const block = el.tagName === "DIV" || el.tagName === "P";
+    if (block && out && !out.endsWith("\n")) out += "\n";
+    el.childNodes.forEach(walk);
+    if (block && !out.endsWith("\n")) out += "\n";
+  };
+  root.childNodes.forEach(walk);
+  return out.replace(/\n+$/, "");
+}
+
 export function filterMentionUsers(
   users: NoteMentionUser[],
   query: string,
@@ -136,16 +302,22 @@ export function mapSearchResultsToNoteRecords(results: any): NoteMentionRecord[]
 
 export async function searchNoteRecords(
   query: string,
+  moduleType?: string,
 ): Promise<NoteMentionRecord[]> {
   const q = query.trim();
   if (!q) return [];
-  const res = await fetch(`/api/search?query=${encodeURIComponent(q)}&limit=8`, {
+  const res = await fetch(`/api/search?query=${encodeURIComponent(q)}&limit=12`, {
     credentials: "include",
   });
   if (!res.ok) return [];
   const data = await res.json().catch(() => null);
   if (!data?.success || !data.results) return [];
-  return mapSearchResultsToNoteRecords(data.results);
+  const rows = mapSearchResultsToNoteRecords(data.results);
+  if (!moduleType) return rows;
+  const wanted = moduleType.toLowerCase().replace(/[\s_-]+/g, "");
+  return rows.filter(
+    (row) => row.type.toLowerCase().replace(/[\s_-]+/g, "") === wanted,
+  );
 }
 
 const RECORD_VIEW_ROUTES: Record<string, string> = {
@@ -243,7 +415,8 @@ export function noteReferencePayload(note: any): unknown {
 
 export type NoteTextPart =
   | { kind: "text"; text: string }
-  | { kind: "record"; label: string; href: string; type: string; id: string };
+  | { kind: "record"; label: string; href: string; type: string; id: string }
+  | { kind: "user"; label: string; email: string };
 
 function spansOverlap(
   spans: Array<{ start: number; end: number }>,
@@ -275,6 +448,18 @@ export function parseNoteTextParts(
       start: match.index,
       end: match.index + match[0].length,
       part: { kind: "record", label, href, type, id },
+    });
+  }
+
+  const userToken = /@\[\[([^|\]]+)\|([^\]]+)\]\]/g;
+  while ((match = userToken.exec(raw)) !== null) {
+    const email = match[1].trim();
+    const label = match[2].trim();
+    if (!label) continue;
+    spans.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      part: { kind: "user", label, email },
     });
   }
 
@@ -347,7 +532,7 @@ export function truncateNoteTextParts(
       out.push({ kind: "text", text: "..." });
       break;
     }
-    if (part.kind === "record") {
+    if (part.kind === "record" || part.kind === "user") {
       out.push(part);
       used += part.label.length;
       continue;

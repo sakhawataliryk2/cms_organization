@@ -6,23 +6,28 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
+  filterMentionModules,
   filterMentionUsers,
   formatRecordMentionToken,
-  getMentionTrigger,
-  replaceMentionToken,
+  formatUserMentionToken,
+  htmlFromSerializedNote,
+  mentionPillHtml,
+  recordMentionLabel,
   searchNoteRecords,
+  serializeNoteEditor,
   userMentionLabel,
+  type NoteMentionModule,
   type NoteMentionRecord,
-  type NoteMentionTrigger,
   type NoteMentionUser,
 } from "@/lib/noteMentions";
 
-type MentionOption =
-  | { kind: "user"; user: NoteMentionUser }
-  | { kind: "record"; record: NoteMentionRecord };
+type PickerState =
+  | { char: "@"; query: string }
+  | { char: "#"; stage: "module"; query: string }
+  | { char: "#"; stage: "record"; query: string; module: NoteMentionModule };
 
 type NoteMentionTextareaProps = {
   value: string;
@@ -31,11 +36,56 @@ type NoteMentionTextareaProps = {
   usersLoading?: boolean;
   onSelectUser: (user: NoteMentionUser) => void;
   onSelectRecord: (record: NoteMentionRecord) => void;
-  textareaRef?: { current: HTMLTextAreaElement | null };
+  textareaRef?: { current: HTMLElement | null };
   hasError?: boolean;
   placeholder?: string;
   rows?: number;
 };
+
+function isMentionNode(node: Node | null): node is HTMLElement {
+  return Boolean(
+    node &&
+      node.nodeType === Node.ELEMENT_NODE &&
+      (node as HTMLElement).dataset?.mention,
+  );
+}
+
+function mentionFromNode(node: Node | null): HTMLElement | null {
+  if (!node) return null;
+  if (isMentionNode(node)) return node;
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    return (node as HTMLElement).closest("[data-mention]");
+  }
+  return (node.parentElement as HTMLElement | null)?.closest("[data-mention]") ?? null;
+}
+
+function unwrapMentionPill(mention: HTMLElement, sel: Selection) {
+  const text = mention.textContent || "";
+  const textNode = document.createTextNode(text);
+  mention.replaceWith(textNode);
+  const range = document.createRange();
+  range.setStart(textNode, textNode.textContent?.length ?? 0);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function getTriggerFromCaret(): { char: "@" | "#"; query: string; length: number } | null {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return null;
+  if ((node.parentElement as HTMLElement | null)?.closest("[data-mention]")) return null;
+  const before = (node.textContent || "").slice(0, range.startOffset);
+  const match = before.match(/(^|[\s([{])([@#])([^\s@#]*)$/);
+  if (!match) return null;
+  return {
+    char: match[2] as "@" | "#",
+    query: match[3] || "",
+    length: (match[3] || "").length + 1,
+  };
+}
 
 export default function NoteMentionTextarea({
   value,
@@ -46,61 +96,78 @@ export default function NoteMentionTextarea({
   onSelectRecord,
   textareaRef,
   hasError = false,
-  placeholder = "Enter your note text here. Type @ to tag teammates, # to link a job, organization, job seeker, lead, and more.",
+  placeholder = "Enter your note text here. Type @ to tag teammates, # to pick a module and then a record.",
   rows = 6,
 }: NoteMentionTextareaProps) {
-  const innerRef = useRef<HTMLTextAreaElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<NoteMentionTrigger | null>(null);
+  const pickerRef = useRef<PickerState | null>(null);
+  const lastSerialized = useRef(value);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [trigger, setTrigger] = useState<NoteMentionTrigger | null>(null);
+  const [picker, setPicker] = useState<PickerState | null>(null);
   const [records, setRecords] = useState<NoteMentionRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isEmpty, setIsEmpty] = useState(!value);
 
-  const textarea = textareaRef ?? innerRef;
+  const setEditorNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      editorRef.current = node;
+      if (textareaRef) textareaRef.current = node;
+    },
+    [textareaRef],
+  );
+
+  const emitChange = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const next = serializeNoteEditor(editor);
+    lastSerialized.current = next;
+    setIsEmpty(!editor.textContent?.trim());
+    onChange(next);
+  }, [onChange]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (value === lastSerialized.current) return;
+    lastSerialized.current = value;
+    editor.innerHTML = htmlFromSerializedNote(value);
+    setIsEmpty(!value.trim());
+  }, [value]);
+
+  const moduleOptions = useMemo(
+    () =>
+      picker?.char === "#" && picker.stage === "module"
+        ? filterMentionModules(picker.query)
+        : [],
+    [picker],
+  );
 
   const userOptions = useMemo(
     () =>
-      trigger?.char === "@"
-        ? filterMentionUsers(users, trigger.query).map(
-            (user) => ({ kind: "user", user }) as MentionOption,
-          )
-        : [],
-    [trigger, users],
+      picker?.char === "@" ? filterMentionUsers(users, picker.query) : [],
+    [picker, users],
   );
 
-  const recordOptions = useMemo(
-    () =>
-      trigger?.char === "#"
-        ? records.map((record) => ({ kind: "record", record }) as MentionOption)
-        : [],
-    [trigger, records],
-  );
-
-  const options = trigger?.char === "@" ? userOptions : recordOptions;
-  const isOpen = Boolean(trigger);
-
-  const updateTriggerFromTextarea = useCallback(
-    (text: string, cursor: number) => {
-      const next = getMentionTrigger(text, cursor);
-      triggerRef.current = next;
-      setTrigger(next);
-      setActiveIndex(0);
-      if (next?.char !== "#") {
-        setRecords([]);
-        setRecordsLoading(false);
-      }
-    },
-    [],
-  );
+  const optionCount =
+    picker?.char === "@"
+      ? userOptions.length
+      : picker?.stage === "module"
+        ? moduleOptions.length
+        : records.length;
 
   useEffect(() => {
-    if (trigger?.char !== "#") return;
+    if (!(picker?.char === "#" && picker.stage === "record")) {
+      setRecords([]);
+      setRecordsLoading(false);
+      return;
+    }
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    const query = trigger.query;
+    const query = picker.query;
+    const moduleType = picker.module.type;
     if (!query.trim()) {
       setRecords([]);
       setRecordsLoading(false);
@@ -108,14 +175,24 @@ export default function NoteMentionTextarea({
     }
     setRecordsLoading(true);
     searchTimer.current = setTimeout(() => {
-      void searchNoteRecords(query)
+      void searchNoteRecords(query, moduleType)
         .then((rows) => {
-          if (triggerRef.current?.char === "#" && triggerRef.current.query === query) {
+          const current = pickerRef.current;
+          if (
+            current?.char === "#" &&
+            current.stage === "record" &&
+            current.query === query
+          ) {
             setRecords(rows);
           }
         })
         .finally(() => {
-          if (triggerRef.current?.char === "#" && triggerRef.current.query === query) {
+          const current = pickerRef.current;
+          if (
+            current?.char === "#" &&
+            current.stage === "record" &&
+            current.query === query
+          ) {
             setRecordsLoading(false);
           }
         });
@@ -123,13 +200,13 @@ export default function NoteMentionTextarea({
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [trigger?.char, trigger?.query]);
+  }, [picker]);
 
   useEffect(() => {
     const onDocMouseDown = (event: MouseEvent) => {
       if (!wrapRef.current?.contains(event.target as Node)) {
-        triggerRef.current = null;
-        setTrigger(null);
+        pickerRef.current = null;
+        setPicker(null);
       }
     };
     document.addEventListener("mousedown", onDocMouseDown);
@@ -141,156 +218,282 @@ export default function NoteMentionTextarea({
     if (el) (el as HTMLElement).scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  const applySelection = useCallback(
-    (option: MentionOption) => {
-      const current = triggerRef.current;
-      const el = textarea.current;
-      if (!current || !el) return;
+  const closePicker = () => {
+    pickerRef.current = null;
+    setPicker(null);
+    setRecords([]);
+    setActiveIndex(0);
+  };
 
-      const insertion =
-        option.kind === "user"
-          ? `@${userMentionLabel(option.user)}`
-          : formatRecordMentionToken(option.record);
-      const next = replaceMentionToken(value, current, insertion);
-      onChange(next.text);
-      if (option.kind === "user") onSelectUser(option.user);
-      else onSelectRecord(option.record);
-
-      triggerRef.current = null;
-      setTrigger(null);
-      setRecords([]);
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(next.cursor, next.cursor);
-      });
-    },
-    [onChange, onSelectRecord, onSelectUser, textarea, value],
-  );
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!isOpen) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      triggerRef.current = null;
-      setTrigger(null);
+  const updatePickerFromCaret = useCallback(() => {
+    const found = getTriggerFromCaret();
+    if (!found) {
+      closePicker();
       return;
     }
-    if (!options.length) return;
-    if (event.key === "ArrowDown") {
+    const prev = pickerRef.current;
+    if (found.char === "@") {
+      const next: PickerState = { char: "@", query: found.query };
+      pickerRef.current = next;
+      setPicker(next);
+      setActiveIndex(0);
+      return;
+    }
+    if (prev?.char === "#" && prev.stage === "record") {
+      const next: PickerState = {
+        char: "#",
+        stage: "record",
+        module: prev.module,
+        query: found.query,
+      };
+      pickerRef.current = next;
+      setPicker(next);
+      setActiveIndex(0);
+      return;
+    }
+    const next: PickerState = { char: "#", stage: "module", query: found.query };
+    pickerRef.current = next;
+    setPicker(next);
+    setActiveIndex(0);
+  }, []);
+
+  const deleteTriggerText = (length: number) => {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    const start = Math.max(0, range.startOffset - length);
+    const text = node.textContent || "";
+    node.textContent = text.slice(0, start) + text.slice(range.startOffset);
+    const next = document.createRange();
+    next.setStart(node, start);
+    next.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(next);
+  };
+
+  const insertPillAndFinish = (html: string) => {
+    const editor = editorRef.current;
+    const found = getTriggerFromCaret();
+    if (!editor || !found) return;
+    deleteTriggerText(found.length);
+    editor.focus();
+    document.execCommand("insertHTML", false, `${html} `);
+    closePicker();
+    emitChange();
+  };
+
+  const selectUser = (user: NoteMentionUser) => {
+    const token = formatUserMentionToken(user);
+    const html = mentionPillHtml("user", userMentionLabel(user), {
+      email: user.email || "",
+      token,
+    });
+    insertPillAndFinish(html);
+    onSelectUser(user);
+  };
+
+  const selectRecord = (record: NoteMentionRecord) => {
+    const token = formatRecordMentionToken(record);
+    const html = mentionPillHtml("record", recordMentionLabel(record), {
+      type: record.type,
+      id: record.id,
+      token,
+    });
+    insertPillAndFinish(html);
+    onSelectRecord(record);
+  };
+
+  const selectModule = (mod: NoteMentionModule) => {
+    const next: PickerState = { char: "#", stage: "record", module: mod, query: "" };
+    pickerRef.current = next;
+    setPicker(next);
+    setRecords([]);
+    setActiveIndex(0);
+    const found = getTriggerFromCaret();
+    if (found) deleteTriggerText(found.length);
+    editorRef.current?.focus();
+    document.execCommand("insertText", false, "#");
+    emitChange();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const sel = window.getSelection();
+    if ((event.key === "Backspace" || event.key === "Delete") && sel?.rangeCount) {
+      const range = sel.getRangeAt(0);
+      let mention: HTMLElement | null = mentionFromNode(range.startContainer);
+      if (!mention && !sel.isCollapsed) {
+        mention = mentionFromNode(range.endContainer);
+      }
+      if (!mention && sel.isCollapsed) {
+        const node = range.startContainer;
+        if (event.key === "Backspace") {
+          if (node.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
+            const prev = node.previousSibling;
+            if (isMentionNode(prev)) mention = prev;
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const prev = (node as HTMLElement).childNodes[range.startOffset - 1];
+            if (isMentionNode(prev)) mention = prev;
+          }
+        } else if (
+          node.nodeType === Node.TEXT_NODE &&
+          range.startOffset === (node.textContent || "").length
+        ) {
+          const next = node.nextSibling;
+          if (isMentionNode(next)) mention = next;
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          const next = (node as HTMLElement).childNodes[range.startOffset];
+          if (isMentionNode(next)) mention = next;
+        }
+      }
+      if (mention) {
+        event.preventDefault();
+        unwrapMentionPill(mention, sel);
+        emitChange();
+        return;
+      }
+    }
+
+    if (picker?.char === "#" && picker.stage === "record" && event.key === "Backspace") {
+      const found = getTriggerFromCaret();
+      if (found && found.query === "") {
+        event.preventDefault();
+        const next: PickerState = { char: "#", stage: "module", query: "" };
+        pickerRef.current = next;
+        setPicker(next);
+        setActiveIndex(0);
+        return;
+      }
+    }
+
+    if (!picker) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.execCommand("insertLineBreak");
+        emitChange();
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
       event.preventDefault();
-      setActiveIndex((i) => (i + 1) % options.length);
+      if (picker.char === "#" && picker.stage === "record") {
+        const next: PickerState = { char: "#", stage: "module", query: "" };
+        pickerRef.current = next;
+        setPicker(next);
+        setActiveIndex(0);
+        return;
+      }
+      closePicker();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      if (!optionCount) return;
+      event.preventDefault();
+      setActiveIndex((i) => (i + 1) % optionCount);
       return;
     }
     if (event.key === "ArrowUp") {
+      if (!optionCount) return;
       event.preventDefault();
-      setActiveIndex((i) => (i - 1 + options.length) % options.length);
+      setActiveIndex((i) => (i - 1 + optionCount) % optionCount);
       return;
     }
     if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
-      const option = options[activeIndex];
-      if (option) applySelection(option);
+      if (picker.char === "@") {
+        const user = userOptions[activeIndex];
+        if (user) selectUser(user);
+        return;
+      }
+      if (picker.stage === "module") {
+        const mod = moduleOptions[activeIndex];
+        if (mod) selectModule(mod);
+        return;
+      }
+      const record = records[activeIndex];
+      if (record) selectRecord(record);
     }
   };
 
-  const groupedRecords = useMemo(() => {
-    const groups: Array<{ type: string; items: Array<{ option: MentionOption; index: number }> }> = [];
-    const indexByType = new Map<string, number>();
-    recordOptions.forEach((option, index) => {
-      if (option.kind !== "record") return;
-      const type = option.record.type;
-      let gi = indexByType.get(type);
-      if (gi == null) {
-        gi = groups.length;
-        indexByType.set(type, gi);
-        groups.push({ type, items: [] });
-      }
-      groups[gi].items.push({ option, index });
-    });
-    return groups;
-  }, [recordOptions]);
-
-  const loadingLabel =
-    trigger?.char === "@"
-      ? usersLoading
-        ? "Loading users..."
-        : null
-      : recordsLoading
-        ? "Searching records..."
-        : null;
-
-  const emptyLabel =
-    trigger?.char === "@"
-      ? usersLoading
-        ? null
-        : trigger.query
-          ? "No matching users"
-          : "Type to match an internal user"
-      : recordsLoading
-        ? null
-        : trigger?.query
-          ? "No matching records"
-          : "Type to match a job, organization, job seeker, lead, and more";
+  const minHeight = `${Math.max(rows, 4) * 1.5 + 1.5}rem`;
 
   return (
     <div ref={wrapRef} className="relative">
-      <textarea
-        ref={textarea}
-        value={value}
-        autoFocus
-        rows={rows}
-        placeholder={placeholder}
+      <div
+        ref={setEditorNode}
+        role="textbox"
+        aria-multiline="true"
+        contentEditable
+        suppressContentEditableWarning
         onKeyDown={handleKeyDown}
-        onClick={(e) =>
-          updateTriggerFromTextarea(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)
-        }
-        onKeyUp={(e) => {
-          if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(e.key)) return;
-          updateTriggerFromTextarea(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
+        onKeyUp={updatePickerFromCaret}
+        onClick={updatePickerFromCaret}
+        onInput={() => {
+          emitChange();
+          updatePickerFromCaret();
         }}
-        onChange={(e) => {
-          onChange(e.target.value);
-          updateTriggerFromTextarea(e.target.value, e.target.selectionStart ?? 0);
+        onPaste={(event) => {
+          event.preventDefault();
+          const text = event.clipboardData.getData("text/plain");
+          document.execCommand("insertText", false, text);
+          emitChange();
+          updatePickerFromCaret();
         }}
-        className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
+        className={`relative z-10 w-full p-3 border rounded text-gray-900 focus:outline-none focus:ring-2 overflow-y-auto whitespace-pre-wrap wrap-break-word ${
           hasError
             ? "border-red-500 focus:ring-red-500"
             : "border-gray-300 focus:ring-blue-500"
         }`}
+        style={{ minHeight }}
       />
-      {isOpen && (
+      {isEmpty && (
+        <div className="pointer-events-none absolute inset-0 p-3 text-gray-400">
+          {placeholder}
+        </div>
+      )}
+      {picker && (
         <div
           ref={listRef}
           className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
           role="listbox"
         >
-          {trigger?.char === "@" && (
-            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b">
+          {picker.char === "@" && (
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border-b">
               Internal users
             </div>
           )}
-          {loadingLabel && (
-            <div className="px-3 py-2 text-sm text-gray-500">{loadingLabel}</div>
+          {picker.char === "#" && picker.stage === "module" && (
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b">
+              Choose a module
+            </div>
           )}
-          {trigger?.char === "@" &&
-            userOptions.map((option, index) => {
-              if (option.kind !== "user") return null;
-              const user = option.user;
+          {picker.char === "#" && picker.stage === "record" && (
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide bg-slate-50 border-b text-slate-600">
+              {picker.module.label} — type a name, title, or record number
+            </div>
+          )}
+
+          {picker.char === "@" && usersLoading && (
+            <div className="px-3 py-2 text-sm text-gray-500">Loading users...</div>
+          )}
+          {picker.char === "@" &&
+            userOptions.map((user, index) => {
               const active = index === activeIndex;
               return (
                 <button
                   type="button"
                   key={`${user.id ?? user.email ?? user.name}-${index}`}
                   data-mention-index={index}
-                  role="option"
-                  aria-selected={active}
                   className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
-                    active ? "bg-blue-50 text-blue-800" : "hover:bg-gray-50"
+                    active ? "bg-violet-50 text-violet-900" : "hover:bg-gray-50"
                   }`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    applySelection(option);
+                    selectUser(user);
                   }}
                 >
                   <span className="font-medium">{userMentionLabel(user)}</span>
@@ -300,40 +503,77 @@ export default function NoteMentionTextarea({
                 </button>
               );
             })}
-          {trigger?.char === "#" &&
-            groupedRecords.map((group) => (
-              <div key={group.type}>
-                <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-y">
-                  {group.type}
-                </div>
-                {group.items.map(({ option, index }) => {
-                  if (option.kind !== "record") return null;
-                  const active = index === activeIndex;
-                  return (
-                    <button
-                      type="button"
-                      key={`${option.record.type}:${option.record.id}`}
-                      data-mention-index={index}
-                      role="option"
-                      aria-selected={active}
-                      className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
-                        active ? "bg-blue-50 text-blue-800" : "hover:bg-gray-50"
-                      }`}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applySelection(option);
-                      }}
-                    >
-                      <span className="font-medium">{option.record.display}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          {!loadingLabel && !options.length && emptyLabel && (
-            <div className="px-3 py-2 text-sm text-gray-500">{emptyLabel}</div>
+          {picker.char === "@" && !usersLoading && !userOptions.length && (
+            <div className="px-3 py-2 text-sm text-gray-500">
+              {picker.query ? "No matching users" : "Type to match an internal user"}
+            </div>
           )}
+
+          {picker.char === "#" &&
+            picker.stage === "module" &&
+            moduleOptions.map((mod, index) => {
+              const active = index === activeIndex;
+              return (
+                <button
+                  type="button"
+                  key={mod.type}
+                  data-mention-index={index}
+                  className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
+                    active ? "bg-slate-100 text-slate-900" : "hover:bg-gray-50"
+                  }`}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectModule(mod);
+                  }}
+                >
+                  <span className="font-medium">{mod.label}</span>
+                  <span className="text-xs text-gray-500">{mod.hint}</span>
+                </button>
+              );
+            })}
+          {picker.char === "#" && picker.stage === "module" && !moduleOptions.length && (
+            <div className="px-3 py-2 text-sm text-gray-500">No matching modules</div>
+          )}
+
+          {picker.char === "#" && picker.stage === "record" && recordsLoading && (
+            <div className="px-3 py-2 text-sm text-gray-500">Searching records...</div>
+          )}
+          {picker.char === "#" &&
+            picker.stage === "record" &&
+            records.map((record, index) => {
+              const active = index === activeIndex;
+              return (
+                <button
+                  type="button"
+                  key={`${record.type}:${record.id}`}
+                  data-mention-index={index}
+                  className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm ${
+                    active ? "bg-blue-50 text-blue-900" : "hover:bg-gray-50"
+                  }`}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectRecord(record);
+                  }}
+                >
+                  <span className="font-medium">{recordMentionLabel(record)}</span>
+                  <span className="text-xs text-gray-500">
+                    {record.value} · {record.type}
+                  </span>
+                </button>
+              );
+            })}
+          {picker.char === "#" &&
+            picker.stage === "record" &&
+            !recordsLoading &&
+            !records.length && (
+              <div className="px-3 py-2 text-sm text-gray-500">
+                {picker.query
+                  ? "No matching records"
+                  : `Type a ${picker.module.hint.toLowerCase()}`}
+              </div>
+            )}
         </div>
       )}
     </div>

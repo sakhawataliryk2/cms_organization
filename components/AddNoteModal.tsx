@@ -102,7 +102,7 @@ export default function AddNoteModal({
     const [actionFields, setActionFields] = useState<any[]>([]);
     const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
     const [showNoteDateTime, setShowNoteDateTime] = useState(false);
-    const noteTextRef = useRef<HTMLTextAreaElement>(null);
+    const noteTextRef = useRef<HTMLElement>(null);
 
     // When defaultAction is provided, try to pre-select the closest matching action
     useEffect(() => {
