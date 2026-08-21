@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import {
+  MENTION_PILL_BASE_CLASS,
+  mentionPillClass,
   noteReferencePayload,
   parseNoteAboutReferences,
   parseNoteTextParts,
@@ -51,12 +53,22 @@ export default function NoteRichText({
     <p className={cls}>
       {parts.map((part, index) => {
         if (part.kind === "text") return <span key={index}>{part.text}</span>;
+        if (part.kind === "user") {
+          return (
+            <span
+              key={`user-${part.email}-${index}`}
+              className={`${MENTION_PILL_BASE_CLASS} ${mentionPillClass("user")}`}
+            >
+              @{part.label}
+            </span>
+          );
+        }
         return (
           <Link
             key={`${part.type}:${part.id}:${index}`}
             href={part.href}
             title={`Open ${part.type}`}
-            className="inline font-medium text-blue-700 hover:text-blue-900 hover:underline"
+            className={`${MENTION_PILL_BASE_CLASS} ${mentionPillClass(part.type)} hover:underline`}
             onClick={(e) => e.stopPropagation()}
           >
             #{part.label}

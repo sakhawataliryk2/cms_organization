@@ -83,7 +83,7 @@ export default function BulkNoteModal({
     const [showAdditionalRefDropdown, setShowAdditionalRefDropdown] = useState(false);
     const [isLoadingAdditionalRefSearch, setIsLoadingAdditionalRefSearch] = useState(false);
     const additionalRefInputRef = useRef<HTMLInputElement>(null);
-    const noteTextRef = useRef<HTMLTextAreaElement>(null);
+    const noteTextRef = useRef<HTMLElement>(null);
 
     useEffect(() => {
         if (open) {
