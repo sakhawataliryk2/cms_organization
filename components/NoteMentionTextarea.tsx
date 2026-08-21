@@ -15,7 +15,7 @@ import {
   formatUserMentionToken,
   htmlFromSerializedNote,
   mentionPillHtml,
-  recordMentionLabel,
+  recordMentionChipLabel,
   searchNoteRecords,
   serializeNoteEditor,
   userMentionLabel,
@@ -328,7 +328,7 @@ export default function NoteMentionTextarea({
 
   const selectRecord = (record: NoteMentionRecord) => {
     const token = formatRecordMentionToken(record);
-    const html = mentionPillHtml("record", recordMentionLabel(record), {
+    const html = mentionPillHtml("record", recordMentionChipLabel(record), {
       type: record.type,
       id: record.id,
       token,
@@ -592,10 +592,8 @@ export default function NoteMentionTextarea({
                     selectRecord(record);
                   }}
                 >
-                  <span className="font-medium">{recordMentionLabel(record)}</span>
-                  <span className="text-xs text-gray-500">
-                    {record.value} · {record.type}
-                  </span>
+                  <span className="font-medium">{recordMentionChipLabel(record)}</span>
+                  <span className="text-xs text-gray-500">{record.type}</span>
                 </button>
               );
             })}
