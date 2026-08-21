@@ -4125,7 +4125,7 @@ Best regards`;
     { id: "modify", label: "Modify" },
     { id: "history", label: "History" },
     { id: "notes", label: "Notes" },
-    { id: "docs", label: "Docs" },
+    { id: "docs", label: `Docs ( ${documents.length} )` },
     { id: "references", label: "References" },
     { id: "applications", label: "Applications" },
     { id: "smart-match", label: "Smart Match" },
@@ -4502,7 +4502,7 @@ Best regards`;
                     {zoomInfoNote ? (
                       <ZoomInfoNoteBody text={note.text} />
                     ) : (
-                      <ZoomPhoneNoteBody text={note.text} />
+                      <ZoomPhoneNoteBody text={note.text} note={note} />
                     )}
                   </div>
                 </div>
@@ -5061,13 +5061,28 @@ Best regards`;
                   ) : isZoomInfoNote(note.action, (note as any).note_type, note.text) ? (
                     <ZoomInfoNoteBody text={note.text} compact />
                   ) : (
-                    <ZoomPhoneNoteBody text={note.text} compact />
+                    <ZoomPhoneNoteBody text={note.text} compact note={note} />
                   )}
                 </div>
               </div>
             ))}
           </div>
-        ) : <p className="text-gray-500 italic text-sm">No recent notes</p>}
+        ) : (
+          <div>
+            {!jobSeeker?.archived_at && (
+              <div className="flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddNote(true)}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Add Note
+                </button>
+              </div>
+            )}
+            <p className="text-gray-500 italic text-sm text-center">No recent notes</p>
+          </div>
+        )}
       </div>
     </PanelWithHeader>
   );
@@ -5122,7 +5137,24 @@ Best regards`;
             ))}
           </div>
         ) : (
-          <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+          <div className="p-2">
+            {!jobSeeker?.archived_at && jobSeekerId && (
+              <div className="flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      `/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${jobSeekerId}`
+                    )
+                  }
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Add Task
+                </button>
+              </div>
+            )}
+            <p className="text-gray-500 italic text-center">No open tasks</p>
+          </div>
         )}
       </div>
     </PanelWithHeader>
@@ -5143,7 +5175,7 @@ Best regards`;
         {content}
       </SortablePanel>
     );
-  }, [jobSeeker, visibleFields, notes, tasks, isLoadingTasks, tasksError, payrollInfoFieldCatalog]);
+  }, [jobSeeker, jobSeekerId, visibleFields, notes, tasks, isLoadingTasks, tasksError, payrollInfoFieldCatalog, router]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading job seeker details..." />;
@@ -5416,11 +5448,6 @@ Best regards`;
               }}
             >
               {tab.label}
-              {tab.id === "docs" && documents.length > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-medium bg-gray-500 text-white rounded-full">
-                  {documents.length}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -5541,7 +5568,7 @@ Best regards`;
                       </div>
                       {note.text && (
                         <div className="mt-1 text-gray-800 line-clamp-3">
-                          <ZoomPhoneNoteBody text={note.text} compact />
+                          <ZoomPhoneNoteBody text={note.text} compact note={note} />
                         </div>
                       )}
                     </div>

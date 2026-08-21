@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { FiChevronDown, FiMessageSquare, FiPaperclip, FiPhone } from "react-icons/fi";
 import { formatPhoneForDisplay, phoneDigitsForTel } from "@/lib/formatPhoneDisplay";
+import NoteRichText from "@/components/NoteRichText";
 
 export type ZoomPhoneNoteKind = "call" | "sms" | null;
 
@@ -374,6 +375,9 @@ type ZoomPhoneNoteBodyProps = {
   compact?: boolean;
   /** Plain note fallback classes */
   className?: string;
+  references?: unknown;
+  note?: unknown;
+  maxChars?: number;
 };
 
 /**
@@ -384,6 +388,9 @@ export default function ZoomPhoneNoteBody({
   text,
   compact = false,
   className = "text-gray-700 whitespace-pre-wrap leading-relaxed",
+  references,
+  note,
+  maxChars,
 }: ZoomPhoneNoteBodyProps) {
   const raw = text ?? "";
   const callData = parseCallLog(raw);
@@ -394,5 +401,14 @@ export default function ZoomPhoneNoteBody({
   if (smsEntries) {
     return <SmsLogCard entries={smsEntries} compact={compact} />;
   }
-  return <p className={className}>{formatInlinePhonesInNoteText(raw)}</p>;
+  return (
+    <NoteRichText
+      text={raw}
+      references={references}
+      note={note}
+      compact={compact}
+      maxChars={maxChars}
+      className={className}
+    />
+  );
 }

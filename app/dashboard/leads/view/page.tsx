@@ -8,6 +8,7 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
+import NoteRichText from "@/components/NoteRichText";
 import { FiTarget, FiSearch } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
@@ -1174,8 +1175,19 @@ out.sort((a, b) => {
                   Loading notes...
                 </div>
               ) : notes.length === 0 ? (
-                <div className="text-gray-500 text-sm italic p-2">
-                  No notes found.
+                <div className="p-2">
+                  {!lead?.archived_at && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNote(true)}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Add Note
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-gray-500 italic text-sm text-center">No notes found.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1192,9 +1204,7 @@ out.sort((a, b) => {
                           {note.created_by_name}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-700 whitespace-pre-line">
-                        {note.text}
-                      </p>
+                      <NoteRichText text={note.text} note={note} compact className="text-sm text-gray-700 whitespace-pre-line" />
                     </div>
                   ))}
                   {notes.length > 3 && (
@@ -1263,7 +1273,24 @@ out.sort((a, b) => {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+                  <div className="p-2">
+                    {!lead?.archived_at && leadId && (
+                      <div className="flex justify-end mb-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/tasks/add?relatedEntity=lead&relatedEntityId=${leadId}`
+                            )
+                          }
+                          className="text-sm text-blue-600 hover:underline"
+                        >
+                          Add Task
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-gray-500 italic text-center">No open tasks</p>
+                  </div>
                 )}
               </div>
             </PanelWithHeader>
@@ -1293,7 +1320,18 @@ out.sort((a, b) => {
             >
               <div className="border border-gray-200 rounded">
                 <div className="p-2">
-                  <p className="text-gray-500 italic">No open jobs</p>
+                  {!lead?.archived_at && leadId && (
+                    <div className="flex justify-end mb-2">
+                      <button
+                        type="button"
+                        onClick={() => handleActionSelected("convert")}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Add Job
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-gray-500 italic text-center">No open jobs</p>
                 </div>
               </div>
             </PanelWithHeader>
@@ -2832,11 +2870,11 @@ out.sort((a, b) => {
     { id: "modify", label: "Modify" },
     { id: "notes", label: "Notes" },
     { id: "history", label: "History" },
-    { id: "quotes", label: "Quotes" },
+    { id: "quotes", label: `Quotes ( ${(documents || []).filter((d: any) => (d.document_type || "").toLowerCase() === "quote").length} )` },
     { id: "invoices", label: "Invoices" },
-    { id: "contacts", label: "Contacts" },
-    { id: "docs", label: "Docs" },
-    { id: "opportunities", label: "Opportunities" },
+    { id: "contacts", label: "Contacts ( 0 )" },
+    { id: "docs", label: `Docs ( ${(documents || []).length} )` },
+    { id: "opportunities", label: "Opportunities ( 0 )" },
   ];
 
   const quickActions = [
@@ -3123,7 +3161,7 @@ out.sort((a, b) => {
                 )}
 
                 <div className="mt-2">
-                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                  <NoteRichText text={note.text} note={note} />
                 </div>
               </div>
             );

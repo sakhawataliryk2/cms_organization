@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { FiUserCheck, FiSearch } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
+import NoteMentionTextarea from '@/components/NoteMentionTextarea';
+import { type NoteMentionRecord, type NoteMentionUser } from '@/lib/noteMentions';
 
 interface BulkNoteModalProps {
     open: boolean;
@@ -81,6 +83,7 @@ export default function BulkNoteModal({
     const [showAdditionalRefDropdown, setShowAdditionalRefDropdown] = useState(false);
     const [isLoadingAdditionalRefSearch, setIsLoadingAdditionalRefSearch] = useState(false);
     const additionalRefInputRef = useRef<HTMLInputElement>(null);
+    const noteTextRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         if (open) {
@@ -870,22 +873,43 @@ export default function BulkNoteModal({
                                     <span className="text-red-500">*</span>
                                 )}
                             </label>
-                            <textarea
+                            <NoteMentionTextarea
+                                textareaRef={noteTextRef}
                                 value={noteForm.text}
-                                autoFocus
-                                onChange={(e) => {
-                                    setNoteForm((prev) => ({ ...prev, text: e.target.value }));
-                                    // Clear error when user starts typing
+                                users={users as NoteMentionUser[]}
+                                usersLoading={isLoadingUsers}
+                                hasError={Boolean(noteFormErrors.text)}
+                                onChange={(text) => {
+                                    setNoteForm((prev) => ({ ...prev, text }));
                                     if (noteFormErrors.text) {
                                         setNoteFormErrors((prev) => ({ ...prev, text: undefined }));
                                     }
                                 }}
-                                placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                                className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.text
-                                    ? "border-red-500 focus:ring-red-500"
-                                    : "border-gray-300 focus:ring-blue-500"
-                                    }`}
-                                rows={6}
+                                onSelectUser={(user) => {
+                                    const value = user.email || user.name;
+                                    if (!value) return;
+                                    setNoteForm((prev) => {
+                                        if (prev.emailNotification.includes(value)) return prev;
+                                        return { ...prev, emailNotification: [...prev.emailNotification, value] };
+                                    });
+                                }}
+                                onSelectRecord={(record: NoteMentionRecord) => {
+                                    setNoteForm((prev) => {
+                                        const exists = prev.aboutReferences.some(
+                                            (ref) => String(ref.id) === String(record.id) && ref.type === record.type,
+                                        );
+                                        if (exists) return prev;
+                                        const aboutReferences = [...prev.aboutReferences, record];
+                                        return {
+                                            ...prev,
+                                            aboutReferences,
+                                            about: aboutReferences.map((ref) => ref.display).join(", "),
+                                        };
+                                    });
+                                    if (noteFormErrors.about) {
+                                        setNoteFormErrors((prev) => ({ ...prev, about: undefined }));
+                                    }
+                                }}
                             />
                             {noteFormErrors.text && (
                                 <p className="mt-1 text-sm text-red-500">{noteFormErrors.text}</p>

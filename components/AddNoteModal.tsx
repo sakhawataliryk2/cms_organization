@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
 import StyledReactSelect, { type StyledSelectOption } from '@/components/StyledReactSelect';
+import NoteMentionTextarea from '@/components/NoteMentionTextarea';
+import { userNotifyValue, type NoteMentionRecord, type NoteMentionUser } from '@/lib/noteMentions';
 import { getUser } from '@/lib/auth';
 
 interface AddNoteModalProps {
@@ -919,23 +921,45 @@ export default function AddNoteModal({
                                     <span className="text-red-500">*</span>
                                 )}
                             </label>
-                            <textarea
-                                ref={noteTextRef}
+                            <NoteMentionTextarea
+                                textareaRef={noteTextRef}
                                 value={noteForm.text}
-                                autoFocus
-                                onChange={(e) => {
-                                    setNoteForm((prev) => ({ ...prev, text: e.target.value }));
-                                    // Clear error when user starts typing
+                                users={users as NoteMentionUser[]}
+                                usersLoading={isLoadingUsers}
+                                hasError={Boolean(noteFormErrors.text)}
+                                onChange={(text) => {
+                                    setNoteForm((prev) => ({ ...prev, text }));
                                     if (noteFormErrors.text) {
                                         setNoteFormErrors((prev) => ({ ...prev, text: undefined }));
                                     }
                                 }}
-                                placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                                className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.text
-                                    ? "border-red-500 focus:ring-red-500"
-                                    : "border-gray-300 focus:ring-blue-500"
-                                    }`}
-                                rows={6}
+                                onSelectUser={(user) => {
+                                    const value = userNotifyValue(user);
+                                    if (!value) return;
+                                    setNoteForm((prev) =>
+                                        prev.emailNotification.includes(value)
+                                            ? prev
+                                            : { ...prev, emailNotification: [...prev.emailNotification, value] },
+                                    );
+                                }}
+                                onSelectRecord={(record: NoteMentionRecord) => {
+                                    setNoteForm((prev) => {
+                                        const exists = prev.aboutReferences.some(
+                                            (ref) =>
+                                                String(ref.id) === String(record.id) && ref.type === record.type,
+                                        );
+                                        if (exists) return prev;
+                                        const aboutReferences = [...prev.aboutReferences, record];
+                                        return {
+                                            ...prev,
+                                            aboutReferences,
+                                            about: aboutReferences.map((ref) => ref.display).join(", "),
+                                        };
+                                    });
+                                    if (noteFormErrors.about) {
+                                        setNoteFormErrors((prev) => ({ ...prev, about: undefined }));
+                                    }
+                                }}
                             />
                             {noteFormErrors.text && (
                                 <p className="mt-1 text-sm text-red-500">{noteFormErrors.text}</p>
