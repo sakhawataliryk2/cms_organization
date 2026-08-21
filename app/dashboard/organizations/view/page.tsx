@@ -152,6 +152,7 @@ const REQUIRED_HM_CONTACT_FIELD_NAMES = [
   "Field_69",
   "Field_70",
 ] as const;
+const HM_LAST_NAME_FIELD_NAME = "Field_2";
 const REQUIRED_JOB_FIELD_NAMES = [
   "Field_1",
   "Field_2",
@@ -668,8 +669,12 @@ export default function OrganizationView() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const labelFieldNames = [
+        ...REQUIRED_HM_CONTACT_FIELD_NAMES,
+        HM_LAST_NAME_FIELD_NAME,
+      ];
       const labelEntries = await Promise.all(
-        REQUIRED_HM_CONTACT_FIELD_NAMES.map(async (fieldName) => {
+        labelFieldNames.map(async (fieldName) => {
           const label = await getCustomFieldLabel(HIRING_MANAGER_CUSTOM_FIELD_ENTITY, fieldName);
           return [fieldName, label || fieldName] as const;
         })
@@ -2446,6 +2451,20 @@ export default function OrganizationView() {
       case "status":
         return hm.status || "Active";
       default:
+        if (key === "Field_1") {
+          const firstRaw = getCustomFieldValue("Field_1");
+          const lastRaw = getCustomFieldValue(HM_LAST_NAME_FIELD_NAME);
+          const first =
+            firstRaw !== "—"
+              ? String(firstRaw).trim()
+              : String(hm.first_name || "").trim();
+          const last =
+            lastRaw !== "—"
+              ? String(lastRaw).trim()
+              : String(hm.last_name || "").trim();
+          if (first && last) return `${first}, ${last}`;
+          return first || last || "—";
+        }
         if (REQUIRED_HM_CONTACT_FIELD_NAMES.includes(key as typeof REQUIRED_HM_CONTACT_FIELD_NAMES[number])) {
           return getCustomFieldValue(key);
         }
