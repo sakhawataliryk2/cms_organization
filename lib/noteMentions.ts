@@ -117,11 +117,11 @@ export function filterMentionModules(query: string): NoteMentionModule[] {
 }
 
 export function mentionPillClass(_kind?: string): string {
-  return "bg-sky-50 text-blue-700 border-sky-200";
+  return "bg-blue-100 text-blue-800";
 }
 
 export const MENTION_PILL_BASE_CLASS =
-  "mention-pill inline-flex items-baseline rounded border px-1.5 py-0 mx-px text-[13px] font-medium leading-5 align-baseline select-none";
+  "mention-pill inline-flex items-center rounded-md px-2 py-0.5 mx-0.5 text-sm leading-5 align-baseline select-none";
 
 export function formatUserMentionToken(user: NoteMentionUser): string {
   const label = userMentionLabel(user).replace(/[\]|]/g, "");
@@ -143,7 +143,7 @@ export function mentionPillHtml(
   meta: { type?: string; id?: string; email?: string; token: string },
 ): string {
   const color = mentionPillClass(kind === "user" ? "user" : meta.type || "");
-  const prefix = kind === "user" ? "@" : "#";
+  const prefix = kind === "user" ? "@" : "";
   const typeAttr = meta.type ? ` data-type="${escapeHtml(meta.type)}"` : "";
   const idAttr = meta.id ? ` data-id="${escapeHtml(meta.id)}"` : "";
   const emailAttr = meta.email ? ` data-email="${escapeHtml(meta.email)}"` : "";
@@ -340,8 +340,16 @@ export function recordMentionLabel(record: NoteMentionRecord): string {
   return stripped || display || String(record.type || "Record");
 }
 
+export function recordMentionChipLabel(record: NoteMentionRecord): string {
+  const display = String(record.display || "").trim();
+  if (display) return display;
+  const prefix = String(record.value || "").trim();
+  const name = recordMentionLabel(record);
+  return [prefix, name].filter(Boolean).join(" ");
+}
+
 export function formatRecordMentionToken(record: NoteMentionRecord): string {
-  const label = recordMentionLabel(record).replace(/[\]|]/g, "");
+  const label = recordMentionChipLabel(record).replace(/[\]|]/g, "");
   const type = String(record.type || "Record").replace(/[\[\]:]/g, "");
   return `#[[${type}:${record.id}|${label}]]`;
 }
@@ -418,9 +426,11 @@ export function parseNoteTextParts(
   while ((match = structured.exec(raw)) !== null) {
     const type = match[1].trim();
     const id = match[2].trim();
-    const label = match[3].trim();
+    const tokenLabel = match[3].trim();
     const href = noteRecordHref(type, id);
-    if (!href || !label) continue;
+    if (!href || !tokenLabel) continue;
+    const matching = refs.find((ref) => String(ref.id) === id);
+    const label = String(matching?.display || tokenLabel).trim() || tokenLabel;
     spans.push({
       start: match.index,
       end: match.index + match[0].length,
@@ -466,7 +476,7 @@ export function parseNoteTextParts(
           end,
           part: {
             kind: "record",
-            label: recordMentionLabel(ref),
+            label: recordMentionChipLabel(ref),
             href,
             type: ref.type,
             id: String(ref.id),
