@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { FiPhone } from "react-icons/fi";
+import { toast } from "sonner";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import { shouldShowClickToCallButton } from "@/lib/clickToCallPhoneField";
 import {
   getLookupRegistryEntry,
   normalizeLookupType,
@@ -54,6 +57,73 @@ function bareFieldKey(key: string): string {
 
 function stableFieldNameFromDef(f: Record<string, unknown>): string {
   return String(f.field_name ?? f.field_key ?? f.api_name ?? f.id ?? "");
+}
+
+function toZoomE164(rawNumber: string): string | null {
+  const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+  if (!digitsOnly) return null;
+  if (digitsOnly.length === 10) return `+1${digitsOnly}`;
+  if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) return `+${digitsOnly}`;
+  return digitsOnly;
+}
+
+function clickToCallEndpoint(lookupType: string): { url: string; idKey: string } | null {
+  const n = normalizeLookupType(lookupType);
+  if (n === "organizations" || n === "organization") {
+    return { url: "/api/organizations/calls/start", idKey: "organizationId" };
+  }
+  if (n === "hiring-managers" || n === "hiringmanagers" || n === "hiring-manager") {
+    return { url: "/api/hiring-managers/calls/start", idKey: "hiringManagerId" };
+  }
+  if (n === "job-seekers" || n === "jobseekers" || n === "job-seeker") {
+    return { url: "/api/calls/start", idKey: "jobSeekerId" };
+  }
+  return null;
+}
+
+async function startLookupClickToCall(
+  lookupType: string,
+  recordId: string | number,
+  phoneNumber: string,
+  fieldName?: string,
+) {
+  const endpoint = clickToCallEndpoint(lookupType);
+  if (!endpoint) {
+    toast.error("Click-to-call is not available for this record type");
+    return;
+  }
+  const normalized = toZoomE164(phoneNumber);
+  if (!normalized) {
+    toast.error("Phone number format is invalid for Zoom Phone");
+    return;
+  }
+
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        [endpoint.idKey]: recordId,
+        phoneNumber: normalized,
+        fieldName: fieldName || null,
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      toast.error(data?.message || "Failed to start Zoom call");
+      return;
+    }
+    const dialUrl = data?.dialUrl;
+    if (dialUrl && typeof window !== "undefined") {
+      window.location.href = dialUrl;
+      toast.success("Opening Zoom Phone...");
+      return;
+    }
+    toast.error("No dial URL received. Please try again.");
+  } catch (error) {
+    console.error("Error starting Zoom Phone call:", error);
+    toast.error("Unable to start Zoom call. Please try again.");
+  }
 }
 
 export interface LookupEntityDetailsGridProps {
@@ -235,7 +305,9 @@ export default function LookupEntityDetailsGrid({
       {keys.map((rowKey) => {
         const fieldKey = bareFieldKey(rowKey);
         const cat = catalogByKey.get(rowKey) ?? catalogByKey.get(fieldKey);
-        const label = cat?.label ?? fieldKey;
+        const label = String(
+          def?.field_label || def?.fieldLabel || cat?.label || fieldKey,
+        );
         const def = visibleFieldDefs.find((f: any) => {
           const stable = stableFieldNameFromDef(f);
           return stable === fieldKey || `custom:${stable}` === rowKey;
@@ -250,6 +322,12 @@ export default function LookupEntityDetailsGrid({
           multiSelectLookupType:
             def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
         };
+        const showCallButton = shouldShowClickToCallButton(value, {
+          label,
+          key: fieldKey,
+          fieldName: fieldInfo.name,
+          fieldType: fieldInfo.fieldType,
+        });
         return (
           <div
             key={rowKey}
@@ -258,17 +336,37 @@ export default function LookupEntityDetailsGrid({
             <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
               {label}:
             </div>
-            <div className="flex-1 p-2 text-sm">
-              <FieldValueRenderer
-                value={value}
-                fieldInfo={fieldInfo}
-                allFields={visibleFieldDefs as any}
-                valuesRecord={record as any}
-                emptyPlaceholder={emptyPlaceholder}
-                clickable
-                entityType={lookupType}
-                recordId={recordId as string | number | undefined}
-              />
+            <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <FieldValueRenderer
+                  value={value}
+                  fieldInfo={fieldInfo}
+                  allFields={visibleFieldDefs as any}
+                  valuesRecord={record as any}
+                  emptyPlaceholder={emptyPlaceholder}
+                  clickable
+                  entityType={lookupType}
+                  recordId={recordId as string | number | undefined}
+                />
+              </div>
+              {showCallButton && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    startLookupClickToCall(
+                      lookupType,
+                      recordId as string | number,
+                      value,
+                      String(fieldInfo.name || ""),
+                    )
+                  }
+                  className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50 shrink-0"
+                  title="Call via Zoom Phone"
+                >
+                  <FiPhone className="mr-1 h-3 w-3" />
+                  Call
+                </button>
+              )}
             </div>
           </div>
         );

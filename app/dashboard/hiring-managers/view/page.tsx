@@ -31,6 +31,7 @@ import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import { getCustomFieldLabel } from '@/lib/getCustomFieldLabel';
 import LookupEntityDetailsGrid from '@/components/LookupEntityDetailsGrid';
+import { shouldShowClickToCallButton } from "@/lib/clickToCallPhoneField";
 import { HM_ORGANIZATION_ID_FIELD_NAME } from '@/lib/entitySummaryFieldMaps';
 import RequestActionModal from '@/components/RequestActionModal';
 // Drag and drop imports
@@ -207,24 +208,6 @@ interface NoteFormState {
   scheduleNextAction: string;
   emailNotification: string[];
 }
-
-// Zoom Phone integration — Field_11 is the primary phone field for Hiring Managers
-const HM_PRIMARY_PHONE_FIELD_IDENTIFIER = "field_11";
-
-const normalizeHMFieldIdentifier = (identifier: unknown) => {
-  if (identifier === undefined || identifier === null) return "";
-  return String(identifier).trim().toLowerCase().replace(/^custom:/, "");
-};
-
-const isHMPrimaryPhoneField = (key: string, field?: any) => {
-  const identifiers = [key, field?.field_name, field?.field_key, field?.api_name]
-    .map(normalizeHMFieldIdentifier)
-    .filter(Boolean);
-  return identifiers.includes(HM_PRIMARY_PHONE_FIELD_IDENTIFIER);
-};
-
-const shouldShowHMPhoneCallButton = (key: string, field: any, value: string) =>
-  isHMPrimaryPhoneField(key, field) && value && value !== "-";
 
 export default function HiringManagerView() {
   const router = useRouter();
@@ -854,7 +837,12 @@ out.sort((a, b) => {
         ),
       };
 
-      const shouldShowCallButton = shouldShowHMPhoneCallButton(row.key, def, value);
+      const shouldShowCallButton = shouldShowClickToCallButton(value, {
+        label: row.label,
+        key: row.key,
+        fieldName: def?.field_name ?? def?.field_key ?? def?.api_name,
+        fieldType: def?.field_type ?? def?.fieldType,
+      });
 
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
