@@ -116,31 +116,8 @@ export function filterMentionModules(query: string): NoteMentionModule[] {
   });
 }
 
-export function mentionPillClass(kind: string): string {
-  const key = String(kind || "")
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "");
-  const map: Record<string, string> = {
-    user: "bg-violet-50 text-violet-800 border-violet-200",
-    internal: "bg-violet-50 text-violet-800 border-violet-200",
-    organization: "bg-sky-50 text-sky-800 border-sky-200",
-    organizations: "bg-sky-50 text-sky-800 border-sky-200",
-    job: "bg-amber-50 text-amber-900 border-amber-200",
-    jobs: "bg-amber-50 text-amber-900 border-amber-200",
-    jobseeker: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    jobseekers: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    candidate: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    lead: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
-    leads: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
-    hiringmanager: "bg-orange-50 text-orange-800 border-orange-200",
-    hiringmanagers: "bg-orange-50 text-orange-800 border-orange-200",
-    contact: "bg-orange-50 text-orange-800 border-orange-200",
-    task: "bg-slate-50 text-slate-700 border-slate-200",
-    tasks: "bg-slate-50 text-slate-700 border-slate-200",
-    placement: "bg-teal-50 text-teal-800 border-teal-200",
-    placements: "bg-teal-50 text-teal-800 border-teal-200",
-  };
-  return map[key] || "bg-gray-50 text-gray-700 border-gray-200";
+export function mentionPillClass(_kind?: string): string {
+  return "bg-sky-50 text-blue-700 border-sky-200";
 }
 
 export const MENTION_PILL_BASE_CLASS =
