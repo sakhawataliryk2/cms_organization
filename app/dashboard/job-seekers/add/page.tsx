@@ -217,23 +217,66 @@ function fieldOptionsList(options: unknown): string[] {
   return [];
 }
 
-function formatResumeSections(parsed: ParsedResume): string {
+function formatFullResume(parsed: ParsedResume): string {
   const parts: string[] = [];
-  if (parsed.education?.length) {
-    parts.push("EDUCATION\n" + parsed.education.map((e) => {
-      const line = [e.degree, e.institution, e.year].filter(Boolean).join(" – ");
-      return line || "";
-    }).filter(Boolean).join("\n"));
+  const name =
+    parsed.full_name ||
+    [parsed.first_name, parsed.last_name].filter(Boolean).join(" ").trim();
+  if (name) parts.push(name);
+
+  const contact = [
+    parsed.email,
+    parsed.phone,
+    parsed.mobile_phone,
+    parsed.linkedin,
+    parsed.portfolio,
+  ].filter(Boolean);
+  if (contact.length) parts.push(contact.join("  |  "));
+
+  const location =
+    parsed.location ||
+    [parsed.address, parsed.address_2, parsed.city, parsed.state, parsed.zip]
+      .filter(Boolean)
+      .join(", ");
+  if (location) parts.push(location);
+
+  const headline = [parsed.current_job_title, parsed.current_organization]
+    .filter(Boolean)
+    .join(" at ");
+  if (headline) parts.push(headline);
+  if (parsed.total_experience_years) {
+    parts.push(`Experience: ${parsed.total_experience_years} years`);
   }
+
+  if (parsed.skills?.length) {
+    parts.push("SKILLS\n" + parsed.skills.filter(Boolean).join(", "));
+  }
+
   if (parsed.work_experience?.length) {
-    parts.push("EXPERIENCE\n" + parsed.work_experience.map((w) => {
-      const header = [w.job_title, w.company].filter(Boolean).join(" at ");
-      const dates = [w.start_date, w.end_date].filter(Boolean).join(" – ");
-      const lines = [header, dates, w.description].filter(Boolean);
-      return lines.join("\n");
-    }).filter(Boolean).join("\n\n"));
+    parts.push(
+      "EXPERIENCE\n" +
+        parsed.work_experience
+          .map((w) => {
+            const header = [w.job_title, w.company].filter(Boolean).join(" at ");
+            const dates = [w.start_date, w.end_date].filter(Boolean).join(" – ");
+            return [header, dates, w.description].filter(Boolean).join("\n");
+          })
+          .filter(Boolean)
+          .join("\n\n")
+    );
   }
-  return parts.join("\n\n");
+
+  if (parsed.education?.length) {
+    parts.push(
+      "EDUCATION\n" +
+        parsed.education
+          .map((e) => [e.degree, e.institution, e.year].filter(Boolean).join(" – "))
+          .filter(Boolean)
+          .join("\n")
+    );
+  }
+
+  return parts.filter(Boolean).join("\n\n").trim();
 }
 
 function applyParsedResumeToForm(
@@ -246,7 +289,7 @@ function applyParsedResumeToForm(
     options?: string[] | string | Record<string, unknown> | null;
   }>
 ): void {
-  const resumeText = formatResumeSections(parsed);
+  const resumeText = formatFullResume(parsed);
   const skillsStr = Array.isArray(parsed.skills) ? parsed.skills.join(", ") : "";
 
   // Value by label: each label that should get a value from parsed resume
