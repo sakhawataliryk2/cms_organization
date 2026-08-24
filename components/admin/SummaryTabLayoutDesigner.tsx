@@ -3,6 +3,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+  closestCorners,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { TbGripVertical } from "react-icons/tb";
+import {
   FiArrowDown,
   FiArrowLeft,
   FiArrowRight,
@@ -10,6 +31,7 @@ import {
   FiRefreshCw,
 } from "react-icons/fi";
 import {
+  applySummaryPanelDrag,
   canMoveSummaryPanel,
   catalogPanelIds,
   getSummaryCatalog,
@@ -18,11 +40,129 @@ import {
   moveSummaryPanel,
   type SummaryLayout,
   type SummaryMoveDirection,
+  type SummaryPanelDef,
 } from "@/lib/summaryTabLayout";
 
 type Props = {
   section: string;
 };
+
+function DesignerDroppableColumn({
+  id,
+  items,
+  children,
+}: {
+  id: "left" | "right";
+  items: string[];
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div
+        ref={setNodeRef}
+        className={`flex-1 min-h-[280px] rounded-lg border border-dashed p-3 space-y-3 transition-colors ${
+          isOver ? "bg-blue-50 border-blue-400" : "bg-gray-100 border-gray-300"
+        }`}
+      >
+        {children}
+      </div>
+    </SortableContext>
+  );
+}
+
+function DesignerSortablePanel({
+  panel,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  panel: SummaryPanelDef;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: panel.id, disabled });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    minHeight: panel.height,
+    opacity: isDragging ? 0.35 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={`relative group w-full text-left rounded-md border bg-white shadow-sm transition-all cursor-pointer ${
+        selected
+          ? "border-blue-500 ring-2 ring-blue-400 ring-offset-1"
+          : "border-gray-200 hover:border-gray-400"
+      } ${isDragging ? "z-20" : ""}`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        disabled={disabled}
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
+        title="Drag to reorder"
+        aria-label={`Drag ${panel.title}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+      </button>
+      <div className="px-3 py-2 pl-10 border-b border-gray-100 flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-800">{panel.title}</span>
+        {selected && (
+          <span className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">
+            Selected
+          </span>
+        )}
+      </div>
+      <div className="px-3 py-4 text-xs text-gray-400">Summary panel preview</div>
+      {isDragging && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center">
+          <span className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving panel...
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesignerPanelPreview({
+  panel,
+  selected,
+}: {
+  panel: SummaryPanelDef;
+  selected: boolean;
+}) {
+  return (
+    <div
+      className={`w-full rounded-md border bg-white shadow-lg cursor-grabbing ${
+        selected ? "border-blue-500" : "border-gray-200"
+      }`}
+      style={{ minHeight: panel.height }}
+    >
+      <div className="px-3 py-2 pl-10 border-b border-gray-100 flex items-center gap-2">
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+        <span className="text-sm font-semibold text-gray-800">{panel.title}</span>
+      </div>
+      <div className="px-3 py-4 text-xs text-gray-400">Summary panel preview</div>
+    </div>
+  );
+}
 
 export default function SummaryTabLayoutDesigner({ section }: Props) {
   const catalog = useMemo(() => getSummaryCatalog(section), [section]);
@@ -37,6 +177,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(
     catalog.panels[0]?.id ?? null
   );
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -44,6 +185,12 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
 
   const hasUnsavedChanges = !layoutsEqual(draftLayout, savedLayout);
+  const dragDisabled = isSaving || isApplying;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const loadLayout = useCallback(async () => {
     setIsLoading(true);
@@ -144,10 +291,72 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
   };
 
   const handleMove = (direction: SummaryMoveDirection) => {
-    if (!selectedPanelId) return;
+    if (!selectedPanelId || dragDisabled) return;
     if (!canMoveSummaryPanel(draftLayout, selectedPanelId, direction)) return;
     setDraftLayout(moveSummaryPanel(draftLayout, selectedPanelId, direction));
   };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    setActiveId(id);
+    setSelectedPanelId(id);
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || dragDisabled) return;
+    const next = applySummaryPanelDrag(
+      draftLayout,
+      String(active.id),
+      String(over.id)
+    );
+    if (!layoutsEqual(next, draftLayout)) {
+      setDraftLayout(next);
+    }
+    setSelectedPanelId(String(active.id));
+  };
+
+  const findPanel = (id: string | null) =>
+    catalog.panels.find((panel) => panel.id === id) || null;
+
+  const renderColumn = (column: "left" | "right", title: string) => (
+    <div className="flex flex-col gap-3 min-h-[280px]">
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 px-1">
+        {title}
+      </div>
+      <DesignerDroppableColumn id={column} items={draftLayout[column]}>
+        {draftLayout[column].length === 0 ? (
+          <div className="h-24 flex items-center justify-center text-sm text-gray-400 pointer-events-none">
+            Drop a panel here
+          </div>
+        ) : (
+          draftLayout[column].map((panelId) => {
+            const panel = findPanel(panelId);
+            if (!panel) return null;
+            return (
+              <DesignerSortablePanel
+                key={panel.id}
+                panel={panel}
+                selected={selectedPanelId === panel.id}
+                disabled={dragDisabled}
+                onSelect={() => setSelectedPanelId(panel.id)}
+              />
+            );
+          })
+        )}
+      </DesignerDroppableColumn>
+    </div>
+  );
+
+  const moveDisabled = (direction: SummaryMoveDirection) =>
+    !selectedPanelId ||
+    dragDisabled ||
+    !canMoveSummaryPanel(draftLayout, selectedPanelId, direction);
 
   if (!catalog.supported) {
     return (
@@ -194,59 +403,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
     );
   }
 
-  const renderColumn = (column: "left" | "right", title: string) => (
-    <div className="flex flex-col gap-3 min-h-[280px]">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 px-1">
-        {title}
-      </div>
-      <div className="flex-1 bg-gray-100 border border-dashed border-gray-300 rounded-lg p-3 space-y-3">
-        {draftLayout[column].length === 0 ? (
-          <div className="h-24 flex items-center justify-center text-sm text-gray-400">
-            No panels in this column
-          </div>
-        ) : (
-          draftLayout[column].map((panelId) => {
-            const panel = catalog.panels.find((item) => item.id === panelId);
-            if (!panel) return null;
-            const selected = selectedPanelId === panel.id;
-            return (
-              <button
-                key={panel.id}
-                type="button"
-                onClick={() => setSelectedPanelId(panel.id)}
-                className={`w-full text-left rounded-md border bg-white shadow-sm transition-all ${
-                  selected
-                    ? "border-blue-500 ring-2 ring-blue-400 ring-offset-1"
-                    : "border-gray-200 hover:border-gray-400"
-                }`}
-                style={{ minHeight: panel.height }}
-              >
-                <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-800">
-                    {panel.title}
-                  </span>
-                  {selected && (
-                    <span className="text-[10px] uppercase tracking-wide text-blue-600 font-semibold">
-                      Selected
-                    </span>
-                  )}
-                </div>
-                <div className="px-3 py-4 text-xs text-gray-400">
-                  Summary panel preview
-                </div>
-              </button>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-
-  const moveDisabled = (direction: SummaryMoveDirection) =>
-    !selectedPanelId ||
-    isSaving ||
-    isApplying ||
-    !canMoveSummaryPanel(draftLayout, selectedPanelId, direction);
+  const activePanel = findPanel(activeId);
 
   return (
     <div className="p-4 space-y-4">
@@ -256,8 +413,8 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
             Summary Tab Layout
           </h2>
           <p className="text-sm text-gray-600">
-            Select a panel, then move it in the grid. This preview uses the same
-            two-column layout as the module Summary Tab.
+            Drag panels by the grip handle to rearrange the default Summary Tab.
+            Arrow buttons remain available for the selected panel.
             {hasUnsavedChanges && (
               <span className="ml-2 text-amber-700 font-medium">
                 Unsaved changes
@@ -277,7 +434,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
           <button
             type="button"
             onClick={() => setDraftLayout(savedLayout)}
-            disabled={!hasUnsavedChanges || isSaving || isApplying}
+            disabled={!hasUnsavedChanges || dragDisabled}
             className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Discard
@@ -286,9 +443,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
             type="button"
             onClick={() => setDraftLayout(catalog.systemDefault)}
             disabled={
-              layoutsEqual(draftLayout, catalog.systemDefault) ||
-              isSaving ||
-              isApplying
+              layoutsEqual(draftLayout, catalog.systemDefault) || dragDisabled
             }
             className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -297,7 +452,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
           <button
             type="button"
             onClick={() => void saveLayout(false)}
-            disabled={!hasUnsavedChanges || isSaving || isApplying}
+            disabled={!hasUnsavedChanges || dragDisabled}
             className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? "Saving..." : "Save layout"}
@@ -305,7 +460,7 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
           <button
             type="button"
             onClick={() => setShowApplyConfirm(true)}
-            disabled={isSaving || isApplying}
+            disabled={dragDisabled}
             className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isApplying ? "Applying..." : "Save & apply to users"}
@@ -337,10 +492,27 @@ export default function SummaryTabLayoutDesigner({ section }: Props) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {renderColumn("left", "Left column")}
-        {renderColumn("right", "Right column")}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        modifiers={[restrictToWindowEdges]}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {renderColumn("left", "Left column")}
+          {renderColumn("right", "Right column")}
+        </div>
+        <DragOverlay dropAnimation={null}>
+          {activePanel ? (
+            <DesignerPanelPreview
+              panel={activePanel}
+              selected={selectedPanelId === activePanel.id}
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {showApplyConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
