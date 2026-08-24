@@ -285,6 +285,53 @@ export function canMoveSummaryPanel(
   return false;
 }
 
+export function applySummaryPanelDrag(
+  layout: SummaryLayout,
+  activeId: string,
+  overId: string
+): SummaryLayout {
+  const findContainer = (id: string): "left" | "right" | null => {
+    if (id === "left" || id === "right") return id;
+    if (layout.left.includes(id)) return "left";
+    if (layout.right.includes(id)) return "right";
+    return null;
+  };
+
+  const source = findContainer(activeId);
+  const target = findContainer(overId);
+  if (!source || !target) {
+    return { left: [...layout.left], right: [...layout.right] };
+  }
+
+  if (source === target) {
+    if (overId === source) {
+      return { left: [...layout.left], right: [...layout.right] };
+    }
+    const items = [...layout[source]];
+    const oldIndex = items.indexOf(activeId);
+    const newIndex = items.indexOf(overId);
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
+      return { left: [...layout.left], right: [...layout.right] };
+    }
+    const [moved] = items.splice(oldIndex, 1);
+    items.splice(newIndex, 0, moved);
+    return { ...layout, [source]: items };
+  }
+
+  const sourceItems = layout[source].filter((id) => id !== activeId);
+  const targetItems = layout[target].filter((id) => id !== activeId);
+  const insertAt =
+    overId === target ? targetItems.length : Math.max(0, targetItems.indexOf(overId));
+  const safeIndex = insertAt < 0 ? targetItems.length : insertAt;
+  targetItems.splice(safeIndex, 0, activeId);
+
+  return {
+    ...layout,
+    [source]: sourceItems,
+    [target]: targetItems,
+  };
+}
+
 export function moveSummaryPanel(
   layout: SummaryLayout,
   panelId: string,
