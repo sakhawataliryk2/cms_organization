@@ -81,6 +81,8 @@ import AddTearsheetModal from '@/components/AddTearsheetModal';
 import SortableFieldsEditModal from '@/components/SortableFieldsEditModal';
 import AddNoteModal from '@/components/AddNoteModal';
 import { getCustomFieldLabels } from '@/lib/getCustomFieldLabel';
+import LookupEntityDetailsGrid from '@/components/LookupEntityDetailsGrid';
+import { resolveJobLinkedOrganizationId } from '@/lib/jobOrganizationCustomField';
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -340,9 +342,12 @@ const DEFAULT_SUMMARY_LAYOUT = {
 
 // Resolve field-management entity by job type (contract / direct-hire / executive-search)
 function getJobFieldManagementEntityType(job: any): "jobs" | "jobs-direct-hire" | "jobs-executive-search" {
-  const t = String(job?.jobType ?? "").toLowerCase().replace(/\s+/g, "-");
-  if (t === "direct-hire") return "jobs-direct-hire";
-  if (t === "executive-search") return "jobs-executive-search";
+  const t = String(job?.jobType ?? job?.job_type ?? job?.employmentType ?? "")
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/\s+/g, "-");
+  if (t === "direct-hire" || t.includes("direct-hire")) return "jobs-direct-hire";
+  if (t === "executive-search" || t.includes("executive-search")) return "jobs-executive-search";
   return "jobs";
 }
 
@@ -1196,6 +1201,8 @@ out.sort((a, b) => {
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
+  const [organizationAvailableFields, setOrganizationAvailableFields] = useState<any[]>([]);
+  const [linkedOrganizationId, setLinkedOrganizationId] = useState<string | null>(null);
   const [isLoadingHiringManagerFields, setIsLoadingHiringManagerFields] = useState(false);
   const [jobHiringManager, setJobHiringManager] = useState<any>(null);
   const [isLoadingJobHiringManager, setIsLoadingJobHiringManager] = useState(false);
@@ -1468,100 +1475,17 @@ out.sort((a, b) => {
 
   const renderDetailsPanel = () => {
     if (!job) return null;
-    const customFieldDefs = (availableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
-    const renderDetailsRow = (key: string) => {
-      const label = detailsFieldCatalog.find((f) => f.key === key)?.label || key;
-      const LabelCell = () => (
-        <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-      );
-      switch (key) {
-        // case "status":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">
-        //         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{job.status}</span>
-        //       </div>
-        //     </div>
-        //   );
-        // case "priority":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.priority ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "employmentType":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.employmentType ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "startDate":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.startDate ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "worksite":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.worksite ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "dateAdded":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.dateAdded ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "jobBoardStatus":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.jobBoardStatus ?? "-"}</div>
-        //     </div>
-        //   );
-        // case "owner":
-        //   return (
-        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-        //       <LabelCell />
-        //       <div className="flex-1 p-2">{job.owner ?? "-"}</div>
-        //     </div>
-        //   );
-        default: {
-          const rawKey = stripCatalogKeyPrefix(key);
-          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === rawKey);
-          const fieldLabel = field?.field_label || field?.field_name || rawKey;
-          const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? job.customFields?.[rawKey] ?? "-";
-          const fieldInfo = { key, label: fieldLabel, name: field?.field_name || field?.fieldName || rawKey, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">
-                <FieldValueRenderer
-                  value={fieldValue}
-                  fieldInfo={fieldInfo as any}
-                  allFields={customFieldDefs as any}
-                  valuesRecord={job.customFields as any}
-                  entityType="jobs"
-                  recordId={job.id}
-                />
-              </div>
-            </div>
-          );
-        }
-      }
-    };
     return (
-      <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
-        <div className="space-y-0 border border-gray-200 rounded">
-          {Array.from(new Set(visibleFields.details || [])).map((key) => renderDetailsRow(key))}
-        </div>
+      <PanelWithHeader
+        title="Organization / Company Details"
+        onEdit={() => handleEditPanel("details")}
+      >
+        <LookupEntityDetailsGrid
+          lookupType="organizations"
+          recordId={linkedOrganizationId}
+          visibleKeys={Array.from(new Set(visibleFields.details || []))}
+          emptyPlaceholder="-"
+        />
       </PanelWithHeader>
     );
   };
@@ -1813,23 +1737,29 @@ out.sort((a, b) => {
   }, [panelFieldsConfig, jobDetailsPanelPath, jobDetailsFieldCatalog, availableFields]);
 
   const detailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
+    const fromApi = (organizationAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     return [...fromApi];
-  }, [availableFields]);
+  }, [organizationAvailableFields]);
 
   const detailsVisible = useMemo(() => {
     const catalogKeys = detailsFieldCatalog.map((f) => f.key);
-    const saved = getPanelFieldPath(panelFieldsConfig, detailsPanelPath);
-    const effective = getEffectiveVisibleKeys(saved, availableFields, catalogKeys, {
-      keyForField: panelCatalogKeyFromField,
-    });
+    const saved = getPanelFieldPath(panelFieldsConfig, detailsPanelPath) ?? [];
+    const savedInCatalog = saved.filter((k) => catalogKeys.includes(k));
+    const effective = getEffectiveVisibleKeys(
+      savedInCatalog.length > 0 ? savedInCatalog : [],
+      organizationAvailableFields,
+      catalogKeys,
+      {
+        keyForField: panelCatalogKeyFromField,
+      }
+    );
     return remapLegacyCustomKeys(effective, detailsFieldCatalog);
-  }, [panelFieldsConfig, detailsPanelPath, detailsFieldCatalog, availableFields]);
+  }, [panelFieldsConfig, detailsPanelPath, detailsFieldCatalog, organizationAvailableFields]);
 
   const visibleFields = useMemo(
     (): Record<string, string[]> => ({
@@ -1947,7 +1877,7 @@ out.sort((a, b) => {
       );
     }
     return null;
-  }, [job, jobId, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields, router]); // Dependencies for inner renderers
+  }, [job, jobId, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields, linkedOrganizationId, organizationAvailableFields, router]);
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -2013,6 +1943,25 @@ out.sort((a, b) => {
   }, [jobId]);
 
   // Fetch hiring manager fields (for Hiring Manager panel - same as Hiring Manager modify page)
+  const fetchOrganizationAvailableFields = async () => {
+    try {
+      const response = await fetch("/api/admin/field-management/organizations");
+      if (response.ok) {
+        const data = await response.json();
+        const fields =
+          data.customFields ||
+          data.fields ||
+          data.data?.customFields ||
+          data.data?.fields ||
+          data.organizationFields ||
+          [];
+        setOrganizationAvailableFields(Array.isArray(fields) ? fields : []);
+      }
+    } catch (err) {
+      console.error("Error fetching organization available fields:", err);
+    }
+  };
+
   const fetchHiringManagerFields = async () => {
     setIsLoadingHiringManagerFields(true);
     try {
@@ -2101,11 +2050,27 @@ out.sort((a, b) => {
     if (job && jobId) {
       fetchAvailableFields();
       fetchHiringManagerFields();
+      fetchOrganizationAvailableFields();
       // Update note form about field when job is loaded
       setNoteForm((prev) => ({ ...prev, about: `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}` }));
       fetchDocuments(jobId);
     }
   }, [job, jobId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!job) {
+      setLinkedOrganizationId(null);
+      return;
+    }
+    const entityType = getJobFieldManagementEntityType(job);
+    resolveJobLinkedOrganizationId(job, entityType).then((id) => {
+      if (!cancelled) setLinkedOrganizationId(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job]);
 
   // Fetch full hiring manager when job has hiring manager ID (from custom_fields or hiring_manager column)
   useEffect(() => {
@@ -5846,7 +5811,7 @@ out.sort((a, b) => {
         <SortableFieldsEditModal
           open={true}
           onClose={handleCloseEditModal}
-          title="Edit Fields - Details"
+          title="Edit Fields - Organization / Company Details"
           description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records."
           order={modalDetailsOrder}
           visible={modalDetailsVisible}
