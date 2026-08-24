@@ -22,6 +22,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
@@ -905,10 +906,10 @@ export default function JobSeekerView() {
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
 
-  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
-    entityType: VIEW_ENTITY_TYPES.jobSeekersDetail,
-    key: "summary_layout",
-    defaultValue: DEFAULT_SUMMARY_LAYOUT,
+  const { value: summaryLayout, setValue: setSummaryLayout } = useResolvedSummaryLayout({
+    viewEntityType: VIEW_ENTITY_TYPES.jobSeekersDetail,
+    fieldSection: "job-seekers",
+    systemDefault: DEFAULT_SUMMARY_LAYOUT,
   });
 
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } = useUserViewConfig({

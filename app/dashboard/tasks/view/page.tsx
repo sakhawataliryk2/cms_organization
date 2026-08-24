@@ -15,6 +15,7 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import NoteRichText from '@/components/NoteRichText';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -318,10 +319,10 @@ export default function TaskView() {
         defaultValue: {},
     });
 
-    const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
-        entityType: VIEW_ENTITY_TYPES.tasksDetail,
-        key: "summary_layout",
-        defaultValue: TASK_DEFAULT_SUMMARY_LAYOUT,
+    const { value: summaryLayout, setValue: setSummaryLayout } = useResolvedSummaryLayout({
+        viewEntityType: VIEW_ENTITY_TYPES.tasksDetail,
+        fieldSection: "tasks",
+        systemDefault: TASK_DEFAULT_SUMMARY_LAYOUT,
     });
 
     const columns = summaryLayout;

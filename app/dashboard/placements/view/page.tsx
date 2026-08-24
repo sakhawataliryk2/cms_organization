@@ -18,6 +18,7 @@ import { formatRecordId } from "@/lib/recordIdFormatter";
 import { formatNoteDateTime, getNoteDateTimeMs, isNoteWithinDateRange } from '@/lib/noteUtils';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -89,6 +90,15 @@ const PLACEMENT_HEADER_FIELD_LABELS: Record<string, string> = {
   dateCreated: "Date Created",
   createdBy: "Created By",
 };
+
+function getPlacementFieldManagementEntityType(
+  placement: any
+): "placements" | "placements-direct-hire" | "placements-executive-search" {
+  const t = String(placement?.placementType || placement?.placement_type || "").toLowerCase();
+  if (t.includes("direct")) return "placements-direct-hire";
+  if (t.includes("executive")) return "placements-executive-search";
+  return "placements";
+}
 
 const PLACEMENT_DEFAULT_SUMMARY_LAYOUT = {
   left: ["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails"],
@@ -511,10 +521,10 @@ export default function PlacementView() {
   }>(PLACEMENT_DEFAULT_SUMMARY_LAYOUT);
 
   const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
-    useUserViewConfig({
-      entityType: VIEW_ENTITY_TYPES.placementsDetail,
-      key: "summary_layout",
-      defaultValue: PLACEMENT_DEFAULT_SUMMARY_LAYOUT,
+    useResolvedSummaryLayout({
+      viewEntityType: VIEW_ENTITY_TYPES.placementsDetail,
+      fieldSection: getPlacementFieldManagementEntityType(placement),
+      systemDefault: PLACEMENT_DEFAULT_SUMMARY_LAYOUT,
     });
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
     useUserViewConfig({
