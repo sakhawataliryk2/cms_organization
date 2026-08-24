@@ -315,7 +315,9 @@ function applyParsedResumeToForm(
       }
     }
 
-    const stateField = customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME);
+    const stateField =
+      customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME) ||
+      customFields.find((f) => /^state$/i.test(String(f.field_label || "").trim()));
     if (stateField) {
       const options = fieldOptionsList(stateField.options);
       const locationBlob = [streetAddr, parsedCity, parsedState, parsedZip].filter(Boolean).join(", ");
