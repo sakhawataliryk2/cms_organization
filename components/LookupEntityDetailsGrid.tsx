@@ -305,13 +305,13 @@ export default function LookupEntityDetailsGrid({
       {keys.map((rowKey) => {
         const fieldKey = bareFieldKey(rowKey);
         const cat = catalogByKey.get(rowKey) ?? catalogByKey.get(fieldKey);
-        const label = String(
-          def?.field_label || def?.fieldLabel || cat?.label || fieldKey,
-        );
         const def = visibleFieldDefs.find((f: any) => {
           const stable = stableFieldNameFromDef(f);
           return stable === fieldKey || `custom:${stable}` === rowKey;
         });
+        const label = String(
+          def?.field_label || def?.fieldLabel || cat?.label || fieldKey,
+        );
         const value = resolver(record, fieldKey, def, label);
         const fieldInfo = {
           key: fieldKey,

@@ -77,15 +77,15 @@ function findMentionForDelete(sel: Selection, backward: boolean): HTMLElement | 
 
   if (!sel.isCollapsed) {
     const ancestor = range.commonAncestorContainer;
-    const host =
+    if (isMentionNode(ancestor)) return ancestor;
+    if (isMentionNode(range.startContainer)) return range.startContainer;
+    const host: HTMLElement | null =
       ancestor.nodeType === Node.ELEMENT_NODE
         ? (ancestor as HTMLElement)
         : ancestor.parentElement;
-    if (isMentionNode(host)) return host;
-    if (isMentionNode(range.startContainer)) return range.startContainer;
     if (!host) return null;
-    const mentions = Array.from(host.querySelectorAll("[data-mention]")).filter((node) =>
-      range.intersectsNode(node),
+    const mentions = Array.from(host.querySelectorAll("[data-mention]")).filter((el) =>
+      range.intersectsNode(el),
     );
     if (mentions.length !== 1) return null;
     const selectedText = range.toString().replace(/\s/g, "");

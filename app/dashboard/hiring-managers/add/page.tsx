@@ -133,7 +133,10 @@ export default function AddHiringManager() {
     setCustomFieldValues,
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
+    handleEmailBlur,
+    emailChecks,
     validateCustomFields,
+    validateContactEmailsBeforeSave,
     getCustomFieldsForSubmission,
     resetCustomFields,
   } = useCustomFields("hiring-managers", {
@@ -1046,14 +1049,16 @@ export default function AddHiringManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate form
-    // if (!validateForm()) {
-    //   return;
-    // }
-
     setIsSubmitting(true);
     setError(null);
     setEmailDupMatches([]);
+
+    const emailDeliverability = await validateContactEmailsBeforeSave();
+    if (!emailDeliverability.isValid) {
+      setError(emailDeliverability.message);
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       // Get custom fields for submission
@@ -1404,6 +1409,9 @@ export default function AddHiringManager() {
                             allFields={customFields}
                             values={customFieldValues}
                             onChange={handleCustomFieldChange}
+                            entityType="hiring-managers"
+                            emailCheck={emailChecks[field.field_name]}
+                            onEmailBlur={handleEmailBlur}
                             className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                             validationIndicator={
                               field.is_required
