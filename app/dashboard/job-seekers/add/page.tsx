@@ -192,10 +192,22 @@ const JOB_SEEKER_ORG_FIELD_NAME =
   ORGANIZATION_LOOKUP_FIELD_BY_ENTITY["job-seekers"]; // Field_5
 const JOB_SEEKER_STATE_FIELD_NAME = "Field_18";
 
+function optionToLabel(raw: unknown): string {
+  if (raw == null) return "";
+  if (typeof raw === "string") return raw.trim();
+  if (typeof raw === "number") return String(raw);
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const label = obj.label ?? obj.value ?? obj.name ?? obj.option;
+    return label != null ? String(label).trim() : "";
+  }
+  return String(raw).trim();
+}
+
 function fieldOptionsList(options: unknown): string[] {
   if (!options) return [];
   if (Array.isArray(options)) {
-    return options.map((o) => String(o).trim()).filter(Boolean);
+    return options.map(optionToLabel).filter(Boolean);
   }
   if (typeof options === "string") {
     const trimmed = options.trim();
@@ -210,8 +222,7 @@ function fieldOptionsList(options: unknown): string[] {
   }
   if (typeof options === "object") {
     return Object.values(options as Record<string, unknown>)
-      .filter((o) => typeof o === "string")
-      .map((o) => String(o).trim())
+      .map(optionToLabel)
       .filter(Boolean);
   }
   return [];
@@ -301,12 +312,31 @@ function applyParsedResumeToForm(
   LABELS_FOR_MOBILE.forEach((l) => (valueByLabel[l] = parsed.mobile_phone || ""));
   const addr = parsed.address || parsed.location || "";
   const city = parsed.city || "";
-  const state = parsed.state || "";
   const zip = parsed.zip || "";
+  const streetAddr = parsed.address || parsed.location || "";
+  const parsedCity = parsed.city || "";
+  const parsedZip = parsed.zip || "";
+  const parsedOrgId = parsed.custom_fields?.[JOB_SEEKER_ORG_FIELD_NAME] || "";
+
+  const stateField =
+    customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME) ||
+    customFields.find((f) => /^state$/i.test(String(f.field_label || "").trim()));
+  const stateOptions = fieldOptionsList(stateField?.options);
+  const locationBlob = [streetAddr, parsedCity, parsed.state, parsedZip]
+    .filter(Boolean)
+    .join(", ");
+  const matchedState = matchStateToOption(
+    parsed.custom_fields?.[stateField?.field_name || JOB_SEEKER_STATE_FIELD_NAME] ||
+      parsed.state,
+    stateOptions,
+    locationBlob
+  );
+  const parsedState = matchedState || parsed.state || "";
+
   LABELS_FOR_ADDRESS.forEach((l) => (valueByLabel[l] = addr));
   LABELS_FOR_ADDRESS_2.forEach((l) => (valueByLabel[l] = parsed.address_2 || ""));
   LABELS_FOR_CITY.forEach((l) => (valueByLabel[l] = city));
-  LABELS_FOR_STATE.forEach((l) => (valueByLabel[l] = state));
+  LABELS_FOR_STATE.forEach((l) => (valueByLabel[l] = parsedState));
   LABELS_FOR_ZIP.forEach((l) => (valueByLabel[l] = zip));
   LABELS_FOR_TITLE.forEach((l) => (valueByLabel[l] = parsed.current_job_title || ""));
   LABELS_FOR_RESUME_TEXT.forEach((l) => (valueByLabel[l] = resumeText));
@@ -322,12 +352,6 @@ function applyParsedResumeToForm(
     next[idx] = { ...next[idx], value };
     return next;
   };
-
-  const streetAddr = parsed.address || parsed.location || "";
-  const parsedCity = parsed.city || "";
-  const parsedState = parsed.state || "";
-  const parsedZip = parsed.zip || "";
-  const parsedOrgId = parsed.custom_fields?.[JOB_SEEKER_ORG_FIELD_NAME] || "";
 
   setFormFields((prev) => {
     let next = prev;
@@ -358,18 +382,8 @@ function applyParsedResumeToForm(
       }
     }
 
-    const stateField =
-      customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME) ||
-      customFields.find((f) => /^state$/i.test(String(f.field_label || "").trim()));
-    if (stateField) {
-      const options = fieldOptionsList(stateField.options);
-      const locationBlob = [streetAddr, parsedCity, parsedState, parsedZip].filter(Boolean).join(", ");
-      const matched = matchStateToOption(
-        next[stateField.field_name] || parsedState,
-        options,
-        locationBlob
-      );
-      if (matched) next[stateField.field_name] = matched;
+    if (stateField && parsedState) {
+      next[stateField.field_name] = parsedState;
     }
 
     if (parsedOrgId) next[JOB_SEEKER_ORG_FIELD_NAME] = parsedOrgId;
@@ -1367,10 +1381,20 @@ export default function AddJobSeeker() {
             currentCustomValue !== "" &&
             String(currentCustomValue).trim() !== "";
 
-          // Never overwrite left-column (custom) data with empty form values when user typed only in left/custom fields then in Resume Text
           if (formIsEmpty && customHasValue) return;
-          if (currentCustomValue !== formValue) {
-            updatedCustomFields[customField.field_name] = formValue;
+
+          let nextValue = formValue;
+          if (matchingFormFieldId === "state" && formValue) {
+            const mapped = matchStateToOption(
+              formValue,
+              fieldOptionsList(customField.options),
+              formValue
+            );
+            if (mapped) nextValue = mapped;
+          }
+
+          if (currentCustomValue !== nextValue) {
+            updatedCustomFields[customField.field_name] = nextValue;
             hasChanges = true;
           }
         }
