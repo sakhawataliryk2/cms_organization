@@ -11,7 +11,7 @@ import {
   normalizeOptions,
   normalizeStr,
 } from "@/lib/aiParsing";
-import { extractUsStateFromText, matchStateToOption } from "@/lib/usStates";
+import { US_STATES, extractUsStateFromText, matchStateToOption } from "@/lib/usStates";
 import {
   pickBestOrganizationMatch,
   pickCurrentOrganizationName,
@@ -24,12 +24,19 @@ const JOB_SEEKER_STATE_FIELD_NAME = "Field_18";
 
 export const runtime = "nodejs";
 
-/** Cheap paid OpenRouter model (~$0.03 in / $0.13 out per 1M tokens). `:floor` = cheapest provider. */
-const MODEL = "openai/gpt-oss-20b:floor";
-/** Cap input to cut prompt tokens; contact + recent roles usually fit early. */
-const MAX_RESUME_CHARS = 6000;
-/** Cap completion size — room for JSON after any residual reasoning. */
-const MAX_OUTPUT_TOKENS = 4096;
+/**
+ * Fast + cheap (not a reasoning model). Flash Lite is ~$0.10/$0.40 per 1M tokens.
+ * Typical parse is well under a cent. Override with RESUME_PARSER_MODEL.
+ */
+const MODEL =
+  process.env.RESUME_PARSER_MODEL?.trim() || "google/gemini-2.5-flash-lite";
+const MODEL_FALLBACKS = [
+  "google/gemini-2.0-flash-lite-001",
+  "openai/gpt-4o-mini",
+];
+/** Contact + recent roles; keep short so the model returns in ~1s. */
+const MAX_RESUME_CHARS = 4500;
+const MAX_OUTPUT_TOKENS = 1800;
 
 // Enable debug mode with RESUME_PARSER_DEBUG=true in .env
 const DEBUG = process.env.RESUME_PARSER_DEBUG === "true";
@@ -73,7 +80,7 @@ ADDRESS PARSING:
   - "state": 2-letter USPS code (e.g. MA, CA, NY). NEVER leave state empty if a code or full name appears next to the city or ZIP (e.g. "Dracut, MA 01826" → city "Dracut", state "MA", zip "01826").
   - "zip": postal code
 - If only one line like "San Francisco, CA", put city in "city" and state in "state".
-- Also fill the State custom field (usually Field_18) with the EXACT allowed select option (typically the full name, e.g. "Massachusetts" for MA).
+- The Admin Center State field uses FULL NAMES (California, Massachusetts), not abbreviations. Map CA→the exact allowed option "California", MA→"Massachusetts", etc. Return that exact option in custom_fields for the State field.
 
 CURRENT ORGANIZATION:
 - Identify the candidate's CURRENT / most recent employer (end date "present"/"current", or the latest date range). Do not use an older job when a newer one exists.
@@ -83,13 +90,55 @@ CURRENT ORGANIZATION:
 - Leave custom_fields Field_5 empty. A name-based CRM lookup fills Current Organization after parsing.
 `;
 
+function findStateFieldDef(customFields: CustomFieldDef[]): CustomFieldDef | undefined {
+  return (
+    customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME) ||
+    customFields.find((f) => /^state$/i.test(String(f.field_label || "").trim()))
+  );
+}
+
+function stateSelectOptions(def: CustomFieldDef | undefined): string[] {
+  const fromAdmin = def ? normalizeOptions(def.options) : [];
+  if (fromAdmin.length > 0) return fromAdmin;
+  return US_STATES.map((s) => s.name);
+}
+
+function buildStateOptionsBlock(customFields: CustomFieldDef[]): string {
+  const def = findStateFieldDef(customFields);
+  const options = stateSelectOptions(def);
+  const fieldName = def?.field_name || JOB_SEEKER_STATE_FIELD_NAME;
+  const label = String(def?.field_label || "State").replace(/"/g, "'");
+  const optionList = options.map((o) => `"${o.replace(/"/g, "'")}"`).join(", ");
+  const abbrMap = US_STATES.map((s) => {
+    const opt =
+      options.find((o) => o.trim().toLowerCase() === s.name.toLowerCase()) ||
+      options.find((o) => o.trim().toUpperCase() === s.code) ||
+      s.name;
+    return `${s.code}=${opt}`;
+  }).join(", ");
+
+  return `
+
+STATE FIELD — CRITICAL:
+- Custom field "${fieldName}" (label: ${label}) is a SELECT. Return EXACTLY one of these Admin Center options:
+  [${optionList}]
+- Resumes usually have abbreviations (CA, MA, NY). Map them to the matching option above.
+- Abbreviation → option: ${abbrMap}
+- Also set JSON "state" to the 2-letter USPS code.
+- If no state is found, return "".`;
+}
+
 function buildSystemPrompt(customFields: CustomFieldDef[]): string {
   const promptFields = customFields.filter(
-    (f) => f.field_name !== JOB_SEEKER_ORG_FIELD_NAME
+    (f) =>
+      f.field_name !== JOB_SEEKER_ORG_FIELD_NAME &&
+      f.field_name !== JOB_SEEKER_STATE_FIELD_NAME &&
+      !/^state$/i.test(String(f.field_label || "").trim())
   );
   const { selectBlock, customBlock } = buildCustomFieldPromptInfo(promptFields);
+  const stateBlock = buildStateOptionsBlock(customFields);
 
-  return `${BASE_SYSTEM_PROMPT}${selectBlock}
+  return `${BASE_SYSTEM_PROMPT}${selectBlock}${stateBlock}
 
 Return JSON in this exact structure:
 {
@@ -238,8 +287,8 @@ function applyParsedState(
   customFields: CustomFieldDef[],
   resumeText?: string
 ): void {
-  const stateDef = customFields.find((f) => f.field_name === JOB_SEEKER_STATE_FIELD_NAME);
-  const options = stateDef ? normalizeOptions(stateDef.options) : [];
+  const stateDef = findStateFieldDef(customFields);
+  const options = stateSelectOptions(stateDef);
   const locationBlob = [parsed.address, parsed.address_2, parsed.city, parsed.state, parsed.zip, parsed.location]
     .filter(Boolean)
     .join(", ");
@@ -247,19 +296,20 @@ function applyParsedState(
   const extracted =
     extractUsStateFromText(parsed.state) ||
     extractUsStateFromText(locationBlob) ||
-    extractUsStateFromText(parsed.custom_fields?.[JOB_SEEKER_STATE_FIELD_NAME]) ||
+    extractUsStateFromText(parsed.custom_fields?.[stateDef?.field_name || JOB_SEEKER_STATE_FIELD_NAME]) ||
     extractUsStateFromText(resumeText);
 
   if (extracted && !parsed.state) parsed.state = extracted.code;
 
   const matched = matchStateToOption(
-    parsed.state || parsed.custom_fields?.[JOB_SEEKER_STATE_FIELD_NAME] || "",
+    parsed.state || parsed.custom_fields?.[stateDef?.field_name || JOB_SEEKER_STATE_FIELD_NAME] || "",
     options,
     `${locationBlob} ${resumeText || ""}`
   );
   if (!matched) return;
 
-  parsed.custom_fields = { ...(parsed.custom_fields || {}), [JOB_SEEKER_STATE_FIELD_NAME]: matched };
+  const stateFieldName = stateDef?.field_name || JOB_SEEKER_STATE_FIELD_NAME;
+  parsed.custom_fields = { ...(parsed.custom_fields || {}), [stateFieldName]: matched };
   if (!parsed.state) parsed.state = extracted?.code || matched;
 }
 
@@ -333,10 +383,11 @@ async function callOpenRouter(extractedText: string, systemPrompt: string): Prom
     },
     body: JSON.stringify({
       model: MODEL,
+      models: MODEL_FALLBACKS,
       temperature: 0,
       max_tokens: MAX_OUTPUT_TOKENS,
-      // gpt-oss is a reasoning model — default reasoning eats the token budget and returns empty content
-      reasoning: { effort: "low", exclude: true },
+      response_format: { type: "json_object" },
+      provider: { sort: "latency" },
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -396,8 +447,13 @@ export async function POST(request: NextRequest) {
     if (!isResumeFile(file.name, file.type))
       return NextResponse.json({ success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." }, { status: 400 });
 
-    const rawExtractedText = await extractTextFromFile(file);
-    if (!rawExtractedText || !rawExtractedText.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+    const [rawExtractedText, customFields] = await Promise.all([
+      extractTextFromFile(file),
+      fetchEntityCustomFields("job-seekers", token),
+    ]);
+    if (!rawExtractedText || !rawExtractedText.trim()) {
+      return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
+    }
 
     const text = rawExtractedText
       .replace(/\r\n?/g, "\n")
@@ -408,7 +464,6 @@ export async function POST(request: NextRequest) {
       .trim()
       .slice(0, MAX_RESUME_CHARS);
 
-    const customFields = await fetchEntityCustomFields("job-seekers", token);
     const { customFieldNames, selectFieldMeta } = buildCustomFieldMeta(customFields);
     const systemPrompt = buildSystemPrompt(customFields);
 
