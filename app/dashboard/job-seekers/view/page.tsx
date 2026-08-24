@@ -17,7 +17,6 @@ import {
   toLocalDateTimeString,
 } from "@/lib/googleCalendar";
 import { FiUsers, FiX, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone, FiChevronDown } from "react-icons/fi";
-import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
@@ -5227,24 +5226,6 @@ Best regards`;
             )}
           </h1>
         </div>
-        <ZoomInfoEnrichButton
-          atsEntityType="job_seeker"
-          atsEntityId={jobSeeker.id}
-          recordLabel={
-            `${jobSeeker.firstName || ""} ${jobSeeker.lastName || ""}`.trim() ||
-            undefined
-          }
-          matchDefaults={{
-            firstName: jobSeeker.firstName,
-            lastName: jobSeeker.lastName,
-            email: jobSeeker.email,
-            companyName: jobSeeker.currentOrganization,
-            jobTitle: jobSeeker.title,
-          }}
-          onEnriched={() => {
-            if (jobSeekerId) void fetchJobSeeker(jobSeekerId);
-          }}
-        />
       </div>
 
       <div className="bg-white border-b border-gray-300 h-ful px-3 py-2 sm:px-4">
