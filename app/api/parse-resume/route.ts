@@ -310,7 +310,7 @@ function applyParsedState(
 
   const stateFieldName = stateDef?.field_name || JOB_SEEKER_STATE_FIELD_NAME;
   parsed.custom_fields = { ...(parsed.custom_fields || {}), [stateFieldName]: matched };
-  if (!parsed.state) parsed.state = extracted?.code || matched;
+  parsed.state = matched;
 }
 
 async function lookupCurrentOrganizationId(
