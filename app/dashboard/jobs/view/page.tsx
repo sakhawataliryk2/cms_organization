@@ -12,6 +12,7 @@ import NoteRichText from '@/components/NoteRichText';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -1153,10 +1154,10 @@ out.sort((a, b) => {
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
 
-  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
-    entityType: VIEW_ENTITY_TYPES.jobsDetail,
-    key: "summary_layout",
-    defaultValue: DEFAULT_SUMMARY_LAYOUT,
+  const { value: summaryLayout, setValue: setSummaryLayout } = useResolvedSummaryLayout({
+    viewEntityType: VIEW_ENTITY_TYPES.jobsDetail,
+    fieldSection: getJobFieldManagementEntityType(job),
+    systemDefault: DEFAULT_SUMMARY_LAYOUT,
   });
 
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } = useUserViewConfig({

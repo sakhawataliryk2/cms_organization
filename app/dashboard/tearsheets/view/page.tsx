@@ -14,6 +14,7 @@ import { TbGripVertical } from "react-icons/tb";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import {
@@ -381,10 +382,10 @@ export default function TearsheetView() {
     defaultValue: TEARSHEET_DEFAULT_PANEL_FIELDS,
   });
 
-  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
-    entityType: VIEW_ENTITY_TYPES.tearsheetsDetail,
-    key: "summary_layout",
-    defaultValue: TEARSHEET_DEFAULT_SUMMARY_LAYOUT,
+  const { value: summaryLayout, setValue: setSummaryLayout } = useResolvedSummaryLayout({
+    viewEntityType: VIEW_ENTITY_TYPES.tearsheetsDetail,
+    fieldSection: "tearsheets",
+    systemDefault: TEARSHEET_DEFAULT_SUMMARY_LAYOUT,
   });
 
   const columns = summaryLayout;

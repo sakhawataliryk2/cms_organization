@@ -12,6 +12,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -848,10 +849,10 @@ export default function OrganizationView() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
-    useUserViewConfig({
-      entityType: VIEW_ENTITY_TYPES.organizationsDetail,
-      key: "summary_layout",
-      defaultValue: ORG_DEFAULT_SUMMARY_LAYOUT,
+    useResolvedSummaryLayout({
+      viewEntityType: VIEW_ENTITY_TYPES.organizationsDetail,
+      fieldSection: "organizations",
+      systemDefault: ORG_DEFAULT_SUMMARY_LAYOUT,
     });
   const columns =
     summaryLayoutConfig?.left &&

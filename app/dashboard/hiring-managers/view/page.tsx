@@ -12,6 +12,7 @@ import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import ZoomInfoEnrichButton from '@/components/zoominfo/ZoomInfoEnrichButton';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -526,10 +527,10 @@ out.sort((a, b) => {
     defaultValue: {},
   });
 
-  const { value: summaryLayout, setValue: setSummaryLayout } = useUserViewConfig({
-    entityType: VIEW_ENTITY_TYPES.hiringManagersDetail,
-    key: "summary_layout",
-    defaultValue: HIRING_MANAGER_DEFAULT_SUMMARY_LAYOUT,
+  const { value: summaryLayout, setValue: setSummaryLayout } = useResolvedSummaryLayout({
+    viewEntityType: VIEW_ENTITY_TYPES.hiringManagersDetail,
+    fieldSection: "hiring-managers",
+    systemDefault: HIRING_MANAGER_DEFAULT_SUMMARY_LAYOUT,
   });
 
   const columns = summaryLayout;

@@ -44,6 +44,7 @@ import {
 } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
 import { entityFieldConfigs } from "@/lib/field-mapping-configs";
+import SummaryTabLayoutDesigner from "@/components/admin/SummaryTabLayoutDesigner";
 import { validateFieldMappingDefaultValue } from "@/lib/field-mapping-default-value";
 import FieldMappingDefaultValueControl from "@/components/FieldMappingDefaultValueControl";
 import type { FieldMappingLookupType } from "@/lib/field-mapping-default-value";
@@ -199,6 +200,7 @@ const FieldMapping = () => {
   const router = useRouter();
   const topLoader = useTopLoader();
   const section = searchParams.get("section") || "jobs";
+  const [configTab, setConfigTab] = useState<"fields" | "summary-layout">("fields");
 
   const [showCount, setShowCount] = useState("200");
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -1878,6 +1880,38 @@ const FieldMapping = () => {
         </div>
       </div>
 
+      <div className="bg-white border-b border-gray-300 px-2">
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setConfigTab("fields")}
+            className={`px-4 py-2 text-sm border-b-2 ${
+              configTab === "fields"
+                ? "border-blue-600 text-blue-700 font-medium"
+                : "border-transparent text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            Fields
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfigTab("summary-layout")}
+            className={`px-4 py-2 text-sm border-b-2 ${
+              configTab === "summary-layout"
+                ? "border-blue-600 text-blue-700 font-medium"
+                : "border-transparent text-gray-600 hover:text-gray-800"
+            }`}
+          >
+            Summary Tab Layout
+          </button>
+        </div>
+      </div>
+
+      {configTab === "summary-layout" ? (
+        <SummaryTabLayoutDesigner section={section} />
+      ) : (
+      <>
+
       {/* Controls Bar */}
       <div className="bg-gray-100 p-2 flex items-center justify-between">
         <div className="flex items-center space-x-4">
@@ -2169,6 +2203,9 @@ const FieldMapping = () => {
             Showing {visibleFields.length} of {sortedFields.length} entries (Total: {customFields.length})
           </div>
         </>
+      )}
+
+      </>
       )}
 
       {/* Edit/Add Form Modal */}

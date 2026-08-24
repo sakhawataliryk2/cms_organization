@@ -14,6 +14,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { useResolvedSummaryLayout } from "@/hooks/useResolvedSummaryLayout";
 import { useSyncSortableFieldsModal } from "@/hooks/useSyncSortableFieldsModal";
 import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
 import {
@@ -493,10 +494,10 @@ out.sort((a, b) => {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
-    useUserViewConfig({
-      entityType: VIEW_ENTITY_TYPES.leadsDetail,
-      key: "summary_layout",
-      defaultValue: LEAD_DEFAULT_SUMMARY_LAYOUT,
+    useResolvedSummaryLayout({
+      viewEntityType: VIEW_ENTITY_TYPES.leadsDetail,
+      fieldSection: "leads",
+      systemDefault: LEAD_DEFAULT_SUMMARY_LAYOUT,
     });
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
     useUserViewConfig({
