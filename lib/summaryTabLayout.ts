@@ -24,7 +24,7 @@ const p = (id: string, title: string, height: number): SummaryPanelDef => ({
 
 const JOB_PANELS: SummaryPanelDef[] = [
   p("jobDetails", "Job Details", 280),
-  p("details", "Details", 220),
+  p("details", "Organization / Company Details", 260),
   p("hiringManager", "Hiring Manager", 200),
   p("recentNotes", "Recent Notes", 240),
   p("openTasks", "Open Tasks", 240),

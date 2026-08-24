@@ -10,6 +10,89 @@ export const JOB_ORGANIZATION_CUSTOM_FIELDS = [
   { entityType: "jobs-executive-search", fieldName: "Field_6" },
 ] as const;
 
+/** Current Admin Center labels often used for the job → organization lookup. */
+export const JOB_ORGANIZATION_LABEL_FALLBACKS = [
+  "Organization",
+  "Company",
+  "Organization / Company",
+  "Company / Organization",
+  "Organisation",
+] as const;
+
+export function jobOrganizationFieldNameForEntityType(entityType: string): "Field_2" | "Field_6" {
+  const et = String(entityType || "").trim().toLowerCase();
+  if (et === "jobs-direct-hire" || et === "jobs-executive-search") return "Field_6";
+  return "Field_2";
+}
+
+export function extractOrganizationRecordId(raw: unknown): string | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return String(Math.trunc(raw));
+  }
+  if (Array.isArray(raw)) return extractOrganizationRecordId(raw[0]);
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    return extractOrganizationRecordId(
+      obj.id ?? obj.value ?? obj.record_id ?? obj.recordId ?? obj.organization_id
+    );
+  }
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return s;
+  const prefixed = s.match(/^O\s*(\d+)/i);
+  if (prefixed?.[1]) return prefixed[1];
+  return null;
+}
+
+export function readJobOrganizationLookupRaw(
+  customFields: Record<string, unknown>,
+  resolvedLabel: string | null | undefined,
+  fieldName: string
+): unknown {
+  const labels = [
+    resolvedLabel,
+    ...JOB_ORGANIZATION_LABEL_FALLBACKS,
+  ].filter((label, index, all): label is string => {
+    if (!label || !String(label).trim()) return false;
+    const lower = String(label).trim().toLowerCase();
+    return all.findIndex((x) => String(x || "").trim().toLowerCase() === lower) === index;
+  });
+
+  for (const label of labels) {
+    const value = getCustomFieldValueByLabel(customFields, label, undefined);
+    if (value != null && String(value).trim() !== "") return value;
+  }
+
+  const byFieldName = getCustomFieldValueByLabel(customFields, null, fieldName);
+  if (byFieldName != null && String(byFieldName).trim() !== "") return byFieldName;
+
+  for (const [key, value] of Object.entries(customFields || {})) {
+    const n = key.trim().toLowerCase();
+    if (
+      (n === "organization" || n === "company" || n.includes("organization") || n.includes("company")) &&
+      value != null &&
+      String(value).trim() !== ""
+    ) {
+      return value;
+    }
+  }
+  return null;
+}
+
+export async function resolveJobLinkedOrganizationId(
+  job: unknown,
+  entityType: string
+): Promise<string | null> {
+  const fieldName = jobOrganizationFieldNameForEntityType(entityType);
+  const label = await getCustomFieldLabel(entityType, fieldName);
+  const record = job && typeof job === "object" ? (job as Record<string, unknown>) : {};
+  const customFields = parseCustomFieldsObject(record.custom_fields ?? record.customFields);
+  return extractOrganizationRecordId(
+    readJobOrganizationLookupRaw(customFields, label, fieldName)
+  );
+}
+
 export type JobOrganizationFieldDef = {
   entityType: string;
   fieldName: string;
