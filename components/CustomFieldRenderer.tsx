@@ -15,6 +15,8 @@ import {
   normalizeDateInputToIso,
   parseFlexibleDateStringToParts,
 } from "@/lib/dateNormalize";
+import { isContactEmailField } from "@/lib/emailCustomFields";
+import { validateEmail, type EmailValidationResult } from "@/lib/validation/emailValidation";
 
 interface CustomFieldDefinition {
   id: string;
@@ -133,6 +135,11 @@ interface CustomFieldRendererProps {
   forceReadOnly?: boolean;
   /** Stretch a textarea to fill its parent (used by the job-seeker Resume panel). */
   fillHeight?: boolean;
+  /** Admin Center entity slug (needed to identify JS/HM email fields). */
+  entityType?: string;
+  /** Live NeverBounce result for this field (from useCustomFields). */
+  emailCheck?: (EmailValidationResult & { isChecking?: boolean }) | null;
+  onEmailBlur?: (fieldName: string, value: unknown) => void;
 }
 
 export default function CustomFieldRenderer({
@@ -147,6 +154,9 @@ export default function CustomFieldRenderer({
   validationIndicator,
   forceReadOnly = false,
   fillHeight = false,
+  entityType,
+  emailCheck,
+  onEmailBlur,
 }: CustomFieldRendererProps) {
   const rawValueStr = String(value ?? "").trim();
   const hasRealDateValue =
@@ -191,6 +201,11 @@ export default function CustomFieldRenderer({
     (typeof parentValue === "string" && parentValue.trim() === "") ||
     (Array.isArray(parentValue) && parentValue.length === 0);
   const isDisabledByDependency = Boolean(dependentOnFieldId && isParentEmpty);
+  const neverBounceField = isContactEmailField({
+    entityType,
+    fieldName: field.field_name,
+    fieldType: field.field_type,
+  });
 
   // Clear this field's value when dependency becomes empty (parent cleared or changed)
   React.useEffect(() => {
@@ -546,6 +561,10 @@ export default function CustomFieldRenderer({
         HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
       >
     ) => (readOnly ? undefined : onChange(field.field_name, e.target.value)),
+    onBlur:
+      !readOnly && neverBounceField && onEmailBlur
+        ? () => onEmailBlur(field.field_name, value)
+        : undefined,
     className,
     placeholder: field.placeholder || "",
     required: field.is_required,
@@ -619,7 +638,7 @@ export default function CustomFieldRenderer({
     );
   }
 
-  switch (field.field_type) {
+  switch (neverBounceField ? "email" : field.field_type) {
     case "textarea":
       return withValidationWrapper(
         <div className={`relative w-full ${fillHeight ? "h-full min-h-0 flex flex-col" : ""}`}>
@@ -1611,8 +1630,29 @@ export default function CustomFieldRenderer({
         <div className="relative w-full">
           <input {...fieldProps} type="email" className={`${fieldProps.className} pr-8`} />
           {(value ?? "") !== "" && !readOnly && (
-            <ClearButton onClick={() => onChange(field.field_name, "")} />
+            <ClearButton
+              onClick={() => {
+                onChange(field.field_name, "");
+                onEmailBlur?.(field.field_name, "");
+              }}
+            />
           )}
+          {emailCheck?.isChecking && (
+            <p className="mt-1 text-xs text-gray-500">Verifying email…</p>
+          )}
+          {!emailCheck?.isChecking &&
+            emailCheck &&
+            !emailCheck.isValid &&
+            emailCheck.message && (
+              <p className="mt-1 text-xs text-red-600">{emailCheck.message}</p>
+            )}
+          {!emailCheck?.isChecking &&
+            emailCheck?.isValid &&
+            emailCheck.suggestion && (
+              <p className="mt-1 text-xs text-amber-700">
+                Did you mean {emailCheck.suggestion}?
+              </p>
+            )}
         </div>,
         validationIndicator
       );
@@ -2015,6 +2055,9 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
   const [customFieldValues, setCustomFieldValues] = React.useState<
     Record<string, any>
   >({});
+  const [emailChecks, setEmailChecks] = React.useState<
+    Record<string, EmailValidationResult & { isChecking?: boolean; email?: string }>
+  >({});
   const [isLoading, setIsLoading] = React.useState(true);
 
   const fetchCustomFields = React.useCallback(async () => {
@@ -2104,9 +2147,99 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         ...prev,
         [fieldName]: value,
       }));
+      setEmailChecks((prev) => {
+        if (!prev[fieldName]) return prev;
+        const next = { ...prev };
+        delete next[fieldName];
+        return next;
+      });
     },
     []
   );
+
+  const handleEmailBlur = React.useCallback(
+    async (fieldName: string, value: unknown) => {
+      const field = customFields.find((f) => f.field_name === fieldName);
+      if (
+        !isContactEmailField({
+          entityType,
+          fieldName,
+          fieldType: field?.field_type,
+        })
+      ) {
+        return;
+      }
+      const email = String(value ?? "").trim();
+      if (!email) {
+        setEmailChecks((prev) => {
+          if (!prev[fieldName]) return prev;
+          const next = { ...prev };
+          delete next[fieldName];
+          return next;
+        });
+        return;
+      }
+      setEmailChecks((prev) => ({
+        ...prev,
+        [fieldName]: {
+          email,
+          isChecking: true,
+          isValid: true,
+          message: "",
+        },
+      }));
+      const result = await validateEmail(email);
+      setEmailChecks((prev) => ({
+        ...prev,
+        [fieldName]: {
+          ...result,
+          email,
+          isChecking: false,
+        },
+      }));
+    },
+    [customFields, entityType]
+  );
+
+  const validateContactEmailsBeforeSave = React.useCallback(async () => {
+    const fieldsToCheck = customFields.filter((field) =>
+      isContactEmailField({
+        entityType,
+        fieldName: field.field_name,
+        fieldType: field.field_type,
+      })
+    );
+    for (const field of fieldsToCheck) {
+      const email = String(customFieldValues[field.field_name] ?? "").trim();
+      if (!email) continue;
+      const existing = emailChecks[field.field_name];
+      if (
+        existing &&
+        !existing.isChecking &&
+        existing.email === email
+      ) {
+        if (!existing.isValid) {
+          return {
+            isValid: false,
+            message: `${field.field_label}: ${existing.message}`,
+          };
+        }
+        continue;
+      }
+      const result = await validateEmail(email);
+      setEmailChecks((prev) => ({
+        ...prev,
+        [field.field_name]: { ...result, email, isChecking: false },
+      }));
+      if (!result.isValid) {
+        return {
+          isValid: false,
+          message: `${field.field_label}: ${result.message}`,
+        };
+      }
+    }
+    return { isValid: true, message: "" };
+  }, [customFields, customFieldValues, emailChecks, entityType]);
 
   const validateCustomFields = React.useCallback(() => {
     const skipRequiredForLabels = options?.skipRequiredForLabels ?? [];
@@ -2197,8 +2330,17 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         }
       }
     }
+    for (const field of customFields) {
+      const check = emailChecks[field.field_name];
+      if (check && !check.isChecking && check.isValid === false) {
+        return {
+          isValid: false,
+          message: `${field.field_label}: ${check.message}`,
+        };
+      }
+    }
     return { isValid: true, message: "" };
-  }, [customFields, customFieldValues, options?.skipRequiredForLabels]);
+  }, [customFields, customFieldValues, emailChecks, options?.skipRequiredForLabels]);
 
   const getCustomFieldsForSubmission = React.useCallback(() => {
     const applyAuto = options?.applyAutoCurrentDefaults !== false;
@@ -2262,7 +2404,10 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
     setCustomFieldValues,
     isLoading,
     handleCustomFieldChange,
+    handleEmailBlur,
+    emailChecks,
     validateCustomFields,
+    validateContactEmailsBeforeSave,
     getCustomFieldsForSubmission,
     resetCustomFields,
     refetch: fetchCustomFields,

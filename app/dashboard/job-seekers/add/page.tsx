@@ -422,13 +422,6 @@ export default function AddJobSeeker() {
   const [parseResumeProgress, setParseResumeProgress] = useState<number>(0);
   const parseResumeAbortRef = useRef<AbortController | null>(null);
 
-  // Email and address validation states
-  const [emailValidation, setEmailValidation] = useState<{
-    isValid: boolean;
-    message: string;
-    isChecking: boolean;
-  }>({ isValid: true, message: "", isChecking: false });
-
   const [addressValidation, setAddressValidation] = useState<{
     isValid: boolean;
     message: string;
@@ -460,7 +453,10 @@ export default function AddJobSeeker() {
     setCustomFieldValues, // ✅ Extract setCustomFieldValues like Organizations
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
+    handleEmailBlur,
+    emailChecks,
     validateCustomFields,
+    validateContactEmailsBeforeSave,
     getCustomFieldsForSubmission,
     resetCustomFields,
   } = useCustomFields("job-seekers", {
@@ -1509,9 +1505,16 @@ export default function AddJobSeeker() {
   const getFormValidationState = useCallback(() => {
     const issues: string[] = [];
 
-    // Check email validation
-    if (!emailValidation.isValid) {
-      issues.push("Please provide a valid email address");
+    // Check NeverBounce / email deliverability
+    const failedEmail = Object.entries(emailChecks).find(
+      ([, check]) => check && !check.isChecking && check.isValid === false
+    );
+    if (failedEmail) {
+      const [fieldName, check] = failedEmail;
+      const def = customFields.find((f) => f.field_name === fieldName);
+      issues.push(
+        `${def?.field_label || "Email"}: ${check.message || "Invalid email address"}`
+      );
     }
 
     // Check address validation if address is provided
@@ -1532,7 +1535,7 @@ export default function AddJobSeeker() {
       isValid: issues.length === 0,
       issues,
     };
-  }, [emailValidation.isValid, formFields, addressValidation.isValid, validateCustomFields]);
+  }, [emailChecks, customFields, formFields, addressValidation.isValid, validateCustomFields]);
 
   // Compute whether all required fields are satisfied (for disabling Update/Save until valid)
   const isFormValid = useMemo(() => {
@@ -1573,6 +1576,13 @@ export default function AddJobSeeker() {
     setError(null);
     setEmailDupMatches([]);
     setPhoneDupMatches([]);
+
+    const emailDeliverability = await validateContactEmailsBeforeSave();
+    if (!emailDeliverability.isValid) {
+      setError(emailDeliverability.message);
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       // ✅ CRITICAL: Get custom fields from the hook (same pattern as Organizations)
@@ -2106,6 +2116,9 @@ export default function AddJobSeeker() {
                             field={field}
                             value={fieldValue}
                             onChange={handleCustomFieldChange}
+                            entityType="job-seekers"
+                            emailCheck={emailChecks[field.field_name]}
+                            onEmailBlur={handleEmailBlur}
                             validationIndicator={
                               field.is_required
                                 ? isCustomFieldValueValid(field, fieldValue)
@@ -2280,9 +2293,20 @@ export default function AddJobSeeker() {
           <div className="h-20" aria-hidden="true" />
 
           {/* Email validation message */}
-          {!emailValidation.isValid && emailValidation.message && (
+          {Object.values(emailChecks).some(
+            (c) => c && !c.isChecking && c.isValid === false && c.message
+          ) && (
             <div className="text-red-500 text-sm">
-              Email: {emailValidation.message}
+              {Object.entries(emailChecks)
+                .filter(([, c]) => c && !c.isChecking && c.isValid === false)
+                .map(([fieldName, c]) => {
+                  const def = customFields.find((f) => f.field_name === fieldName);
+                  return (
+                    <div key={fieldName}>
+                      {def?.field_label || "Email"}: {c.message}
+                    </div>
+                  );
+                })}
             </div>
           )}
 
