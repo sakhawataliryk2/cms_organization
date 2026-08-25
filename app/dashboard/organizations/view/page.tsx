@@ -84,6 +84,7 @@ import CollapsibleNotesTable from "@/components/CollapsibleNotesTable";
 import NoteExpandedBody from "@/components/NoteExpandedBody";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
+import { downloadStoredDocument } from "@/lib/documentUrl";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
 import PermissionGate from "@/components/PermissionGate";
 import { useOrganizationPermissions } from "@/hooks/useOrganizationPermissions";
@@ -3513,74 +3514,13 @@ export default function OrganizationView() {
 
   // Handle downloading a document (file or text)
   const handleDownloadDocument = async (doc: any) => {
-    // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" ||
-      doc.file_path?.toLowerCase().endsWith(".txt") ||
-      doc.document_name?.toLowerCase().endsWith(".txt");
-
-    // If the document has a stored file path
-    if (doc.file_path) {
-      // For text files, force download instead of opening in a new tab
-      if (isTextFile) {
-        try {
-          // Check if it's an absolute URL (e.g. from Vercel Blob)
-          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-
-          // Prepend leading slash if missing and not absolute URL
-          const url = isAbsoluteUrl
-            ? doc.file_path
-            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
-
-          // Fetch the file content and create a blob for download
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error("Failed to fetch file");
-          }
-          const blob = await response.blob();
-          const downloadUrl = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = downloadUrl;
-          link.download = `${doc.document_name || "document"}.txt`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(downloadUrl);
-          toast.success("File downloaded successfully");
-        } catch (error) {
-          console.error("Error downloading text file:", error);
-          toast.error("Failed to download file. Opening in new tab instead.");
-          // Fallback to opening in new tab if download fails
-          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          const url = isAbsoluteUrl
-            ? doc.file_path
-            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
-          window.open(url, "_blank");
-        }
-        return;
-      }
-
-      // For non-text files, open in a new tab (existing behavior)
-      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-      const url = isAbsoluteUrl
-        ? doc.file_path
-        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
-      window.open(url, "_blank");
-      return;
-    }
-
-    // For text-based documents without a file, trigger a text download
-    if (doc.content) {
-      const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${doc.document_name || "document"}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
+    const result = await downloadStoredDocument(doc);
+    if (result === "ok") {
       toast.success("File downloaded successfully");
-    } else {
+    } else if (result === "empty") {
       toast.info("This document has no file or content to download.");
+    } else {
+      toast.error("Failed to download file.");
     }
   };
 
