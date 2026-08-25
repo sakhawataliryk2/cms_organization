@@ -9,6 +9,8 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import NoteRichText from '@/components/NoteRichText';
+import CollapsibleNotesTable from '@/components/CollapsibleNotesTable';
+import NoteExpandedBody from '@/components/NoteExpandedBody';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderViewConfig, useUserViewConfig } from "@/hooks/useUserViewConfig";
@@ -4449,112 +4451,44 @@ out.sort((a, b) => {
         )}
       </div>
 
-      {/* Notes List */}
       {isLoadingNotes ? (
         <div className="flex justify-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
         </div>
-      ) : sortedFilteredNotes.length > 0 ? (
-        <div className="space-y-4">
-          {sortedFilteredNotes.map((note) => {
-            const actionLabel = actionFields.find(
-              (af) => af.field_name === note.action || af.field_label === note.action
-            )?.field_label || note.action || "General Note";
-            const aboutRefs = parseAboutReferences(note.about || note.about_references);
-
-            return (
-              <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
-                <div className="border-b border-gray-200 pb-3 mb-3">
-                  <div className="flex justify-between items-start">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-blue-600">
-                          {note.created_by_name || "Unknown User"}
-                        </span>
-                        {actionLabel && (
-                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
-                            {actionLabel}
-                          </span>
-                        )}
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                          {note.created_by_name || "Unknown User"}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {new Date(getNoteDateTimeValue(note) || 0).toLocaleString("en-US", {
-                          month: "2-digit",
-                          day: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          const el = document.getElementById(`note-${note.id}`);
-                          if (el) {
-                            el.scrollIntoView({ behavior: "smooth", block: "center" });
-                            el.classList.add("ring-2", "ring-blue-500");
-                            setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
-                          }
-                        }}
-                        className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                        title="View"
-                      >
-                        View
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {aboutRefs.length > 0 && (
-                  <div className="mb-3 pb-3 border-b border-gray-100">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
-                        References:
-                      </span>
-                      <div className="flex flex-wrap gap-2 flex-1">
-                        {aboutRefs.map((ref: any, idx: number) => {
-                          const displayText = typeof ref === "string" ? ref : ref.display || ref.value || `${ref.type} #${ref.id}`;
-                          const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
-                          const refId = typeof ref === "string" ? null : ref.id;
-                          const isClickable = !!(refId && refType);
-                          return (
-                            <button
-                              key={`${ref.type}-${ref.id}-${idx}`}
-                              onClick={() => isClickable && navigateToReference(ref)}
-                              disabled={!isClickable}
-                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer" : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"}`}
-                              title={isClickable ? `View ${refType}` : "Reference not available"}
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                              </svg>
-                              {displayText}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {note.additional_references && !note.about && !aboutRefs.length && (
-                  <div className="mb-3 pb-3 border-b border-gray-100 text-xs text-gray-600">
-                    References: {note.additional_references}
-                  </div>
-                )}
-                <div className="mt-2">
-                  <NoteRichText text={note.text} note={note} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       ) : (
-        <p className="text-gray-500 italic">
-          {(noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter) ? "No notes match your filters." : "No notes have been added yet."}
-        </p>
+        <CollapsibleNotesTable
+          notes={sortedFilteredNotes}
+          emptyMessage={
+            noteActionFilter || noteAuthorFilter || noteDateStartFilter || noteDateEndFilter
+              ? "No notes match your filters."
+              : "No notes have been added yet."
+          }
+          getRow={(note) => ({
+            id: note.id,
+            date: new Date(getNoteDateTimeValue(note) || 0).toLocaleString("en-US", {
+              month: "2-digit",
+              day: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            author: note.created_by_name || "Unknown User",
+            action:
+              actionFields.find(
+                (af) => af.field_name === note.action || af.field_label === note.action
+              )?.field_label || note.action || "General Note",
+            text: note.text,
+          })}
+          renderExpanded={(note) => (
+            <NoteExpandedBody
+              note={note}
+              additionalReferencesText={
+                note.additional_references && !note.about ? String(note.additional_references) : null
+              }
+              body={<NoteRichText text={note.text} note={note} />}
+            />
+          )}
+        />
       )}
     </div>
   );

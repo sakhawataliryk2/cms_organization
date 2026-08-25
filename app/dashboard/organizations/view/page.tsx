@@ -80,6 +80,8 @@ import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
 import AddNoteModal from "@/components/AddNoteModal";
+import CollapsibleNotesTable from "@/components/CollapsibleNotesTable";
+import NoteExpandedBody from "@/components/NoteExpandedBody";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
@@ -5761,182 +5763,30 @@ export default function OrganizationView() {
           )}
         </div>
 
-        {/* Notes List */}
         {isLoadingNotes ? (
           <div className="flex justify-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
         ) : noteError ? (
           <div className="text-red-500 py-2">{noteError}</div>
-        ) : sortedFilteredNotes.length > 0 ? (
-          <div className="space-y-4">
-            {sortedFilteredNotes.map((note) => {
-              // Find action label from actionFields
-              const actionLabel =
+        ) : (
+          <CollapsibleNotesTable
+            notes={sortedFilteredNotes}
+            emptyMessage="No notes have been added yet."
+            getRow={(note) => ({
+              id: note.id,
+              date: formatNoteDateTime(note),
+              author: note.created_by_name || "Unknown User",
+              action:
                 actionFields.find(
                   (af) =>
                     af.field_name === note.action ||
                     af.field_label === note.action
-                )?.field_label || note.action || "General Note";
-
-              // Parse about_references
-              const aboutRefs = parseAboutReferences(
-                (note as any).about_references || (note as any).aboutReferences
-              );
-
-              // Zoom Phone call / SMS note styling
-              const zoomKind = getZoomPhoneNoteKind(note.text);
-              const zoomInfoNote = isZoomInfoNote(
-                note.action,
-                (note as any).note_type,
-                note.text
-              );
-              const zoomAccentClass =
-                zoomKind === "call"
-                  ? "border-l-4 border-l-indigo-400"
-                  : zoomKind === "sms"
-                    ? "border-l-4 border-l-teal-500"
-                    : zoomInfoNote
-                      ? "border-l-4 border-l-orange-400"
-                      : "";
-              const zoomActionBadge =
-                /zoom\s*call/i.test(String(actionLabel))
-                  ? "bg-indigo-100 text-indigo-900 border border-indigo-200/80"
-                  : /zoom\s*sms/i.test(String(actionLabel))
-                    ? "bg-teal-100 text-teal-900 border border-teal-200/80"
-                    : /zoominfo/i.test(String(actionLabel))
-                      ? "bg-orange-100 text-orange-900 border border-orange-200/80"
-                      : "bg-blue-100 text-blue-800";
-
-              return (
-                <div id={`note-${note.id}`} key={note.id} className={`p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors ${zoomAccentClass}`}>
-                  {/* Note Header: Metadata Section */}
-                  <div className="border-b border-gray-200 pb-3 mb-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex flex-col gap-2">
-                        {/* Created By and Action */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-blue-600">
-                            {note.created_by_name || "Unknown User"}
-                          </span>
-                          {actionLabel && (
-                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${zoomActionBadge}`}>
-                              {actionLabel}
-                            </span>
-                          )}
-                          {/* Source / Author Badge */}
-                          {(note as any).source_type === "hiring_manager" ? (
-                            <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-200 font-medium inline-flex items-center gap-1">
-                              From Hiring Manager:{" "}
-                              <RecordNameResolver
-                                id={(note as any).source_id}
-                                type="hiringManager"
-                                fallback={(note as any).hiring_manager_display || "Hiring Manager"}
-                                clickable
-                              />
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                              {note.created_by_name || "Unknown User"}
-                            </span>
-                          )}
-                        </div>
-                        {/* Date & Time (note_date_time when set; else legacy created_at) */}
-                        <div className="text-xs text-gray-500">
-                          {formatNoteDateTime(note)}
-                        </div>
-                      </div>
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            const noteAny = note as any;
-                            if (noteAny.source_type === "hiring_manager" && noteAny.source_id) {
-                              router.push(`/dashboard/hiring-managers/view?id=${noteAny.source_id}&tab=notes&noteId=${note.id}`);
-                              return;
-                            }
-                            const noteElement = document.getElementById(`note-${note.id}`);
-                            if (noteElement) {
-                              noteElement.scrollIntoView({ behavior: "smooth", block: "center" });
-                              noteElement.classList.add("ring-2", "ring-blue-500");
-                              setTimeout(() => {
-                                noteElement.classList.remove("ring-2", "ring-blue-500");
-                              }, 2000);
-                            }
-                          }}
-                          className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                          title={(note as any).source_type === "hiring_manager" ? "View on Hiring Manager record" : "View"}
-                        >
-                          View
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Affiliated References Section */}
-                  {aboutRefs.length > 0 && (
-                    <div className="mb-3 pb-3 border-b border-gray-100">
-                      <div className="flex items-start gap-2">
-                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
-                          References:
-                        </span>
-                        <div className="flex flex-wrap gap-2 flex-1">
-                          {aboutRefs.map((ref: any, idx: number) => {
-                            const displayText =
-                              typeof ref === "string"
-                                ? ref
-                                : ref.display || ref.value || `${ref.type} #${ref.id}`;
-                            const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
-                            const refId = typeof ref === "string" ? null : ref.id;
-                            const isClickable = refId && refType;
-
-                            return (
-                              <button
-                                key={idx}
-                                onClick={() => navigateToReference(ref)}
-                                disabled={!isClickable}
-                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable
-                                  ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
-                                  : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
-                                  }`}
-                                title={isClickable ? `View ${refType}` : "Reference not available"}
-                              >
-                                <svg
-                                  className="w-3 h-3"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                                  />
-                                </svg>
-                                {displayText}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Note Content */}
-                  <div className="mt-2">
-                    {zoomInfoNote ? (
-                      <ZoomInfoNoteBody text={note.text} />
-                    ) : (
-                      <ZoomPhoneNoteBody text={note.text} note={note} />
-                    )}
-                  </div>
-                </div>
-              );
+                )?.field_label || note.action || "General Note",
+              text: note.text,
             })}
-          </div>
-        ) : (
-          <p className="text-gray-500 italic">No notes have been added yet.</p>
+            renderExpanded={(note) => <NoteExpandedBody note={note} />}
+          />
         )}
       </div>
     );
