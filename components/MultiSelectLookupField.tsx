@@ -173,13 +173,15 @@ export default function MultiSelectLookupField({
 
   const getOptionLabel = (opt: LookupOption) => {
     if (!opt) return "";
+    if (lookupType === "owner") {
+      return opt.name || opt.email || "";
+    }
     const prefix = lookupType === "organizations" ? "O" :
       lookupType === "hiring-managers" ? "HM" :
         lookupType === "job-seekers" ? "JS" :
           lookupType === "jobs" ? "J" :
-            lookupType === "owner" ? "U" :
-              lookupType === "leads" ? "L" :
-                lookupType === "placements" ? "P" : "";
+            lookupType === "leads" ? "L" :
+              lookupType === "placements" ? "P" : "";
 
     const baseLabel = opt.name || opt.email || "";
     return opt.record_number ? `${prefix}${opt.record_number} - ${baseLabel}` : baseLabel;

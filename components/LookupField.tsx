@@ -172,12 +172,18 @@ export default function LookupField({
 
   const selectOptions = useMemo<StyledSelectOption[]>(() => {
     return options.map((option) => {
+      if (lookupType === 'owner') {
+        return {
+          value: option.id,
+          label: option.name || option.email || '',
+        };
+      }
+
       const prefix =
         lookupType === 'organizations' ? 'O' :
         lookupType === 'hiring-managers' ? 'HM' :
         lookupType === 'job-seekers' ? 'JS' :
         lookupType === 'jobs' ? 'J' :
-        lookupType === 'owner' ? 'U' :
         lookupType === 'leads' ? 'L' :
         lookupType === 'placements' ? 'P' : '';
 
@@ -361,12 +367,7 @@ function mapLookupResponse(
         id: String(user.id),
         name: user.name || user.email || '',
         email: user.email || '',
-        record_number:
-          user.record_number != null && user.record_number !== ''
-            ? String(user.record_number)
-            : user.id != null
-              ? String(user.id)
-              : '',
+        record_number: '',
       }));
   }
 
