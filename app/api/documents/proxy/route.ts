@@ -60,18 +60,29 @@ export async function GET(req: NextRequest) {
     const host = new URL(url).hostname.toLowerCase();
     let res: Response;
 
+    const disposition =
+      req.nextUrl.searchParams.get("disposition") === "attachment"
+        ? "attachment"
+        : "inline";
+    const filenameParam = req.nextUrl.searchParams.get("filename");
+    const safeFilename = String(filenameParam || "document")
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/["\r\n]/g, "")
+      .slice(0, 180) || "document";
+
     if (isOurS3Host(host)) {
       // Private bucket: stream via Express (EC2 IAM / default credential chain)
-      res = await fetch(
-        `${getApiBase()}/api/storage/proxy?url=${encodeURIComponent(url)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "User-Agent": "CMS-Organization/1.0",
-          },
-          cache: "no-store",
-        }
-      );
+      const upstream = new URL(`${getApiBase()}/api/storage/proxy`);
+      upstream.searchParams.set("url", url);
+      upstream.searchParams.set("disposition", disposition);
+      upstream.searchParams.set("filename", safeFilename);
+      res = await fetch(upstream.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "User-Agent": "CMS-Organization/1.0",
+        },
+        cache: "no-store",
+      });
     } else {
       const headers: Record<string, string> = {
         "User-Agent": "CMS-Organization/1.0",
@@ -120,7 +131,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": 'inline; filename="document.pdf"',
+        "Content-Disposition": `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
         "Content-Length": String(bytes.byteLength),
         "Cache-Control": "private, max-age=3600",
         "Accept-Ranges": "none",
