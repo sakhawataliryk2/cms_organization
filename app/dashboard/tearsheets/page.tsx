@@ -504,9 +504,9 @@ export default function TearsheetList() {
   const getColumnValue = (ts: any, key: string) => {
     switch (key) {
       case "id":
-        return ts.id ?? "N/A";
+        return ts.id ?? "";
       case "name":
-        return ts.name || "N/A";
+        return ts.name || "";
       case "job_seeker_count":
         return ts.job_seeker_count || 0;
       case "hiring_manager_count":
@@ -520,14 +520,14 @@ export default function TearsheetList() {
       case "placement_count":
         return ts.placement_count ?? 0;
       case "owner_name":
-        return ts.owner_name || "N/A";
+        return ts.owner_name || "";
       case "created_at":
-        if (!ts.created_at) return "N/A";
+        if (!ts.created_at) return "";
         const d1 = new Date(ts.created_at);
         if (Number.isNaN(d1.getTime())) return ts.created_at;
         return d1.toLocaleString();
       case "last_opened_at":
-        if (!ts.last_opened_at) return "N/A";
+        if (!ts.last_opened_at) return "";
         const d2 = new Date(ts.last_opened_at);
         if (Number.isNaN(d2.getTime())) return ts.last_opened_at;
         const month = String(d2.getMonth() + 1).padStart(2, '0');
@@ -535,7 +535,7 @@ export default function TearsheetList() {
         const year = d2.getFullYear();
         return `${month}/${day}/${year}`;
       default:
-        return "N/A";
+        return "";
     }
   };
 

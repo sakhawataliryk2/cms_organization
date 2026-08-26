@@ -481,7 +481,7 @@ export default function HiringManagerList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(hm, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
 
@@ -489,21 +489,21 @@ export default function HiringManagerList() {
       case "full_name":
         return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
       case "status":
-        return hm.status || "—";
+        return hm.status || "";
       case "title":
-        return hm.title || "—";
+        return hm.title || "";
       case "organization_name":
-        return hm.organization_name_from_org || hm.organization_name || "—";
+        return hm.organization_name_from_org || hm.organization_name || "";
       case "email":
-        return hm.email || "—";
+        return hm.email || "";
       case "phone":
-        return hm.phone || "—";
+        return hm.phone || "";
       case "created_by_name":
-        return hm.created_by_name || "—";
+        return hm.created_by_name || "";
       case "created_at":
         return formatDate(hm.created_at);
       default:
-        return "—";
+        return "";
     }
   };
 
@@ -1332,7 +1332,7 @@ export default function HiringManagerList() {
                           <FieldValueRenderer
                             value={getColumnValue(hm, key)}
                             fieldInfo={fieldInfo}
-                            emptyPlaceholder="N/A"
+                            emptyPlaceholder=""
                             clickable
                             stopPropagation
                             className=""

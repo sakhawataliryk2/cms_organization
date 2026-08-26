@@ -757,25 +757,25 @@ export default function JobList() {
 
     switch (key) {
       case "job_title":
-        return job.job_title || "N/A";
+        return job.job_title || "";
       case "job_type":
-        return job.job_type || "N/A";
+        return job.job_type || "";
       case "category":
-        return job.category || "N/A";
+        return job.category || "";
       case "organization_name":
-        return job.organization_name || "N/A";
+        return job.organization_name || "";
       case "worksite_location":
-        return job.worksite_location || "N/A";
+        return job.worksite_location || "";
       case "status":
-        return job.status || "N/A";
+        return job.status || "";
       case "created_at":
         return job.created_at
           ? new Date(job.created_at).toLocaleDateString()
-          : "N/A";
+          : "";
       case "created_by_name":
-        return job.created_by_name || "N/A";
+        return job.created_by_name || "";
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -1902,7 +1902,7 @@ export default function JobList() {
                             <FieldValueRenderer
                               value={getColumnValue(job, key)}
                               fieldInfo={fieldInfo}
-                              emptyPlaceholder="N/A"
+                              emptyPlaceholder=""
                               clickable
                               stopPropagation
                               className=""

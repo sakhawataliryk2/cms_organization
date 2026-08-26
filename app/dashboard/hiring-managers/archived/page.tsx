@@ -299,15 +299,15 @@ export default function ArchivedHiringManagersList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(hm, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
 
     if (key === "archive_reason") {
-      return hm.archive_reason || "N/A";
+      return hm.archive_reason || "";
     }
     const val = hm[key];
-    if (val === undefined || val === null || val === "") return "—";
+    if (val === undefined || val === null || val === "") return "";
     if (key === "created_at" && typeof val === "string") return formatDate(val);
     return String(val);
   };
@@ -930,7 +930,7 @@ export default function ArchivedHiringManagersList() {
                             <FieldValueRenderer
                               value={getColumnValue(hm, key)}
                               fieldInfo={fieldInfo}
-                              emptyPlaceholder="—"
+                              emptyPlaceholder=""
                               clickable
                               stopPropagation
                               forceRenderAsStatus={isArchiveReason}

@@ -598,21 +598,21 @@ export default function OrganizationList() {
 
     switch (key) {
       case "name":
-        return org.name || "N/A";
+        return org.name || "";
       case "nicknames":
-        return org.nicknames || "N/A";
+        return org.nicknames || "";
       case "status":
-        return org.status || "N/A";
+        return org.status || "";
       case "contact_phone":
-        return org.contact_phone || "N/A";
+        return org.contact_phone || "";
       case "address":
-        return org.address || "N/A";
+        return org.address || "";
       case "job_orders_count":
         return org.job_orders_count || 0;
       case "placements_count":
         return org.placements_count || 0;
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -2079,7 +2079,7 @@ export default function OrganizationList() {
                                 <FieldValueRenderer
                                   value={getColumnValue(org, key)}
                                   fieldInfo={fieldInfo}
-                                  emptyPlaceholder="N/A"
+                                  emptyPlaceholder=""
                                   clickable
                                   stopPropagation
                                   className=""

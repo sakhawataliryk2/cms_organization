@@ -4114,6 +4114,13 @@ export default function PlacementView() {
 
   const renderPanel = useCallback(
     (panelId: string, isOverlay = false) => {
+      if (panelId === "benefitPackage") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {placementId ? <BenefitPackagePanel placementId={placementId} /> : null}
+          </SortablePanel>
+        );
+      }
       if (panelId === "candidateDetails") {
         return (
           <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
@@ -4685,11 +4692,6 @@ export default function PlacementView() {
           {/* Regular summary (not pinned) */}
           {!isPinned && (
             <div id="printable-summary" className="p-4">
-              {placementId ? (
-                <div className="mb-4 max-w-md">
-                  <BenefitPackagePanel placementId={placementId} />
-                </div>
-              ) : null}
               <DndContext
                 id="regular-summary-dnd"
                 sensors={sensors}

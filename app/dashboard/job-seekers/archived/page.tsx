@@ -386,16 +386,16 @@ export default function ArchivedJobSeekersList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(js, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
 
     if (key === "archive_reason") {
-      return js.archive_reason || "N/A";
+      return js.archive_reason || "";
     }
     // Standard backend keys (fallback from API shape)
     const val = js[key];
-    if (val === undefined || val === null || val === "") return "—";
+    if (val === undefined || val === null || val === "") return "";
     if ((key === "created_at" || key === "last_contact_date") && typeof val === "string") return formatDate(val);
     return String(val);
 
@@ -1111,7 +1111,7 @@ export default function ArchivedJobSeekersList() {
                           <FieldValueRenderer
                             value={getColumnValue(js, key)}
                             fieldInfo={fieldInfo}
-                            emptyPlaceholder="—"
+                            emptyPlaceholder=""
                             clickable
                             stopPropagation
                             forceRenderAsStatus={isArchiveReason}

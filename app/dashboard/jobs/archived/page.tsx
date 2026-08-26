@@ -243,16 +243,16 @@ export default function ArchivedJobsList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(job, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
 
-    if (key === "archive_reason") return job.archive_reason || "N/A";
+    if (key === "archive_reason") return job.archive_reason || "";
 
     if (key === "created_at" && typeof job.created_at === "string") return formatDate(job.created_at);
 
     const val = job[key];
-    if (val === undefined || val === null || val === "") return "—";
+    if (val === undefined || val === null || val === "") return "";
     return String(val);
   };
 
@@ -775,7 +775,7 @@ export default function ArchivedJobsList() {
                           <FieldValueRenderer
                             value={getColumnValue(job, key)}
                             fieldInfo={fieldInfo}
-                            emptyPlaceholder="—"
+                            emptyPlaceholder=""
                             clickable
                             stopPropagation
                             forceRenderAsStatus={isArchiveReason}
