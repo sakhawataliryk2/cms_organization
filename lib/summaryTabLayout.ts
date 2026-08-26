@@ -36,6 +36,7 @@ const JOB_DEFAULT: SummaryLayout = {
 };
 
 const PLACEMENT_PANELS: SummaryPanelDef[] = [
+  p("benefitPackage", "Benefit Package", 220),
   p("candidateDetails", "Candidate Details", 200),
   p("companyDetails", "Company Details", 200),
   p("billingContactDetails", "Billing Contact Details", 180),
@@ -48,6 +49,7 @@ const PLACEMENT_PANELS: SummaryPanelDef[] = [
 
 const PLACEMENT_DEFAULT: SummaryLayout = {
   left: [
+    "benefitPackage",
     "candidateDetails",
     "companyDetails",
     "billingContactDetails",

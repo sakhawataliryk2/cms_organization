@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import PanelWithHeader from "@/components/PanelWithHeader";
 
 type BenefitStatus = {
   record?: { status?: string; sent_at?: string; avg_weekly_hours?: number };
@@ -15,6 +16,66 @@ type BenefitStatus = {
     weeks_evaluated?: { week_start_date: string; total_hours: number }[];
   };
 };
+
+const SKIP_REASON_LABELS: Record<string, string> = {
+  already_sent: "Benefit package already sent",
+  field2_mismatch: "Job seeker on placement does not match the Field_2 lookup",
+  employment_type_not_eligible:
+    "Employment type is not eligible (must be Temp to Hire or Contract)",
+  no_benefit_rule_configured: "No benefit rule configured for this employment type",
+  insufficient_tenure: "Insufficient tenure (minimum days employed not met)",
+  insufficient_week_definitions:
+    "Unable to evaluate hours — insufficient completed week definitions",
+};
+
+export function formatBenefitPackageSkipReason(reason: string): string {
+  const trimmed = String(reason || "").trim();
+  if (!trimmed) return "";
+
+  if (SKIP_REASON_LABELS[trimmed]) return SKIP_REASON_LABELS[trimmed];
+
+  const missingWeek = trimmed.match(/^missing_approved_timecard_for_week_(.+)$/);
+  if (missingWeek) {
+    return `Missing approved timecard for week starting ${missingWeek[1]}`;
+  }
+
+  const avgBelow = trimmed.match(/^avg_hours_below_(\d+(?:\.\d+)?)$/);
+  if (avgBelow) {
+    return `4-week average hours below ${avgBelow[1]}`;
+  }
+
+  return trimmed
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex border-b border-gray-200 last:border-b-0">
+      <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+        {label}:
+      </div>
+      <div className="flex-1 p-2">{children}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const statusClass =
+    status === "Sent"
+      ? "bg-green-100 text-green-800"
+      : status === "Eligible"
+        ? "bg-blue-100 text-blue-800"
+        : status === "Not eligible"
+          ? "bg-amber-100 text-amber-800"
+          : "bg-gray-100 text-gray-800";
+
+  return (
+    <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${statusClass}`}>
+      {status}
+    </span>
+  );
+}
 
 export default function BenefitPackagePanel({ placementId }: { placementId: string | number }) {
   const [data, setData] = useState<BenefitStatus | null>(null);
@@ -42,7 +103,9 @@ export default function BenefitPackagePanel({ placementId }: { placementId: stri
   const evaluate = async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/benefit-package/placements/${placementId}/evaluate`, { method: "POST" });
+      const res = await fetch(`/api/benefit-package/placements/${placementId}/evaluate`, {
+        method: "POST",
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.message || "Evaluate failed");
       setData((prev) => ({ ...prev, evaluation: json.evaluation }));
@@ -76,49 +139,57 @@ export default function BenefitPackagePanel({ placementId }: { placementId: stri
   const ev = data?.evaluation;
   const recordStatus = data?.record?.status;
 
-  const badge = recordStatus === "sent"
-    ? "Sent"
-    : ev?.eligible
-      ? "Eligible"
-      : ev?.skip_reason
-        ? "Not eligible"
-        : "Unknown";
+  const badge =
+    recordStatus === "sent"
+      ? "Sent"
+      : ev?.eligible
+        ? "Eligible"
+        : ev?.skip_reason
+          ? "Not eligible"
+          : "Unknown";
+
+  const formattedReason =
+    ev?.skip_reason && recordStatus !== "sent"
+      ? formatBenefitPackageSkipReason(ev.skip_reason)
+      : null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-800">Benefit Package</h3>
-        <span className="text-xs rounded-full px-2 py-0.5 bg-slate-100 text-slate-700">{badge}</span>
-      </div>
-
+    <PanelWithHeader title="Benefit Package">
       {loading ? (
-        <p className="text-sm text-slate-500">Loading...</p>
+        <div className="p-4 text-gray-500 text-sm">Loading...</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-            <div>Employment type: <strong>{ev?.employment_type || "—"}</strong></div>
-            <div>Days employed: <strong>{ev?.days_employed ?? "—"}</strong></div>
-            <div>4-wk avg hours: <strong>{ev?.avg_weekly_hours ?? "—"}</strong></div>
-            <div>Hours source: <strong>{ev?.hours_source || "—"}</strong></div>
+          <div className="space-y-0 border border-gray-200 rounded">
+            <DetailRow label="Status">
+              <StatusBadge status={badge} />
+            </DetailRow>
+            <DetailRow label="Employment type">{ev?.employment_type || "—"}</DetailRow>
+            <DetailRow label="Days employed">{ev?.days_employed ?? "—"}</DetailRow>
+            <DetailRow label="4-wk avg hours">{ev?.avg_weekly_hours ?? "—"}</DetailRow>
+            <DetailRow label="Hours source">{ev?.hours_source || "—"}</DetailRow>
+            {formattedReason && (
+              <DetailRow label="Reason">
+                <span className="text-amber-800">{formattedReason}</span>
+              </DetailRow>
+            )}
+            {Array.isArray(ev?.weeks_evaluated) && ev.weeks_evaluated.length > 0 && (
+              <DetailRow label="Weeks evaluated">
+                <ul className="space-y-1 text-sm">
+                  {ev.weeks_evaluated.map((w) => (
+                    <li key={w.week_start_date}>
+                      Week {w.week_start_date}: {w.total_hours} hrs
+                    </li>
+                  ))}
+                </ul>
+              </DetailRow>
+            )}
           </div>
-          {ev?.skip_reason && recordStatus !== "sent" && (
-            <p className="text-xs text-amber-700">Reason: {ev.skip_reason}</p>
-          )}
-          {Array.isArray(ev?.weeks_evaluated) && ev.weeks_evaluated.length > 0 && (
-            <ul className="text-xs text-slate-600 space-y-1">
-              {ev.weeks_evaluated.map((w) => (
-                <li key={w.week_start_date}>
-                  Week {w.week_start_date}: {w.total_hours} hrs
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-3">
             <button
               type="button"
               disabled={busy}
               onClick={evaluate}
-              className="text-xs border border-slate-300 rounded px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+              className="text-sm border border-gray-300 rounded px-3 py-1 hover:bg-gray-50 disabled:opacity-50"
             >
               Evaluate
             </button>
@@ -126,13 +197,13 @@ export default function BenefitPackagePanel({ placementId }: { placementId: stri
               type="button"
               disabled={busy || recordStatus === "sent"}
               onClick={send}
-              className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700 disabled:opacity-50"
+              className="text-sm bg-blue-600 text-white rounded px-3 py-1 hover:bg-blue-700 disabled:opacity-50"
             >
               Send package
             </button>
           </div>
         </>
       )}
-    </div>
+    </PanelWithHeader>
   );
 }

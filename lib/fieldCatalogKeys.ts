@@ -47,8 +47,13 @@ export function resolveCustomColumnValue(
   return undefined;
 }
 
+/** Blank display for empty overview list cells */
+export const EMPTY_LIST_CELL = "";
+
 export function formatColumnValueOrNA(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "N/A";
+  if (value === undefined || value === null || value === "") return EMPTY_LIST_CELL;
+  const s = String(value).trim();
+  if (s === "" || s.toLowerCase() === "n/a") return EMPTY_LIST_CELL;
   return String(value);
 }
 

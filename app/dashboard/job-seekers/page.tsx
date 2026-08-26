@@ -351,20 +351,20 @@ export default function JobSeekerList() {
         return (
           js.full_name ||
           `${js.last_name || ""}, ${js.first_name || ""}`.trim() ||
-          "N/A"
+          ""
         );
       case "email":
-        return js.email || "N/A";
+        return js.email || "";
       case "phone":
-        return js.phone || "N/A";
+        return js.phone || "";
       case "status":
-        return js.status || "N/A";
+        return js.status || "";
       case "last_contact_date":
-        return js.last_contact_date ? formatDate(js.last_contact_date) : "N/A";
+        return js.last_contact_date ? formatDate(js.last_contact_date) : "";
       case "owner":
-        return js.owner || "N/A";
+        return js.owner || "";
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -1088,7 +1088,7 @@ export default function JobSeekerList() {
                           <FieldValueRenderer
                             value={getColumnValue(jobSeeker, key)}
                             fieldInfo={fieldInfo}
-                            emptyPlaceholder="N/A"
+                            emptyPlaceholder=""
                             clickable
                             stopPropagation
                             className=""

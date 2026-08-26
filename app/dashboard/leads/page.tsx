@@ -368,25 +368,25 @@ export default function LeadList() {
 
     switch (key) {
       case "name":
-        return fullName || "N/A";
+        return fullName || "";
       case "status":
-        return lead.status || "N/A";
+        return lead.status || "";
       case "email":
-        return lead.email || "N/A";
+        return lead.email || "";
       case "phone":
-        return lead.phone || "N/A";
+        return lead.phone || "";
       case "title":
-        return lead.title || "N/A";
+        return lead.title || "";
       case "organization":
-        return lead.organization_name_from_org || lead.organization_id || "N/A";
+        return lead.organization_name_from_org || lead.organization_id || "";
       case "owner":
-        return lead.owner || "N/A";
+        return lead.owner || "";
       case "created_at":
-        return lead.created_at ? new Date(lead.created_at).toLocaleDateString() : "N/A";
+        return lead.created_at ? new Date(lead.created_at).toLocaleDateString() : "";
       case "created_by_name":
-        return lead.created_by_name || "N/A";
+        return lead.created_by_name || "";
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -1344,7 +1344,7 @@ export default function LeadList() {
                             <FieldValueRenderer
                               value={getColumnValue(lead, key)}
                               fieldInfo={fieldInfo}
-                              emptyPlaceholder="N/A"
+                              emptyPlaceholder=""
                               clickable
                               stopPropagation
                               className=""

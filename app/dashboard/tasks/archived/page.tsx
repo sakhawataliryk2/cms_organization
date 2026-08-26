@@ -240,26 +240,26 @@ export default function ArchivedTasksList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(task, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
-    if (key === "archive_reason") return task.archive_reason || "—";
-    if (key === "title") return task.title || "—";
-    if (key === "status") return task.status || "—";
+    if (key === "archive_reason") return task.archive_reason || "";
+    if (key === "title") return task.title || "";
+    if (key === "status") return task.status || "";
     if (key === "completed") return task.is_completed ? "Yes" : "No";
-    if (key === "due") return formatDateTime(task.due_date, task.due_time) || "—";
-    if (key === "job_seeker") return task.job_seeker_name || "—";
-    if (key === "hiring_manager") return task.hiring_manager_name || "—";
-    if (key === "job") return task.job_title || "—";
-    if (key === "lead") return task.lead_name || "—";
-    if (key === "placement") return task.placement_id || "—";
-    if (key === "owner") return task.owner || task.created_by_name || "—";
-    if (key === "priority") return task.priority || "—";
-    if (key === "dateCreated") return task.created_at ? new Date(task.created_at).toLocaleDateString() : "—";
-    if (key === "createdBy") return task.created_by_name || "—";
-    if (key === "assignedTo") return task.assigned_to_name || "—";
+    if (key === "due") return formatDateTime(task.due_date, task.due_time) || "";
+    if (key === "job_seeker") return task.job_seeker_name || "";
+    if (key === "hiring_manager") return task.hiring_manager_name || "";
+    if (key === "job") return task.job_title || "";
+    if (key === "lead") return task.lead_name || "";
+    if (key === "placement") return task.placement_id || "";
+    if (key === "owner") return task.owner || task.created_by_name || "";
+    if (key === "priority") return task.priority || "";
+    if (key === "dateCreated") return task.created_at ? new Date(task.created_at).toLocaleDateString() : "";
+    if (key === "createdBy") return task.created_by_name || "";
+    if (key === "assignedTo") return task.assigned_to_name || "";
     const val = task[key];
-    return val === undefined || val === null || val === "" ? "—" : String(val);
+    return val === undefined || val === null || val === "" ? "" : String(val);
   };
 
   const {
@@ -990,7 +990,7 @@ export default function ArchivedTasksList() {
                           <FieldValueRenderer
                             value={getColumnValue(task, key)}
                             fieldInfo={fieldInfo}
-                            emptyPlaceholder="—"
+                            emptyPlaceholder=""
                             clickable
                             stopPropagation
                             forceRenderAsStatus={isArchiveReason}

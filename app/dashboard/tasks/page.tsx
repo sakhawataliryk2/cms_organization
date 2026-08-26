@@ -312,33 +312,33 @@ export default function TaskList() {
       case "completed":
         return task.is_completed ? "Yes" : "No";
       case "due":
-        return formatDateTime(task.due_date, task.due_time) || "N/A";
+        return formatDateTime(task.due_date, task.due_time) || "";
       case "job_seeker":
-        return task.job_seeker_name || "N/A";
+        return task.job_seeker_name || "";
       case "hiring_manager":
-        return task.hiring_manager_name || "N/A";
+        return task.hiring_manager_name || "";
       case "job":
-        return task.job_title || "N/A";
+        return task.job_title || "";
       case "lead":
-        return task.lead_name || "N/A";
+        return task.lead_name || "";
       case "placement":
-        return task.placement_id || "N/A";
+        return task.placement_id || "";
       case "owner":
-        return task.owner || task.created_by_name || "N/A";
+        return task.owner || task.created_by_name || "";
       case "priority":
-        return task.priority || "N/A";
+        return task.priority || "";
       case "status":
-        return task.status || "N/A";
+        return task.status || "";
       case "title":
-        return task.title || "N/A";
+        return task.title || "";
       case "dateCreated":
-        return formatDateTime(task.created_at) || "N/A";
+        return formatDateTime(task.created_at) || "";
       case "createdBy":
-        return task.created_by_name || "N/A";
+        return task.created_by_name || "";
       case "assignedTo":
-        return task.assigned_to_name || "N/A";
+        return task.assigned_to_name || "";
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -1225,7 +1225,7 @@ export default function TaskList() {
                                   }
                                   : { key, label: getColumnLabel(key), name: key };
                               })() as any}
-                              emptyPlaceholder="N/A"
+                              emptyPlaceholder=""
                               clickable
                               stopPropagation
                               className="text-sm text-gray-500"

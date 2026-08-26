@@ -398,21 +398,21 @@ export default function ArchivedOrganizationsList() {
 
     switch (key) {
       case "name":
-        return org.name || "N/A";
+        return org.name || "";
       case "status":
-        return org.status || "N/A";
+        return org.status || "";
       case "contact_phone":
-        return org.contact_phone || "N/A";
+        return org.contact_phone || "";
       case "address":
-        return org.address || "N/A";
+        return org.address || "";
       case "job_orders_count":
         return org.job_orders_count || 0;
       case "placements_count":
         return org.placements_count || 0;
       case "archive_reason":
-        return org.archive_reason || "N/A";
+        return org.archive_reason || "";
       default:
-        return "N/A";
+        return "";
     }
   };
 
@@ -1018,7 +1018,7 @@ export default function ArchivedOrganizationsList() {
                             <FieldValueRenderer
                               value={val}
                               fieldInfo={fieldInfo}
-                              emptyPlaceholder="N/A"
+                              emptyPlaceholder=""
                               clickable
                               stopPropagation
                               statusVariant={statusVariant}

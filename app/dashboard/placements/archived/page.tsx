@@ -355,7 +355,7 @@ export default function PlacementList() {
     }
     if (key.startsWith("custom:")) {
       const resolved = resolveCustomColumnValue(p, key, getColumnInfo(key));
-      if (resolved === undefined || resolved === null || resolved === "") return "—";
+      if (resolved === undefined || resolved === null || resolved === "") return "";
       return String(resolved);
     }
 
@@ -369,21 +369,21 @@ export default function PlacementList() {
       case "status":
         return p.status || "Active";
       case "start_date":
-        return p.start_date ? formatDate(p.start_date) : "-";
+        return p.start_date ? formatDate(p.start_date) : "";
       case "end_date":
-        return p.end_date ? formatDate(p.end_date) : "-";
+        return p.end_date ? formatDate(p.end_date) : "";
       case "salary":
-        return p.salary || "-";
+        return p.salary || "";
       case "owner":
         return p.owner || p.owner_name || "Unassigned";
       case "created_at":
-        return p.created_at ? formatDate(p.created_at) : "-";
+        return p.created_at ? formatDate(p.created_at) : "";
       case "created_by":
         return p.created_by_name || "Unknown";
       case "archive_reason":
-        return p.archive_reason || "—";
+        return p.archive_reason || "";
       default:
-        return "—";
+        return "";
     }
   };
 
@@ -1268,7 +1268,7 @@ export default function PlacementList() {
                             <FieldValueRenderer
                               value={val}
                               fieldInfo={fieldInfo}
-                              emptyPlaceholder="—"
+                            emptyPlaceholder=""
                               clickable
                               stopPropagation
                               statusVariant={statusVariant}

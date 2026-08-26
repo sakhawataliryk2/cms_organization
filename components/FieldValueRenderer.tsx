@@ -36,12 +36,38 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{2,4}$|^\d{1,2}-\
  */
 const EXCEL_SERIAL_PATTERN = /^\d{3,5}(\.\d+)?$/;
 
+/** Unix epoch seconds (10 digits) or milliseconds (13 digits), e.g. ATS/sync imports */
+const UNIX_TIMESTAMP_MS_PATTERN = /^\d{13}$/;
+const UNIX_TIMESTAMP_SEC_PATTERN = /^\d{10}$/;
+
 function isExcelSerialDateValue(value: string | number | null | undefined): boolean {
   if (value == null || value === "") return false;
   const s = String(value).trim();
   if (!EXCEL_SERIAL_PATTERN.test(s)) return false;
   const n = Number(s);
   return Number.isFinite(n) && n >= 200 && n < 80000;
+}
+
+function isUnixTimestampValue(value: string | number | null | undefined): boolean {
+  if (value == null || value === "") return false;
+  const s = String(value).trim();
+  if (!UNIX_TIMESTAMP_MS_PATTERN.test(s) && !UNIX_TIMESTAMP_SEC_PATTERN.test(s)) {
+    return false;
+  }
+  const n = Number(s);
+  if (!Number.isFinite(n)) return false;
+  const ms = s.length === 10 ? n * 1000 : n;
+  // 1970-01-01 through 2099-12-31 UTC
+  return ms >= 0 && ms < 4102444800000;
+}
+
+function parseUnixTimestampToDate(value: string | number): Date | null {
+  const s = String(value).trim();
+  if (!isUnixTimestampValue(s)) return null;
+  const n = Number(s);
+  const ms = s.length === 10 ? n * 1000 : n;
+  const date = new Date(ms);
+  return isNaN(date.getTime()) ? null : date;
 }
 
 function extractFieldManagementFields(data: Record<string, unknown> | null): unknown[] {
@@ -135,13 +161,28 @@ export interface FieldValueRendererProps {
 }
 
 /**
- * Parse ISO/US date strings and Excel serial numbers into a Date.
+ * Parse ISO/US date strings, Excel serial numbers, and Unix timestamps into a Date.
  * Excel epoch is 1899-12-30 (Lotus 1-2-3 leap-year quirk included in the day count).
  */
 function parseFlexibleDate(value: string | number | null | undefined): Date | null {
   if (value == null || value === "") return null;
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value >= 1e12 && value < 4102444800000) {
+      const date = new Date(value);
+      return isNaN(date.getTime()) ? null : date;
+    }
+    if (value >= 1e9 && value < 4102444800) {
+      const date = new Date(value * 1000);
+      return isNaN(date.getTime()) ? null : date;
+    }
+  }
+
   const s = String(value).trim();
   if (!s) return null;
+
+  const unixDate = parseUnixTimestampToDate(s);
+  if (unixDate) return unixDate;
 
   if (isExcelSerialDateValue(s)) {
     const serial = Number(s);
@@ -236,7 +277,9 @@ function isDateFieldOrValue(label?: string, key?: string, value?: string): boole
   const valueStr = value != null ? String(value).trim() : "";
   const looksLikeDate =
     valueStr !== "" &&
-    (DATE_PATTERN.test(valueStr) || (hasDateInName && isExcelSerialDateValue(valueStr)));
+    (DATE_PATTERN.test(valueStr) ||
+      isUnixTimestampValue(valueStr) ||
+      (hasDateInName && isExcelSerialDateValue(valueStr)));
   return hasDateInName || looksLikeDate;
 }
 
