@@ -60,7 +60,10 @@ export function useResolvedSummaryLayout({
     defaultValue: adminDefault,
   });
 
-  const layout = mergeSummaryLayout(value, catalogIds, catalog.systemDefault);
+  const layout = useMemo(
+    () => mergeSummaryLayout(value, catalogIds, catalog.systemDefault),
+    [value, catalogIds, catalog.systemDefault]
+  );
 
   return {
     value: layout,
