@@ -104,7 +104,13 @@ function getPlacementFieldManagementEntityType(
 }
 
 const PLACEMENT_DEFAULT_SUMMARY_LAYOUT = {
-  left: ["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails"],
+  left: [
+    "benefitPackage",
+    "candidateDetails",
+    "companyDetails",
+    "billingContactDetails",
+    "timesheetApproverDetails",
+  ],
   right: ["jobDetails", "placementDetails", "recentNotes", "openTasks"],
 };
 
@@ -518,17 +524,22 @@ export default function PlacementView() {
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
-  const [columns, setColumns] = useState<{
-    left: string[];
-    right: string[];
-  }>(PLACEMENT_DEFAULT_SUMMARY_LAYOUT);
-
   const { value: summaryLayoutConfig, setValue: setSummaryLayoutConfig } =
     useResolvedSummaryLayout({
       viewEntityType: VIEW_ENTITY_TYPES.placementsDetail,
       fieldSection: getPlacementFieldManagementEntityType(placement),
       systemDefault: PLACEMENT_DEFAULT_SUMMARY_LAYOUT,
     });
+  // Single source of truth — avoids columns↔config sync loops (React error #185)
+  const columns =
+    summaryLayoutConfig?.left &&
+    Array.isArray(summaryLayoutConfig.left) &&
+    summaryLayoutConfig?.right &&
+    Array.isArray(summaryLayoutConfig.right)
+      ? summaryLayoutConfig
+      : PLACEMENT_DEFAULT_SUMMARY_LAYOUT;
+  const setColumns = setSummaryLayoutConfig;
+
   const { value: panelFieldsConfig, setValue: setPanelFieldsConfig } =
     useUserViewConfig({
       entityType: VIEW_ENTITY_TYPES.placementsDetail,
@@ -537,19 +548,6 @@ export default function PlacementView() {
     });
   const panelFieldsConfigRef = useRef(panelFieldsConfig);
   panelFieldsConfigRef.current = panelFieldsConfig;
-  const summaryLayoutConfigRef = useRef(summaryLayoutConfig);
-  summaryLayoutConfigRef.current = summaryLayoutConfig;
-
-  useEffect(() => {
-    if (
-      summaryLayoutConfig?.left &&
-      Array.isArray(summaryLayoutConfig.left) &&
-      summaryLayoutConfig?.right &&
-      Array.isArray(summaryLayoutConfig.right)
-    ) {
-      setColumns(summaryLayoutConfig);
-    }
-  }, [summaryLayoutConfig]);
 
   // Related entities for summary panels (Candidate, Company, Contacts, Job)
   const [candidate, setCandidate] = useState<any>(null);
@@ -593,17 +591,6 @@ export default function PlacementView() {
       },
     }),
   }), []);
-
-  const prevColumnsRef = useRef<string>("");
-
-  useEffect(() => {
-    const colsString = JSON.stringify(columns);
-    const prevConfigString = JSON.stringify(summaryLayoutConfigRef.current);
-    if (prevColumnsRef.current !== colsString && colsString !== prevConfigString) {
-      setSummaryLayoutConfig(columns);
-      prevColumnsRef.current = colsString;
-    }
-  }, [columns, setSummaryLayoutConfig]);
 
   const findContainer = useCallback(
     (id: string) => {
