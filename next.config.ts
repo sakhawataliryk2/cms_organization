@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   // pdfjs-dist is client-only (react-pdf). Server PDF text extraction uses unpdf (serverless-safe).
-  serverExternalPackages: ["pdfjs-dist"],
+  serverExternalPackages: ["pdfjs-dist", "undici"],
   experimental: {
     serverActions: {
       // Data uploader + document uploads

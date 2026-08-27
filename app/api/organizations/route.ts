@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
             clearTimeout(timeoutId);
         }
 
-        const data = await readBackendJson(response);
+        const data = await readBackendJson<{ message?: string }>(response);
 
         if (!response.ok) {
             console.error('Backend error response:', data);
