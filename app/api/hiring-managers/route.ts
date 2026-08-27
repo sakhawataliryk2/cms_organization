@@ -1,62 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { buildListQueryString } from '@/lib/apiListParams';
+import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
 
 // Get all hiring managers (with optional organization_id filter)
 export async function GET(request: NextRequest) {
     try {
-        // Get the token from cookies
-        const cookieStore = await cookies();
-        const token = cookieStore.get('token')?.value;
-
-        if (!token) {
-            return NextResponse.json(
-                { success: false, message: 'Authentication required' },
-                { status: 401 }
-            );
-        }
-
-        // Get organization_id from query parameters (backend expects numeric DB id only)
         const { searchParams } = new URL(request.url);
         const organizationIdRaw = searchParams.get('organization_id')?.trim() ?? '';
         const organizationIdNumeric =
             organizationIdRaw && /^\d+$/.test(organizationIdRaw)
                 ? organizationIdRaw
                 : null;
-        console.log('Organization ID:', organizationIdRaw || '(none)');
 
-        // Build API URL with organization_id if provided
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        let backendUrl = `${apiUrl}/api/hiring-managers`;
-        
-        // If organization_id is a valid numeric id, use the backend endpoint that filters by organization
+        let path = '/api/hiring-managers';
         if (organizationIdNumeric) {
-            backendUrl = `${apiUrl}/api/hiring-managers/organization/${organizationIdNumeric}`;
+            path = `/api/hiring-managers/organization/${organizationIdNumeric}`;
         }
 
         const queryString = buildListQueryString(searchParams);
         if (queryString) {
-            backendUrl = `${backendUrl}?${queryString}`;
+            path = `${path}?${queryString}`;
         }
 
-        const response = await fetch(backendUrl, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return NextResponse.json(
-                { success: false, message: data.message || 'Failed to fetch hiring managers' },
-                { status: response.status }
-            );
-        }
-
-        return NextResponse.json(data);
+        return proxyAuthedBackend(path, { method: 'GET' });
     } catch (error) {
         console.error('Error fetching hiring managers:', error);
         return NextResponse.json(

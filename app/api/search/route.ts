@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { backendFetch, getApiBaseUrl, readBackendJson } from '@/lib/backendFetch';
 
 // Global search across all entities
 export async function GET(request: NextRequest) {
@@ -29,8 +30,16 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+        const apiUrl = getApiBaseUrl();
         const trimmedQuery = query.trim();
+        const authHeaders = { 'Authorization': `Bearer ${token}` };
+
+        const backendGet = (path: string) =>
+            backendFetch(path.startsWith('http') ? path : `${apiUrl}${path}`, {
+                headers: authHeaders,
+            })
+                .then((res) => (res.ok ? readBackendJson(res) : null))
+                .catch(() => null);
         
         // Prefix mapping
         const PREFIX_MAP: Record<string, string> = {
@@ -89,12 +98,8 @@ export async function GET(request: NextRequest) {
                 
                 // Strategy 1: Try with search parameter
                 const searchUrl = `${apiUrl}${config.endpoint}?${paramName}=${recordNumber}&limit=500&page=1`;
-                const searchResponse = await fetch(searchUrl, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                
-                if (searchResponse.ok) {
-                    const searchData = await searchResponse.json();
+                const searchData = await backendGet(searchUrl);
+                if (searchData) {
                     const searchCollection = searchData[config.responseKey] || [];
                     
                     matchedRecords = searchCollection.filter((record: any) => {
@@ -118,13 +123,9 @@ export async function GET(request: NextRequest) {
                     // Try fetching from estimated page
                     for (const pageEstimate of [85, 86, 87, 88, 89, 90]) {
                         const pageUrl = `${apiUrl}${config.endpoint}?${paramName}=&limit=${pageSize}&page=${pageEstimate}`;
-                        const pageResponse = await fetch(pageUrl, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-                        
-                        if (!pageResponse.ok) break;
-                        
-                        const pageData = await pageResponse.json();
+                        const pageData = await backendGet(pageUrl);
+                        if (!pageData) break;
+
                         const pageCollection = pageData[config.responseKey] || [];
                         
                         if (!Array.isArray(pageCollection) || pageCollection.length === 0) break;
@@ -163,40 +164,24 @@ export async function GET(request: NextRequest) {
         
         // Normal search - no prefixed ID, search across all entities
         const terms = trimmedQuery.split(/\s+/).filter(Boolean);
-        
-        // Fetch all entities in parallel
+        const isNumericIdSearch = /^\d+$/.test(trimmedQuery);
+        const q = encodeURIComponent(query);
+
+        const fetchList = (path: string, empty: Record<string, unknown[]>) =>
+            backendFetch(`${apiUrl}${path}`, { headers: authHeaders })
+                .then((res) => (res.ok ? readBackendJson(res) : empty))
+                .catch(() => empty);
+
         const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes] = await Promise.allSettled([
-            fetch(`${apiUrl}/api/jobs?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { jobs: [] }).catch(() => ({ jobs: [] })),
-            
-            fetch(`${apiUrl}/api/leads/search/query?query=${encodeURIComponent(query)}&limit=200`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : 
-                fetch(`${apiUrl}/api/leads?search=${encodeURIComponent(query)}&limit=200`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }).then(res => res.ok ? res.json() : { leads: [] }).catch(() => ({ leads: [] }))
-            ),
-            
-            fetch(`${apiUrl}/api/job-seekers?search=${encodeURIComponent(query)}&limit=200`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { jobSeekers: [] }).catch(() => ({ jobSeekers: [] })),
-            
-            fetch(`${apiUrl}/api/organizations?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { organizations: [] }).catch(() => ({ organizations: [] })),
-            
-            fetch(`${apiUrl}/api/tasks?search=${encodeURIComponent(query)}&limit=200`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { tasks: [] }).catch(() => ({ tasks: [] })),
-            
-            fetch(`${apiUrl}/api/hiring-managers?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { hiringManagers: [] }).catch(() => ({ hiringManagers: [] })),
-            
-            fetch(`${apiUrl}/api/placements?search=${encodeURIComponent(query)}&limit=200`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            }).then(res => res.ok ? res.json() : { placements: [] }).catch(() => ({ placements: [] })),
+            fetchList(`/api/jobs?search=${q}&limit=${perEntityLimit}&page=1`, { jobs: [] }),
+            backendFetch(`${apiUrl}/api/leads/search/query?query=${q}&limit=${perEntityLimit}`, { headers: authHeaders })
+                .then((res) => (res.ok ? readBackendJson(res) : fetchList(`/api/leads?search=${q}&limit=${perEntityLimit}`, { leads: [] })))
+                .catch(() => ({ leads: [] })),
+            fetchList(`/api/job-seekers?search=${q}&limit=${perEntityLimit}`, { jobSeekers: [] }),
+            fetchList(`/api/organizations?search=${q}&limit=${perEntityLimit}&page=1`, { organizations: [] }),
+            fetchList(`/api/tasks?search=${q}&limit=${perEntityLimit}`, { tasks: [] }),
+            fetchList(`/api/hiring-managers?search=${q}&limit=${perEntityLimit}&page=1`, { hiringManagers: [] }),
+            fetchList(`/api/placements?search=${q}&limit=${perEntityLimit}`, { placements: [] }),
         ]);
 
         // Helper to check if record matches terms
@@ -221,6 +206,13 @@ export async function GET(request: NextRequest) {
             );
         };
 
+        const applyMatchFilter = <T,>(items: T[], fields: string[]): T[] => {
+            if (isNumericIdSearch) return items.slice(0, perEntityLimit);
+            return items
+                .filter((record: any) => recordMatchesTerms(record, [...fields, 'record_number', 'recordNumber']))
+                .slice(0, perEntityLimit);
+        };
+
         const results: any = getEmptyResults();
 
         // Process jobs
@@ -228,11 +220,9 @@ export async function GET(request: NextRequest) {
             'skills', 'requirements', 'organization.website'];
         if (jobsRes.status === 'fulfilled') {
             try {
-                const data = jobsRes.value;
+                const data = jobsRes.value as any;
                 const jobs = data.jobs || data || [];
-                results.jobs = jobs
-                    .filter((job: any) => recordMatchesTerms(job, [...jobFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.jobs = applyMatchFilter(jobs, jobFields);
             } catch (e) {
                 console.error('Error processing jobs results:', e);
             }
@@ -243,11 +233,9 @@ export async function GET(request: NextRequest) {
             'organization.name', 'organization.website'];
         if (leadsRes.status === 'fulfilled') {
             try {
-                const data = leadsRes.value;
+                const data = leadsRes.value as any;
                 const leads = data.leads || data || [];
-                results.leads = Array.isArray(leads)
-                    ? leads.filter((lead: any) => recordMatchesTerms(lead, [...leadFields, 'record_number', 'recordNumber'])).slice(0, perEntityLimit)
-                    : leads;
+                results.leads = Array.isArray(leads) ? applyMatchFilter(leads, leadFields) : leads;
             } catch (e) {
                 console.error('Error processing leads results:', e);
             }
@@ -258,11 +246,9 @@ export async function GET(request: NextRequest) {
             'skills', 'current_position', 'location'];
         if (jobSeekersRes.status === 'fulfilled') {
             try {
-                const data = jobSeekersRes.value;
+                const data = jobSeekersRes.value as any;
                 const jobSeekers = data.jobSeekers || data || [];
-                results.jobSeekers = jobSeekers
-                    .filter((js: any) => recordMatchesTerms(js, [...jobSeekerFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.jobSeekers = applyMatchFilter(jobSeekers, jobSeekerFields);
             } catch (e) {
                 console.error('Error processing job seekers results:', e);
             }
@@ -273,11 +259,9 @@ export async function GET(request: NextRequest) {
             'industry', 'notes'];
         if (organizationsRes.status === 'fulfilled') {
             try {
-                const data = organizationsRes.value;
+                const data = organizationsRes.value as any;
                 const organizations = data.organizations || data || [];
-                results.organizations = organizations
-                    .filter((org: any) => recordMatchesTerms(org, [...orgFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.organizations = applyMatchFilter(organizations, orgFields);
             } catch (e) {
                 console.error('Error processing organizations results:', e);
             }
@@ -287,11 +271,9 @@ export async function GET(request: NextRequest) {
         const taskFields = ['title', 'task_title', 'description', 'notes', 'id', 'status'];
         if (tasksRes.status === 'fulfilled') {
             try {
-                const data = tasksRes.value;
+                const data = tasksRes.value as any;
                 const tasks = data.tasks || data || [];
-                results.tasks = tasks
-                    .filter((task: any) => recordMatchesTerms(task, [...taskFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.tasks = applyMatchFilter(tasks, taskFields);
             } catch (e) {
                 console.error('Error processing tasks results:', e);
             }
@@ -302,11 +284,12 @@ export async function GET(request: NextRequest) {
             'organization.name', 'organization_name', 'title', 'department'];
         if (hiringManagersRes.status === 'fulfilled') {
             try {
-                const data = hiringManagersRes.value;
+                const data = hiringManagersRes.value as any;
                 const hiringManagers = data.hiringManagers || data.hiring_managers || data || [];
-                results.hiringManagers = (Array.isArray(hiringManagers) ? hiringManagers : [])
-                    .filter((hm: any) => recordMatchesTerms(hm, [...hmFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.hiringManagers = applyMatchFilter(
+                    Array.isArray(hiringManagers) ? hiringManagers : [],
+                    hmFields,
+                );
             } catch (e) {
                 console.error('Error processing hiring managers results:', e);
             }
@@ -317,11 +300,12 @@ export async function GET(request: NextRequest) {
             'organization.name', 'organization_name', 'notes'];
         if (placementsRes.status === 'fulfilled') {
             try {
-                const data = placementsRes.value;
+                const data = placementsRes.value as any;
                 const placements = data.placements || data || [];
-                results.placements = (Array.isArray(placements) ? placements : [])
-                    .filter((placement: any) => recordMatchesTerms(placement, [...placementFields, 'record_number', 'recordNumber']))
-                    .slice(0, perEntityLimit);
+                results.placements = applyMatchFilter(
+                    Array.isArray(placements) ? placements : [],
+                    placementFields,
+                );
             } catch (e) {
                 console.error('Error processing placements results:', e);
             }

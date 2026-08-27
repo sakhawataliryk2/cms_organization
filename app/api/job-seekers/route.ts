@@ -1,44 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { buildListQueryString } from '@/lib/apiListParams';
+import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
 
 // Get all job seekers
 export async function GET(request: NextRequest) {
     try {
-        // Get the token from cookies
-        const cookieStore = await cookies();
-        const token = cookieStore.get('token')?.value;
-
-        if (!token) {
-            return NextResponse.json(
-                { success: false, message: 'Authentication required' },
-                { status: 401 }
-            );
-        }
-
-        // Make a request to your backend API (forward query params for archived filter - like jobs)
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const { searchParams } = new URL(request.url);
-        const queryString = buildListQueryString(searchParams);
-        const url = `${apiUrl}/api/job-seekers${queryString ? `?${queryString}` : ''}`;
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return NextResponse.json(
-                { success: false, message: data.message || 'Failed to fetch job seekers' },
-                { status: response.status }
-            );
-        }
-
-        return NextResponse.json(data);
+        const queryString = buildListQueryString(request.nextUrl.searchParams);
+        const path = `/api/job-seekers${queryString ? `?${queryString}` : ''}`;
+        return proxyAuthedBackend(path, { method: 'GET' });
     } catch (error) {
         console.error('Error fetching job seekers:', error);
         return NextResponse.json(

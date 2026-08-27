@@ -2,43 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 import { buildListQueryString } from '@/lib/apiListParams';
+import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
+import { backendFetch, readBackendJson } from '@/lib/backendFetch';
+
 const CREATE_ORGANIZATION_TIMEOUT_MS = 20000;
 
 export async function GET(request: NextRequest) {
     try {
-        // Get the token from cookies
-        const cookieStore = await cookies();
-        const token = cookieStore.get('token')?.value;
-
-        if (!token) {
-            return NextResponse.json(
-                { success: false, message: 'Authentication required' },
-                { status: 401 }
-            );
-        }
-
         const queryString = buildListQueryString(request.nextUrl.searchParams);
-
-        // Make a request to your backend API
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/organizations${queryString ? `?${queryString}` : ""}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return NextResponse.json(
-                { success: false, message: data.message || 'Failed to fetch organizations' },
-                { status: response.status }
-            );
-        }
-
-        return NextResponse.json(data);
+        const path = `/api/organizations${queryString ? `?${queryString}` : ""}`;
+        return proxyAuthedBackend(path, { method: 'GET' });
     } catch (error) {
         console.error('Error fetching organizations:', error);
         return NextResponse.json(
@@ -101,13 +74,11 @@ export async function POST(request: NextRequest) {
         // Log complete data being sent to backend
         console.log('Data being sent to backend API:', apiData);
 
-        // Make a request to your backend API
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CREATE_ORGANIZATION_TIMEOUT_MS);
         let response: Response;
         try {
-            response = await fetch(`${apiUrl}/api/organizations`, {
+            response = await backendFetch('/api/organizations', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -120,10 +91,7 @@ export async function POST(request: NextRequest) {
             clearTimeout(timeoutId);
         }
 
-        // Log the response status for debugging
-        console.log('Backend response status:', response.status);
-
-        const data = await response.json();
+        const data = await readBackendJson(response);
 
         if (!response.ok) {
             console.error('Backend error response:', data);
