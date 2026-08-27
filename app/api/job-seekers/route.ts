@@ -1,29 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { buildListQueryString } from '@/lib/apiListParams';
-import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
 
-// Get all job seekers
 export async function GET(request: NextRequest) {
     try {
-        const queryString = buildListQueryString(request.nextUrl.searchParams);
-        const path = `/api/job-seekers${queryString ? `?${queryString}` : ''}`;
-        return proxyAuthedBackend(path, { method: 'GET' });
-    } catch (error) {
-        console.error('Error fetching job seekers:', error);
-        return NextResponse.json(
-            { success: false, message: 'Internal server error' },
-            { status: 500 }
-        );
-    }
-}
-
-// Create a job seeker
-export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json();
-
-        // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
 
@@ -34,7 +14,51 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // ✅ Clean payload (same pattern as Organizations)
+        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+        const { searchParams } = new URL(request.url);
+        const queryString = buildListQueryString(searchParams);
+        const url = `${apiUrl}/api/job-seekers${queryString ? `?${queryString}` : ''}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return NextResponse.json(
+                { success: false, message: data.message || 'Failed to fetch job seekers' },
+                { status: response.status }
+            );
+        }
+
+        return NextResponse.json(data);
+    } catch (error) {
+        console.error('Error fetching job seekers:', error);
+        return NextResponse.json(
+            { success: false, message: 'Internal server error' },
+            { status: 500 }
+        );
+    }
+}
+
+export async function POST(request: NextRequest) {
+    try {
+        const body = await request.json();
+
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
+
+        if (!token) {
+            return NextResponse.json(
+                { success: false, message: 'Authentication required' },
+                { status: 401 }
+            );
+        }
+
         const apiData = {
             firstName: body.firstName || "",
             lastName: body.lastName || "",
@@ -54,12 +78,9 @@ export async function POST(request: NextRequest) {
             owner: body.owner || "",
             dateAdded: body.dateAdded || null,
             lastContactDate: body.lastContactDate || null,
-            custom_fields: body.custom_fields || {}, // ✅ CRITICAL: Include custom_fields like Organizations
+            custom_fields: body.custom_fields || {},
         };
 
-        console.log('Creating job seeker with data:', apiData);
-
-        // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${apiUrl}/api/job-seekers`, {
             method: 'POST',
@@ -70,20 +91,12 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(apiData)
         });
 
-        // Log the response status
-        console.log('Backend response status:', response.status);
-
-        // Get response as text first for debugging
         const responseText = await response.text();
-        console.log('Raw response:', responseText);
 
-        // Try to parse the response
-        let data;
+        let data: { message?: string };
         try {
             data = JSON.parse(responseText);
-            console.log('Parsed response data:', data);
-        } catch (jsonError) {
-            console.error('Error parsing response JSON:', jsonError);
+        } catch {
             return NextResponse.json(
                 {
                     success: false,

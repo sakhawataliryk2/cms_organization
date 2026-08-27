@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { backendFetch, getApiBaseUrl, readBackendJson } from '@/lib/backendFetch';
 
 // Global search across all entities
 export async function GET(request: NextRequest) {
@@ -30,15 +29,15 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const apiUrl = getApiBaseUrl();
+        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const trimmedQuery = query.trim();
         const authHeaders = { 'Authorization': `Bearer ${token}` };
 
         const backendGet = (path: string): Promise<Record<string, unknown> | null> =>
-            backendFetch(path.startsWith('http') ? path : `${apiUrl}${path}`, {
+            fetch(path.startsWith('http') ? path : `${apiUrl}${path}`, {
                 headers: authHeaders,
             })
-                .then((res) => (res.ok ? readBackendJson<Record<string, unknown>>(res) : null))
+                .then((res) => (res.ok ? res.json() as Promise<Record<string, unknown>> : null))
                 .catch(() => null);
         
         // Prefix mapping
@@ -168,14 +167,14 @@ export async function GET(request: NextRequest) {
         const q = encodeURIComponent(query);
 
         const fetchList = (path: string, empty: Record<string, unknown[]>) =>
-            backendFetch(`${apiUrl}${path}`, { headers: authHeaders })
-                .then((res) => (res.ok ? readBackendJson(res) : empty))
+            fetch(`${apiUrl}${path}`, { headers: authHeaders })
+                .then((res) => (res.ok ? res.json() : empty))
                 .catch(() => empty);
 
         const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes] = await Promise.allSettled([
             fetchList(`/api/jobs?search=${q}&limit=${perEntityLimit}&page=1`, { jobs: [] }),
-            backendFetch(`${apiUrl}/api/leads/search/query?query=${q}&limit=${perEntityLimit}`, { headers: authHeaders })
-                .then((res) => (res.ok ? readBackendJson(res) : fetchList(`/api/leads?search=${q}&limit=${perEntityLimit}`, { leads: [] })))
+            fetch(`${apiUrl}/api/leads/search/query?query=${q}&limit=${perEntityLimit}`, { headers: authHeaders })
+                .then((res) => (res.ok ? res.json() : fetchList(`/api/leads?search=${q}&limit=${perEntityLimit}`, { leads: [] })))
                 .catch(() => ({ leads: [] })),
             fetchList(`/api/job-seekers?search=${q}&limit=${perEntityLimit}`, { jobSeekers: [] }),
             fetchList(`/api/organizations?search=${q}&limit=${perEntityLimit}&page=1`, { organizations: [] }),
