@@ -1,43 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { buildListQueryString } from '@/lib/apiListParams';
+import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
 
 // Get all jobs
 export async function GET(request: NextRequest) {
     try {
-        // Get the token from cookies
-        const cookieStore = await cookies();
-        const token = cookieStore.get('token')?.value;
-
-        if (!token) {
-            return NextResponse.json(
-                { success: false, message: 'Authentication required' },
-                { status: 401 }
-            );
-        }
-
         const queryString = buildListQueryString(request.nextUrl.searchParams);
-
-        // Make a request to your backend API
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/jobs${queryString ? `?${queryString}` : ""}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            return NextResponse.json(
-                { success: false, message: data.message || 'Failed to fetch jobs' },
-                { status: response.status }
-            );
-        }
-
-        return NextResponse.json(data);
+        const path = `/api/jobs${queryString ? `?${queryString}` : ""}`;
+        return proxyAuthedBackend(path, { method: 'GET' });
     } catch (error) {
         console.error('Error fetching jobs:', error);
         return NextResponse.json(
