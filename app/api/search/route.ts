@@ -34,11 +34,11 @@ export async function GET(request: NextRequest) {
         const trimmedQuery = query.trim();
         const authHeaders = { 'Authorization': `Bearer ${token}` };
 
-        const backendGet = (path: string) =>
+        const backendGet = (path: string): Promise<Record<string, unknown> | null> =>
             backendFetch(path.startsWith('http') ? path : `${apiUrl}${path}`, {
                 headers: authHeaders,
             })
-                .then((res) => (res.ok ? readBackendJson(res) : null))
+                .then((res) => (res.ok ? readBackendJson<Record<string, unknown>>(res) : null))
                 .catch(() => null);
         
         // Prefix mapping
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
                 const searchUrl = `${apiUrl}${config.endpoint}?${paramName}=${recordNumber}&limit=500&page=1`;
                 const searchData = await backendGet(searchUrl);
                 if (searchData) {
-                    const searchCollection = searchData[config.responseKey] || [];
+                    const searchCollection = (searchData[config.responseKey] as unknown[]) || [];
                     
                     matchedRecords = searchCollection.filter((record: any) => {
                         const recNum = Number(record.record_number ?? record.recordNumber);
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
                         const pageData = await backendGet(pageUrl);
                         if (!pageData) break;
 
-                        const pageCollection = pageData[config.responseKey] || [];
+                        const pageCollection = (pageData[config.responseKey] as unknown[]) || [];
                         
                         if (!Array.isArray(pageCollection) || pageCollection.length === 0) break;
                         

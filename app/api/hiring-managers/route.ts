@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { buildListQueryString } from '@/lib/apiListParams';
 import { proxyAuthedBackend } from '@/lib/proxyAuthedBackend';
+import { backendFetch, readBackendJson } from '@/lib/backendFetch';
 
 // Get all hiring managers (with optional organization_id filter)
 export async function GET(request: NextRequest) {
@@ -51,9 +53,7 @@ export async function POST(request: NextRequest) {
         // Log the request data for debugging
         console.log('Creating hiring manager with data:', body);
 
-        // Make a request to your backend API
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/hiring-managers`, {
+        const response = await backendFetch('/api/hiring-managers', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -62,12 +62,7 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify(body)
         });
 
-        // Log the response status
-        console.log('Backend response status:', response.status);
-
-        // Get response as text first for debugging
         const responseText = await response.text();
-        console.log('Raw response:', responseText);
 
         // Try to parse the response
         let data;
