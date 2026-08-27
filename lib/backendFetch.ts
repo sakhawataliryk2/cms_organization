@@ -1,17 +1,9 @@
-import { Agent } from "undici";
-
-let dispatcher: Agent | undefined;
-
-function getDispatcher(): Agent {
-  if (!dispatcher) {
-    dispatcher = new Agent({
-      connections: 64,
-      pipelining: 1,
-      keepAliveTimeout: 60_000,
-      keepAliveMaxTimeout: 600_000,
-    });
-  }
-  return dispatcher;
+/** True on Vercel serverless — custom undici dispatchers break fetch there. */
+function isVercelRuntime(): boolean {
+  return (
+    process.env.VERCEL === "1" ||
+    String(process.env.VERCEL || "").trim().toLowerCase() === "true"
+  );
 }
 
 /** Backend Express base URL — prefer 127.0.0.1 on AWS to skip IPv6/DNS latency. */
@@ -21,8 +13,9 @@ export function getApiBaseUrl(): string {
 }
 
 /**
- * Fetch the Express API with a shared keep-alive connection pool.
- * Use for all Next.js → Express proxy routes on AWS (avoids new TCP per request).
+ * Fetch the Express API from Next.js proxy routes.
+ * Uses plain fetch on Vercel (undici Agent causes UND_ERR_INVALID_ARG in serverless).
+ * Optional keep-alive on long-running AWS when undici is available and compatible.
  */
 export async function backendFetch(
   path: string,
@@ -31,12 +24,34 @@ export async function backendFetch(
   const base = getApiBaseUrl();
   const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
-  return fetch(url, {
+  const options: RequestInit = {
     ...init,
     cache: init.cache ?? "no-store",
-    // undici keep-alive dispatcher (Node 18+)
-    dispatcher: getDispatcher(),
-  } as RequestInit);
+  };
+
+  if (!isVercelRuntime()) {
+    try {
+      const { Agent } = await import("undici");
+      type UndiciInit = RequestInit & { dispatcher?: InstanceType<typeof Agent> };
+      const globalKey = "__cmsBackendUndiciAgent__" as const;
+      const g = globalThis as typeof globalThis & {
+        [globalKey]?: InstanceType<typeof Agent>;
+      };
+      if (!g[globalKey]) {
+        g[globalKey] = new Agent({
+          connections: 64,
+          pipelining: 1,
+          keepAliveTimeout: 60_000,
+          keepAliveMaxTimeout: 600_000,
+        });
+      }
+      (options as UndiciInit).dispatcher = g[globalKey];
+    } catch {
+      /* plain fetch fallback */
+    }
+  }
+
+  return fetch(url, options);
 }
 
 export async function readBackendJson<T = unknown>(response: Response): Promise<T> {
