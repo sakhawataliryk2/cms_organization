@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
                 lead: { endpoint: '/api/leads/search/query', responseKey: 'leads', usesQueryParam: true },
                 jobSeeker: { endpoint: '/api/job-seekers', responseKey: 'jobSeekers' },
                 task: { endpoint: '/api/tasks', responseKey: 'tasks' },
-                hiringManager: { endpoint: '/api/hiring-managers/search/query', responseKey: 'hiringManagers', usesQueryParam: true },
+                hiringManager: { endpoint: '/api/hiring-managers', responseKey: 'hiringManagers' },
                 placement: { endpoint: '/api/placements', responseKey: 'placements' },
             };
             
@@ -190,7 +190,7 @@ export async function GET(request: NextRequest) {
                 headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { tasks: [] }).catch(() => ({ tasks: [] })),
             
-            fetch(`${apiUrl}/api/hiring-managers/search/query?query=${encodeURIComponent(query)}&limit=200`, {
+            fetch(`${apiUrl}/api/hiring-managers?search=${encodeURIComponent(query)}&limit=${perEntityLimit}&page=1`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             }).then(res => res.ok ? res.json() : { hiringManagers: [] }).catch(() => ({ hiringManagers: [] })),
             

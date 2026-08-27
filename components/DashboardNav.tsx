@@ -442,8 +442,9 @@ export default function DashboardNav() {
       searchAbortControllerRef.current.abort();
     }
 
-    // Set loading state
+    // Set loading state immediately so the dropdown reflects activity on every keystroke
     setIsSearching(true);
+    setSearchResults(null);
 
     // Debounce search API call
     searchTimeoutRef.current = setTimeout(async () => {
@@ -485,7 +486,8 @@ export default function DashboardNav() {
       }
     }, 300); // 300ms debounce
 
-    // Cleanup function
+    // Cleanup function — only cancel pending work; do not reset loading here
+    // (avoids a flash of stale/empty results while the next debounced search is pending)
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -1483,8 +1485,11 @@ export default function DashboardNav() {
                         ) : searchQuery.trim().length >= 1 ? (
                           <div className="px-4 py-8 text-center">
                             <div className="text-gray-400 text-sm">
-                              {/* <p>No results found for</p>
-                            <p className="font-medium mt-1">"{searchQuery}"</p> */}
+                              <p>No results found for</p>
+                              <p className="font-medium mt-1 text-gray-300">&quot;{searchQuery}&quot;</p>
+                              <p className="mt-2 text-xs text-gray-500">
+                                Try a record number (e.g. HM 893016) or name
+                              </p>
                             </div>
                           </div>
                         ) : null}
