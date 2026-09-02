@@ -92,6 +92,7 @@ export default function AdminCenter() {
     const [jobsXmlStatus, setJobsXmlStatus] = useState<string>('');
     const [jobsXmlType, setJobsXmlType] = useState<string>('');
     const [isGeneratingJobsXml, setIsGeneratingJobsXml] = useState(false);
+    const [isImportingFields, setIsImportingFields] = useState(false);
 
     // Map module IDs to entity types for Field Management
     const moduleToEntityType: Record<string, string> = {
@@ -590,6 +591,12 @@ export default function AdminCenter() {
             path: '/dashboard/admin/field-management'
         },
         {
+            id: 'import-fields',
+            name: 'Import Fields (temp)',
+            icon: <FiInbox size={50} color="white" />,
+            path: '/dashboard/admin'
+        },
+        {
             id: 'data-uploader',
             name: 'Data Uploader',
             icon: <MdDriveFolderUpload size={50} color="white" />,
@@ -687,7 +694,42 @@ export default function AdminCenter() {
         }
     ];
 
+    const handleImportFields = async () => {
+        if (isImportingFields) return;
+        setIsImportingFields(true);
+        try {
+            const token = document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+            const response = await fetch('/api/admin/field-management/import-definitions', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.success === false) {
+                toast.error(data.message || 'Failed to import field definitions');
+                return;
+            }
+            toast.success(
+                `Imported ${data.rowCount ?? 0} field definitions (${data.inserted ?? 0} new, ${data.updated ?? 0} updated)`
+            );
+        } catch (error) {
+            console.error('Error importing field definitions:', error);
+            toast.error('Failed to import field definitions');
+        } finally {
+            setIsImportingFields(false);
+        }
+    };
+
     const handleModuleClick = (moduleId: string, path: string) => {
+        if (moduleId === 'import-fields') {
+            void handleImportFields();
+            return;
+        }
         // If it's the downloader module, open export modal instead of navigating
         if (moduleId === 'downloader') {
             setShowDownloadModal(true);
@@ -741,7 +783,9 @@ export default function AdminCenter() {
                 {adminModules.map((module) => (
                     <div
                         key={module.id}
-                        className="flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity"
+                        className={`flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity ${
+                            module.id === 'import-fields' && isImportingFields ? 'opacity-60 pointer-events-none' : ''
+                        }`}
                         onClick={() => handleModuleClick(module.id, module.path)}
                     >
                         {/* Module Icon - Black square with white icon */}
@@ -751,7 +795,9 @@ export default function AdminCenter() {
 
                         {/* Module Name */}
                         <span className="text-base text-center text-black leading-tight">
-                            {module.name}
+                            {module.id === 'import-fields' && isImportingFields
+                                ? 'Importing…'
+                                : module.name}
                         </span>
                     </div>
                 ))}
