@@ -394,8 +394,8 @@ export default function UserManagement() {
     };
 
     const tableHeaders = [
-        { id: 'firstName', label: 'First Name' },
         { id: 'userId', label: 'User ID' },
+        { id: 'firstName', label: 'First Name' },
         { id: 'lastName', label: 'Last Name' },
         { id: 'email', label: 'Email' },
         { id: 'phone', label: 'Phone' },
@@ -523,8 +523,8 @@ export default function UserManagement() {
                             ) : filteredUsers.length > 0 ? (
                                 filteredUsers.map(user => (
                                     <tr key={user.id} className="border-b hover:bg-gray-50">
-                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.firstName}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap font-mono text-gray-700">{user.userId || '—'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.firstName}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.lastName}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap text-blue-600"><a href={`mailto:${user.email}`} className="hover:underline">{user.email}</a></td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.phone}</td>
