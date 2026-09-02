@@ -1,3 +1,11 @@
+import {
+  getHiringManagerLookupFieldName,
+  getOrganizationLookupFieldName,
+  getOwnerFieldName,
+  getStatusFieldName,
+  normalizeAdminEntityType,
+} from "./fieldDefinitionCatalog";
+
 /**
  * Admin field-management entity slugs (keep in sync with
  * app/api/admin/field-management/[entityType]/route.ts validEntityTypes).
@@ -21,39 +29,57 @@ export const FIELD_MANAGEMENT_ENTITY_TYPES = [
 
 export type FieldManagementEntityType = (typeof FIELD_MANAGEMENT_ENTITY_TYPES)[number];
 
+function catalogStatus(entityType: string, fallback = ""): string {
+  return getStatusFieldName(entityType) || fallback;
+}
+
+function catalogOrg(entityType: string, fallback: string): string {
+  return getOrganizationLookupFieldName(entityType) || fallback;
+}
+
+function catalogOwner(entityType: string): string {
+  return getOwnerFieldName(entityType) || "Field_69";
+}
+
+function catalogHm(entityType: string, fallback: string): string {
+  return getHiringManagerLookupFieldName(entityType) || fallback;
+}
+
 /**
- * Maps entity_type → field_name of the field that should render as an editable status
- * (options + PUT customFields using that definition's field_label as JSON key).
+ * Maps Admin Center entity_type → status field_name from the dumped catalog.
  * Empty string = no mapped status field for that entity.
  */
 export const statusMappings: Record<string, string> = {
-  "job-seekers": "Field_4",
-  "hiring-managers": "Field_4",
-  organizations: "Field_2",
-  /** Custom job status (admin Field_4); list/detail use FieldValueRenderer mapped status */
-  jobs: "Field_4",
-  "jobs-direct-hire": "Field_4",
-  "jobs-executive-search": "Field_4",
-  placements: "",
-  "placements-direct-hire": "",
-  "placements-executive-search": "",
-  tasks: "Field_3",
+  "job-seekers": catalogStatus("job-seekers", "Field_4"),
+  "hiring-managers": catalogStatus("hiring-managers", "Field_4"),
+  organizations: catalogStatus("organizations", "Field_2"),
+  jobs: catalogStatus("jobs", "Field_4"),
+  "jobs-direct-hire": catalogStatus("jobs-direct-hire", "Field_2"),
+  "jobs-executive-search": catalogStatus("jobs-executive-search", "Field_2"),
+  placements: catalogStatus("placements", "Field_1"),
+  "placements-direct-hire": catalogStatus("placements-direct-hire", "Field_1"),
+  "placements-executive-search": catalogStatus("placements-executive-search", "Field_1"),
+  tasks: catalogStatus("tasks", "Field_3"),
   planner: "",
-  leads: "Field_4",
+  leads: catalogStatus("leads", "Field_4"),
   tearsheets: "",
   "goals-quotas": "",
 };
 
 /** HM custom field (field_name) whose value is the related organization id (stored under field_label in custom_fields). */
-export const HM_ORGANIZATION_ID_FIELD_NAME = "Field_3";
+export const HM_ORGANIZATION_ID_FIELD_NAME = catalogOrg("hiring-managers", "Field_3");
 
-/** Stable organization lookup field_name per entity (admin labels may differ). */
+/** Stable organization lookup field_name per Admin Center entity (from dump JSON). */
 export const ORGANIZATION_LOOKUP_FIELD_BY_ENTITY: Record<string, string> = {
   "hiring-managers": HM_ORGANIZATION_ID_FIELD_NAME,
-  jobs: "Field_2",
-  "job-seekers": "Field_5",
-  leads: "Field_6",
-  placements: "Field_22",
+  jobs: catalogOrg("jobs", "Field_2"),
+  "jobs-direct-hire": catalogOrg("jobs-direct-hire", "Field_6"),
+  "jobs-executive-search": catalogOrg("jobs-executive-search", "Field_6"),
+  "job-seekers": catalogOrg("job-seekers", "Field_5"),
+  leads: catalogOrg("leads", "Field_6"),
+  placements: catalogOrg("placements", "Field_22"),
+  "placements-direct-hire": catalogOrg("placements-direct-hire", "Field_22"),
+  "placements-executive-search": catalogOrg("placements-executive-search", "Field_22"),
 };
 
 /**
@@ -62,27 +88,47 @@ export const ORGANIZATION_LOOKUP_FIELD_BY_ENTITY: Record<string, string> = {
  */
 export const LOOKUP_FIELD_BACKEND_COLUMN: Record<string, Record<string, string>> = {
   organizations: {
-    Field_69: "owner",
+    [catalogOwner("organizations")]: "owner",
   },
   "hiring-managers": {
     [HM_ORGANIZATION_ID_FIELD_NAME]: "organizationId",
-    Field_69: "owner",
+    [catalogOwner("hiring-managers")]: "owner",
   },
   jobs: {
-    Field_2: "organizationId",
-    Field_22: "hiringManager",
-    Field_69: "owner",
+    [catalogOrg("jobs", "Field_2")]: "organizationId",
+    [catalogHm("jobs", "Field_22")]: "hiringManager",
+    [catalogOwner("jobs")]: "owner",
+  },
+  "jobs-direct-hire": {
+    [catalogOrg("jobs-direct-hire", "Field_6")]: "organizationId",
+    [catalogHm("jobs-direct-hire", "Field_7")]: "hiringManager",
+    [catalogOwner("jobs-direct-hire")]: "owner",
+  },
+  "jobs-executive-search": {
+    [catalogOrg("jobs-executive-search", "Field_6")]: "organizationId",
+    [catalogHm("jobs-executive-search", "Field_7")]: "hiringManager",
+    [catalogOwner("jobs-executive-search")]: "owner",
   },
   "job-seekers": {
-    Field_5: "currentOrganization",
-    Field_69: "owner",
+    [catalogOrg("job-seekers", "Field_5")]: "currentOrganization",
+    [catalogOwner("job-seekers")]: "owner",
   },
   leads: {
-    Field_6: "organizationId",
-    Field_69: "owner",
+    [catalogOrg("leads", "Field_6")]: "organizationId",
+    [catalogOwner("leads")]: "owner",
   },
   placements: {
-    Field_22: "organization_id",
+    [catalogOrg("placements", "Field_22")]: "organization_id",
+    Field_21: "jobId",
+    Field_2: "job_seeker_id",
+  },
+  "placements-direct-hire": {
+    [catalogOrg("placements-direct-hire", "Field_22")]: "organization_id",
+    Field_21: "jobId",
+    Field_2: "job_seeker_id",
+  },
+  "placements-executive-search": {
+    [catalogOrg("placements-executive-search", "Field_22")]: "organization_id",
     Field_21: "jobId",
     Field_2: "job_seeker_id",
   },
@@ -128,7 +174,8 @@ export function resolveFieldRenderMeta(
 
   const stableName = getStableCustomFieldName(fieldInfo);
   const label = String(fieldInfo?.label ?? "").trim().toLowerCase();
-  const slug = entityType ? normalizeCrmEntityTypeSlug(entityType) : "";
+  const slug = entityType ? normalizeAdminEntityType(entityType) : "";
+  const crmSlug = entityType ? normalizeCrmEntityTypeSlug(entityType) : "";
 
   const ensureLookup = (type: string) => {
     if (!fieldType || fieldType.toLowerCase() === "text") {
@@ -145,7 +192,9 @@ export function resolveFieldRenderMeta(
   }
 
   if (slug) {
-    const backendCol = LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[stableName];
+    const backendCol =
+      LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[stableName] ||
+      LOOKUP_FIELD_BACKEND_COLUMN[crmSlug]?.[stableName];
     if (backendCol === "owner") {
       ensureLookup("owner");
     } else if (
@@ -181,8 +230,11 @@ export function getLookupBackendColumn(
   fieldName: string,
   lookupType?: string | null
 ): string | null {
+  const admin = normalizeAdminEntityType(entityType);
   const slug = normalizeCrmEntityTypeSlug(entityType);
-  const byFieldName = LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[fieldName];
+  const byFieldName =
+    LOOKUP_FIELD_BACKEND_COLUMN[admin]?.[fieldName] ||
+    LOOKUP_FIELD_BACKEND_COLUMN[slug]?.[fieldName];
   if (byFieldName) return byFieldName;
 
   const normalizedLookup = String(lookupType ?? "")
@@ -190,7 +242,9 @@ export function getLookupBackendColumn(
     .toLowerCase()
     .replace(/\s+/g, "-");
   if (normalizedLookup === "organizations") {
-    const orgField = ORGANIZATION_LOOKUP_FIELD_BY_ENTITY[slug];
+    const orgField =
+      ORGANIZATION_LOOKUP_FIELD_BY_ENTITY[admin] ||
+      ORGANIZATION_LOOKUP_FIELD_BY_ENTITY[slug];
     if (orgField && fieldName === orgField) {
       return slug === "job-seekers" ? "currentOrganization" : "organizationId";
     }
@@ -276,7 +330,9 @@ export function getEntityCustomFieldsPatchPath(
 
 export function getMappedStatusFieldName(entityType: string | undefined): string {
   if (!entityType) return "";
+  const admin = normalizeAdminEntityType(entityType);
+  const fromAdmin = (statusMappings[admin] ?? "").trim();
+  if (fromAdmin) return fromAdmin;
   const slug = normalizeCrmEntityTypeSlug(entityType);
-  const v = (statusMappings[slug] ?? "").trim();
-  return v;
+  return (statusMappings[slug] ?? "").trim();
 }

@@ -84,6 +84,10 @@ import AddTearsheetModal from '@/components/AddTearsheetModal';
 import SortableFieldsEditModal from '@/components/SortableFieldsEditModal';
 import AddNoteModal from '@/components/AddNoteModal';
 import { getCustomFieldLabels } from '@/lib/getCustomFieldLabel';
+import {
+  getFieldNameByLabel,
+  getStatusFieldName,
+} from "@/lib/fieldDefinitionCatalog";
 import LookupEntityDetailsGrid from '@/components/LookupEntityDetailsGrid';
 import { resolveJobLinkedOrganizationId } from '@/lib/jobOrganizationCustomField';
 
@@ -3616,19 +3620,47 @@ out.sort((a, b) => {
         (p: any) => String(p?.job_id ?? p?.jobId ?? "") === String(jobId)
       );
 
-      const labels = await getCustomFieldLabels("placements", [
-        "Field_1",
-        "Field_2",
-        "Field_6",
-        "Field_22",
-      ]);
+      const placementEntityFor = (p: any) => {
+        const t = String(p?.placement_type || p?.placementType || "").toLowerCase();
+        if (t.includes("direct")) return "placements-direct-hire";
+        if (t.includes("executive")) return "placements-executive-search";
+        return "placements";
+      };
+
+      const entityTypes: string[] = Array.from(new Set(forJob.map(placementEntityFor)));
+      const packByEntity: Record<
+        string,
+        {
+          jsField: string;
+          startField: string;
+          statusField: string;
+          labels: Record<string, string | null>;
+        }
+      > = {};
+      for (const rawEt of entityTypes) {
+        const et = String(rawEt);
+        const jsField = String(getFieldNameByLabel(et, "Job Seeker") || "Field_2");
+        const startField = String(getFieldNameByLabel(et, "Start Date") || "Field_6");
+        const statusField = String(getStatusFieldName(et) || "Field_1");
+        packByEntity[et] = {
+          jsField,
+          startField,
+          statusField,
+          labels: await getCustomFieldLabels(et, [jsField, startField, statusField]),
+        };
+      }
 
       const mapped = forJob.map((p: any) => {
+        const et = placementEntityFor(p);
+        const pack = packByEntity[et];
+        const placementJsField = pack?.jsField || "Field_2";
+        const placementStartField = pack?.startField || "Field_6";
+        const placementStatusField = pack?.statusField || "Field_1";
+        const labels = pack?.labels || {};
         const cf = normalizeCustomFieldObject(p?.custom_fields ?? p?.customFields);
-        const candidateIdRaw = getValueByLabel(cf, labels["Field_1"]);
-        const dateRaw = getValueByLabel(cf, labels["Field_2"]);
-        const addedByRaw = getValueByLabel(cf, labels["Field_6"]);
-        const statusRaw = getValueByLabel(cf, labels["Field_22"]);
+        const candidateIdRaw = getValueByLabel(cf, labels[placementJsField]);
+        const dateRaw = getValueByLabel(cf, labels[placementStartField]);
+        const statusRaw = getValueByLabel(cf, labels[placementStatusField]);
 
         const candidateId =
           candidateIdRaw !== undefined && candidateIdRaw !== null && String(candidateIdRaw).trim() !== ""
@@ -3644,7 +3676,7 @@ out.sort((a, b) => {
           appliedAt,
           updatedAt: p?.updated_at ?? p?.updatedAt ?? p?.created_at ?? null,
           status,
-          addedBy: addedByRaw ? String(addedByRaw) : (p?.created_by_name ?? "System"),
+          addedBy: p?.created_by_name ?? "System",
           isPlacement: true,
           placementId: p?.id,
           rawPlacement: p,

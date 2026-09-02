@@ -207,7 +207,7 @@ export default function SmartMatchMigrationPage() {
           body: JSON.stringify(body),
         });
         abortRef.current?.abort();
-        appendLog('warn', 'Stop requested — finishing current record, then pausing.');
+        appendLog('warn', 'Stop requested — finishing current batch, then pausing.');
         await refreshStatus();
       } catch (e: unknown) {
         appendLog('error', e instanceof Error ? e.message : 'Stop failed');
@@ -287,7 +287,7 @@ export default function SmartMatchMigrationPage() {
                   Same steps as Storage Migration: Validate env → Scan → Dry run (cost) →
                   Start. Runs against this environment&apos;s database. New and updated
                   records embed on save; this page only backfills what is already there.
-                  Closing the browser stops after the current record. Use Resume to continue.
+                  Closing the browser stops after the current batch. Use Resume to continue.
                 </p>
               </div>
               <button

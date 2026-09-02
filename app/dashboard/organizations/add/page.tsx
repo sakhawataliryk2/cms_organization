@@ -15,6 +15,14 @@ import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/c
 import { normalizeDateInputToIso } from "@/lib/dateNormalize";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
 import { ORG_PERMISSIONS, OrgRecordLike } from "@/lib/organizationPermissions";
+import { getFieldNameByLabel } from "@/lib/fieldDefinitionCatalog";
+
+const ORG_CONTRACT_SIGNED_ON_FILE_FIELD =
+  getFieldNameByLabel("organizations", "Contract Signed on File") || "Field_13";
+const ORG_CONTRACT_SIGNED_BY_FIELD =
+  getFieldNameByLabel("organizations", "Contract Signed By") || "Field_14";
+const ORG_ZIP_FIELD_NAME =
+  getFieldNameByLabel("organizations", "ZIP / Postal Code") || "Field_12";
 
 
 interface CustomFieldDefinition {
@@ -662,8 +670,8 @@ export default function AddOrganization() {
           field.field_label?.toLowerCase().includes("zip") ||
           field.field_label?.toLowerCase().includes("postal code") ||
           field.field_name?.toLowerCase().includes("zip") ||
-          field.field_name === "Field_24" || // ZIP Code
-          field.field_name === "field_24";
+          field.field_name === ORG_ZIP_FIELD_NAME ||
+          field.field_name === String(ORG_ZIP_FIELD_NAME).toLowerCase();
         if (isZipCodeField) {
           const zipValue = String(value).trim();
           if (!/^\d{5}$/.test(zipValue)) {
@@ -677,22 +685,16 @@ export default function AddOrganization() {
     // Validate conditional requirement: Contract Signed By is required when Contract Signed on File is "Yes"
     const contractSignedOnFileField = customFields.find(
       (f) =>
-        f.field_name === "Field_8" ||
-        f.field_name === "field_8" ||
-        f.field_name?.toLowerCase() === "field_8" ||
-        (f.field_label === "Contract Signed on File" &&
-          (f.field_name?.includes("8") ||
-            f.field_name?.toLowerCase().includes("field_8")))
+        String(f.field_name || "").toLowerCase() ===
+          ORG_CONTRACT_SIGNED_ON_FILE_FIELD.toLowerCase() ||
+        f.field_label === "Contract Signed on File"
     );
 
     const contractSignedByField = customFields.find(
       (f) =>
-        f.field_name === "Field_9" ||
-        f.field_name === "field_9" ||
-        f.field_name?.toLowerCase() === "field_9" ||
-        (f.field_label === "Contract Signed By" &&
-          (f.field_name?.includes("9") ||
-            f.field_name?.toLowerCase().includes("field_9")))
+        String(f.field_name || "").toLowerCase() ===
+          ORG_CONTRACT_SIGNED_BY_FIELD.toLowerCase() ||
+        f.field_label === "Contract Signed By"
     );
 
     let contractSignedOnFileValue = "";
@@ -1353,8 +1355,8 @@ export default function AddOrganization() {
           field.field_label?.toLowerCase().includes("zip") ||
           field.field_label?.toLowerCase().includes("postal code") ||
           field.field_name?.toLowerCase().includes("zip") ||
-          field.field_name === "Field_24" ||
-          field.field_name === "field_24";
+          field.field_name === ORG_ZIP_FIELD_NAME ||
+          field.field_name === String(ORG_ZIP_FIELD_NAME).toLowerCase();
         if (isZipCodeField && !/^\d{5}$/.test(String(value).trim())) {
           issues.push(
             `${field.field_label} must be exactly 5 digits (ZIP code)`
@@ -1366,17 +1368,15 @@ export default function AddOrganization() {
     // Contract Signed By required when Contract Signed on File is "Yes"
     const contractSignedOnFileFieldForState = customFields.find(
       (f) =>
-        f.field_name === "Field_8" ||
-        f.field_name === "field_8" ||
-        (f.field_label === "Contract Signed on File" &&
-          f.field_name?.toLowerCase().includes("field_8"))
+        String(f.field_name || "").toLowerCase() ===
+          ORG_CONTRACT_SIGNED_ON_FILE_FIELD.toLowerCase() ||
+        f.field_label === "Contract Signed on File"
     );
     const contractSignedByFieldForState = customFields.find(
       (f) =>
-        f.field_name === "Field_9" ||
-        f.field_name === "field_9" ||
-        (f.field_label === "Contract Signed By" &&
-          f.field_name?.toLowerCase().includes("field_9"))
+        String(f.field_name || "").toLowerCase() ===
+          ORG_CONTRACT_SIGNED_BY_FIELD.toLowerCase() ||
+        f.field_label === "Contract Signed By"
     );
     if (contractSignedOnFileFieldForState && contractSignedByFieldForState) {
       const contractOnFileValue =
@@ -1871,32 +1871,22 @@ export default function AddOrganization() {
                     fnLower === ORG_DUPLICATE_WEBSITE_FIELD_NAME.toLowerCase();
                   // Special handling for Field_8 (Contract Signed on File) - detect for conditional validation
                   const isContractSignedOnFileField =
-                    field.field_name === "Field_8" ||
-                    field.field_name === "field_8" ||
-                    field.field_name?.toLowerCase() === "field_8" ||
-                    (field.field_label === "Contract Signed on File" &&
-                      (field.field_name?.includes("8") ||
-                        field.field_name?.toLowerCase().includes("field_8")));
+                    String(field.field_name || "").toLowerCase() ===
+                      ORG_CONTRACT_SIGNED_ON_FILE_FIELD.toLowerCase() ||
+                    field.field_label === "Contract Signed on File";
 
-                  // Special handling for Field_9 (Contract Signed by) - render as contact lookup
                   const isContractSignedByField =
-                    field.field_name === "Field_9" ||
-                    field.field_name === "field_9" ||
-                    field.field_name?.toLowerCase() === "field_9" ||
-                    (field.field_label === "Contract Signed By" &&
-                      (field.field_name?.includes("9") ||
-                        field.field_name?.toLowerCase().includes("field_9")));
+                    String(field.field_name || "").toLowerCase() ===
+                      ORG_CONTRACT_SIGNED_BY_FIELD.toLowerCase() ||
+                    field.field_label === "Contract Signed By";
 
                   // Check if Contract Signed on File is "Yes" to conditionally require Contract Signed By
                   // Check both customFieldValues (Field_8) and formData.contractOnFile
                   const contractSignedOnFileField = customFields.find(
                     (f) =>
-                      f.field_name === "Field_8" ||
-                      f.field_name === "field_8" ||
-                      f.field_name?.toLowerCase() === "field_8" ||
-                      (f.field_label === "Contract Signed on File" &&
-                        (f.field_name?.includes("8") ||
-                          f.field_name?.toLowerCase().includes("field_8")))
+                      String(f.field_name || "").toLowerCase() ===
+                        ORG_CONTRACT_SIGNED_ON_FILE_FIELD.toLowerCase() ||
+                      f.field_label === "Contract Signed on File"
                   );
 
                   let contractSignedOnFileValue = "";

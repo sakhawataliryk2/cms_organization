@@ -17,6 +17,18 @@ import { toast } from 'sonner';
 import RecordNameResolver, { type RecordType } from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
 import { getCustomFieldLabel } from '@/lib/getCustomFieldLabel';
+import {
+  getAddressFieldNames,
+  getFieldNameByLabel,
+  getHiringManagerLookupFieldName,
+  getJobDescriptionFieldName,
+  getOrganizationLookupFieldName,
+  getOwnerFieldName,
+  getPrimaryEmailFieldName,
+  getStatusFieldName,
+  jobAdminEntityTypeFromJob,
+  jobDetailFieldNames,
+} from '@/lib/fieldDefinitionCatalog';
 
 interface PrescreenedCandidate {
   id: number;
@@ -93,39 +105,23 @@ interface DragPayload {
 }
 
 const JOB_SEEKER_MODAL_FIELD_NAMES = [
-  'Field_1',
-  'Field_3',
-  'Field_4',
-  'Field_5',
-  'Field_6',
-  'Field_8',
-  'Field_11',
-  'Field_69',
-  'Field_70',
-] as const;
-
-const JOB_MODAL_FIELD_NAMES = [
-  'Field_1',
-  'Field_2',
-  'Field_22',
-  'Field_4',
-  'Field_6',
-  'Field_8',
-  'Field_12',
-  'Field_13',
-  'Field_14',
-  'Field_15',
-  'Field_17',
-  'Field_24',
-  'Field_69',
-  'Field_70',
+  getFieldNameByLabel('job-seekers', 'First Name') || 'Field_1',
+  getFieldNameByLabel('job-seekers', 'Last Name') || 'Field_3',
+  getStatusFieldName('job-seekers') || 'Field_4',
+  getOrganizationLookupFieldName('job-seekers') || 'Field_5',
+  getFieldNameByLabel('job-seekers', 'LinkedIn URL') || 'Field_6',
+  getPrimaryEmailFieldName('job-seekers') || 'Field_8',
+  getFieldNameByLabel('job-seekers', 'Primary Phone') || 'Field_11',
+  getOwnerFieldName('job-seekers') || 'Field_69',
+  getFieldNameByLabel('job-seekers', 'Date Added') || 'Field_70',
 ] as const;
 
 const HIRING_MANAGER_CONTACT_FIELD_NAMES = [
-  'Field_3',
-  'Field_10',
-  'Field_16',
-  'Field_7',
+  getOrganizationLookupFieldName('hiring-managers') || 'Field_3',
+  getFieldNameByLabel('hiring-managers', 'Direct Line') || 'Field_10',
+  getFieldNameByLabel('hiring-managers', 'Mobile Phone') || 'Field_11',
+  getPrimaryEmailFieldName('hiring-managers') || 'Field_7',
+  getStatusFieldName('hiring-managers') || 'Field_4',
 ] as const;
 
 const PLACEHOLDER_COLUMNS: Omit<CandidateColumn, 'candidates' | 'count'>[] = [
@@ -202,6 +198,28 @@ export default function CandidateFlowDashboard() {
   const [loadingHiringManagerContact, setLoadingHiringManagerContact] = useState(false);
   const [hasHiringManagerLookup, setHasHiringManagerLookup] = useState(false);
   const [jobProfileRefreshTick, setJobProfileRefreshTick] = useState(0);
+
+  const jobAdminEntity = jobAdminEntityTypeFromJob(selectedJobProfile);
+  const jobModalFields = jobDetailFieldNames(jobAdminEntity);
+  const jobStatusField = getStatusFieldName(jobAdminEntity) || "Field_4";
+  const jobOrgField = getOrganizationLookupFieldName(jobAdminEntity) || "Field_2";
+  const jobHmField = getHiringManagerLookupFieldName(jobAdminEntity) || "Field_22";
+  const jsStatusField = getStatusFieldName("job-seekers") || "Field_4";
+  const jsOrgField = getOrganizationLookupFieldName("job-seekers") || "Field_5";
+  const jsOwnerField = getOwnerFieldName("job-seekers") || "Field_69";
+  const jsPhoneField = getFieldNameByLabel("job-seekers", "Primary Phone") || "Field_11";
+  const jsEmailField = getPrimaryEmailFieldName("job-seekers") || "Field_8";
+  const jsLinkedInField = getFieldNameByLabel("job-seekers", "LinkedIn URL") || "Field_6";
+  const jsDateAddedField = getFieldNameByLabel("job-seekers", "Date Added") || "Field_70";
+  const hmEmailField = getPrimaryEmailFieldName("hiring-managers") || "Field_7";
+  const hmStatusField = getStatusFieldName("hiring-managers") || "Field_4";
+  const hmOrgField = getOrganizationLookupFieldName("hiring-managers") || "Field_3";
+  const jobAddress = getAddressFieldNames(jobAdminEntity);
+  const jobDescriptionField = getJobDescriptionFieldName(jobAdminEntity);
+  const jobStartField = getFieldNameByLabel(jobAdminEntity, "Start Date");
+  const jobOpenCloseField =
+    getFieldNameByLabel(jobAdminEntity, "Open / Close") ||
+    getFieldNameByLabel(jobAdminEntity, "Open/Closed");
 
   const getToken = () =>
     document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
@@ -774,8 +792,9 @@ export default function CandidateFlowDashboard() {
       setLoadingJobFieldLabels(true);
       try {
         const entries = await Promise.all(
-          JOB_MODAL_FIELD_NAMES.map(async (fieldName) => {
-            const label = await getCustomFieldLabel('jobs', fieldName);
+          jobDetailFieldNames(jobAdminEntityTypeFromJob(selectedJobProfile)).map(async (fieldName) => {
+            const adminEntity = jobAdminEntityTypeFromJob(selectedJobProfile);
+            const label = await getCustomFieldLabel(adminEntity, fieldName);
             return [fieldName, label || fieldName] as const;
           })
         );
@@ -789,7 +808,7 @@ export default function CandidateFlowDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [selectedJobId]);
+  }, [selectedJobId, selectedJobProfile]);
 
   useEffect(() => {
     if (selectedJobId == null || !selectedJobProfile) {
@@ -804,13 +823,14 @@ export default function CandidateFlowDashboard() {
     const loadHiringManagerContact = async () => {
       setLoadingHiringManagerContact(true);
       try {
-        const jobField22Label = (await getCustomFieldLabel('jobs', 'Field_22')) || 'Field_22';
+        const adminEntity = jobAdminEntityTypeFromJob(selectedJobProfile);
+        const hmField = getHiringManagerLookupFieldName(adminEntity) || "Field_22";
+        const jobHmLabel = (await getCustomFieldLabel(adminEntity, hmField)) || hmField;
         const jobCustomFields =
           (selectedJobProfile.customFields as Record<string, any> | undefined) || {};
-        const hiringManagerLookupRaw = jobCustomFields[jobField22Label] ?? jobCustomFields.Field_22;
+        const hiringManagerLookupRaw = jobCustomFields[jobHmLabel] ?? jobCustomFields[hmField];
         const hiringManagerId = getLookupIdValue(hiringManagerLookupRaw);
 
-        // If Field_22 is empty/null, do not render contact section.
         if (!hiringManagerId) {
           if (!cancelled) {
             setSelectedHiringManagerProfile(null);
@@ -1163,13 +1183,15 @@ export default function CandidateFlowDashboard() {
 
   const getJobFullAddress = () => {
     const parts = [
-      getJobFieldValueByFieldName('Field_12'),
-      getJobFieldValueByFieldName('Field_13'),
-      getJobFieldValueByFieldName('Field_14'),
-      getJobFieldValueByFieldName('Field_15'),
-      getJobFieldValueByFieldName('Field_17'),
+      jobAddress.address,
+      jobAddress.address2,
+      jobAddress.city,
+      jobAddress.state,
+      jobAddress.zip,
     ]
-      .map((s) => String(s || '').trim())
+      .filter((name): name is string => Boolean(name))
+      .map((name) => getJobFieldValueByFieldName(name))
+      .map((s) => String(s || "").trim())
       .filter(Boolean);
     return parts.join(', ');
   };
@@ -1653,19 +1675,19 @@ export default function CandidateFlowDashboard() {
                   <div className="border border-slate-300 bg-white">
                     <div className="px-3 py-2 text-sm font-semibold text-slate-700 border-b border-slate-300">Details</div>
                     {[
-                      'Field_4',
-                      'Field_5',
-                      'Field_11',
-                      'Field_8',
-                      'Field_6',
-                      'Field_69',
-                      'Field_70',
+                      jsStatusField,
+                      jsOrgField,
+                      jsPhoneField,
+                      jsEmailField,
+                      jsLinkedInField,
+                      jsOwnerField,
+                      jsDateAddedField,
                     ].map((fieldName) => {
                       const label = getJobSeekerFieldLabel(fieldName);
                       const value = getJobSeekerFieldValueByFieldName(fieldName);
-                      const isStatus = fieldName === 'Field_4';
-                      const isOrganizationLookup = fieldName === 'Field_5';
-                      const isOwnerLookup = fieldName === 'Field_69';
+                      const isStatus = fieldName === jsStatusField;
+                      const isOrganizationLookup = fieldName === jsOrgField;
+                      const isOwnerLookup = fieldName === jsOwnerField;
                       return (
                         <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200 last:border-b-0">
                           <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{label}:</div>
@@ -1673,7 +1695,7 @@ export default function CandidateFlowDashboard() {
                             {isStatus ? (
                               <FieldValueRenderer
                                 value={value || ''}
-                                fieldInfo={{ name: 'Field_4', label, fieldType: 'status' }}
+                                fieldInfo={{ name: jsStatusField, label, fieldType: 'status' }}
                                 entityType="job-seekers"
                                 recordId={selectedJobSeekerId}
                               />
@@ -1765,15 +1787,15 @@ export default function CandidateFlowDashboard() {
                   <div className="border border-slate-300 bg-white">
                     <div className="px-3 py-2 text-sm font-semibold text-slate-700 border-b border-slate-300">Details</div>
                     {[
-                      'Field_4',
-                      'Field_24',
+                      jobStatusField,
+                      jobOpenCloseField,
                       '__EMPLOYMENT_TYPE__',
-                      'Field_8',
+                      jobStartField,
                       '__FULL_ADDRESS__',
-                      'Field_69',
+                      getOwnerFieldName(jobAdminEntity) || 'Field_69',
                       'Field_70',
-                      'Field_2',
-                    ].map((fieldName: any) => {
+                      jobOrgField,
+                    ].filter(Boolean).map((fieldName: any) => {
                       if (fieldName === '__EMPLOYMENT_TYPE__') {
                         const employmentType = String(
                           selectedJobProfile?.employment_type ??
@@ -1789,12 +1811,15 @@ export default function CandidateFlowDashboard() {
                       }
                       if (fieldName === '__FULL_ADDRESS__') {
                         const fullAddressLabel = [
-                          getJobFieldLabel('Field_12'),
-                          getJobFieldLabel('Field_13'),
-                          getJobFieldLabel('Field_14'),
-                          getJobFieldLabel('Field_15'),
-                          getJobFieldLabel('Field_17'),
-                        ].join(', ');
+                          jobAddress.address,
+                          jobAddress.address2,
+                          jobAddress.city,
+                          jobAddress.state,
+                          jobAddress.zip,
+                        ]
+                          .filter((name): name is string => Boolean(name))
+                          .map((name) => getJobFieldLabel(name))
+                          .join(', ');
                         return (
                           <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200">
                             <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{fullAddressLabel}:</div>
@@ -1805,9 +1830,9 @@ export default function CandidateFlowDashboard() {
 
                       const label = getJobFieldLabel(fieldName);
                       const value = getJobFieldValueByFieldName(fieldName);
-                      const isStatus = fieldName === 'Field_4';
-                      const isOwnerLookup = fieldName === 'Field_69';
-                      const isOrganizationLookup = fieldName === 'Field_2';
+                      const isStatus = fieldName === jobStatusField;
+                      const isOwnerLookup = fieldName === (getOwnerFieldName(jobAdminEntity) || 'Field_69');
+                      const isOrganizationLookup = fieldName === jobOrgField;
                       return (
                         <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200">
                           <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">{label}:</div>
@@ -1815,8 +1840,8 @@ export default function CandidateFlowDashboard() {
                             {isStatus ? (
                               <FieldValueRenderer
                                 value={value || ''}
-                                fieldInfo={{ name: 'Field_4', label, fieldType: 'status', lookupType: 'jobs' }}
-                                entityType="jobs"
+                                fieldInfo={{ name: jobStatusField, label, fieldType: 'status', lookupType: 'jobs' }}
+                                entityType={jobAdminEntity}
                                 recordId={selectedJobId}
                               />
                             ) : (
@@ -1828,7 +1853,7 @@ export default function CandidateFlowDashboard() {
                                   fieldType: isOwnerLookup || isOrganizationLookup ? 'lookup' : undefined,
                                   lookupType: isOwnerLookup ? 'owner' : isOrganizationLookup ? 'organization' : undefined,
                                 }}
-                                entityType="jobs"
+                                entityType={jobAdminEntity}
                                 recordId={selectedJobId}
                               />
                             )}
@@ -1849,12 +1874,12 @@ export default function CandidateFlowDashboard() {
                             <>
                               <div className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200">
                                 <div className="px-3 py-2 bg-slate-50 text-slate-600 font-medium">
-                                  {getJobFieldLabel('Field_22')}:
+                                  {getJobFieldLabel(jobHmField)}:
                                 </div>
                                 <div className="px-3 py-2 text-slate-800">
                                   {renderDetailCellValue(
-                                    getJobFieldRawValueByFieldName('Field_22'),
-                                    getJobFieldValueByFieldName('Field_22'),
+                                    getJobFieldRawValueByFieldName(jobHmField),
+                                    getJobFieldValueByFieldName(jobHmField),
                                     'hiring-managers'
                                   )}
                                 </div>
@@ -1869,9 +1894,9 @@ export default function CandidateFlowDashboard() {
                                 const isEmailLikeValue =
                                   typeof value === 'string' &&
                                   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-                                const isPrimaryEmail = fieldName === 'Field_16' || isEmailLikeLabel || isEmailLikeValue;
-                                const isStatus = fieldName === 'Field_7' && !isPrimaryEmail;
-                                const isOrganizationLookup = fieldName === 'Field_3';
+                                const isPrimaryEmail = fieldName === hmEmailField || isEmailLikeLabel || isEmailLikeValue;
+                                const isStatus = fieldName === hmStatusField && !isPrimaryEmail;
+                                const isOrganizationLookup = fieldName === hmOrgField;
                                 const rawValue = getHiringManagerFieldRawValueByFieldName(fieldName);
                                 return (
                                   <div key={fieldName} className="grid grid-cols-[220px_1fr] text-xs border-b border-slate-200 last:border-b-0">
@@ -1916,17 +1941,21 @@ export default function CandidateFlowDashboard() {
                       </>
                     )}
 
+                    {jobDescriptionField && jobDescriptionField !== jobOrgField && (
+                      <>
                     <div className="px-3 py-2 text-sm font-semibold text-slate-700 border-t border-slate-300 bg-slate-50">
-                      {getJobFieldLabel('Field_6')}
+                      {getJobFieldLabel(jobDescriptionField)}
                     </div>
                     <div className="px-3 py-3 text-sm text-slate-800">
                       <FieldValueRenderer
-                        value={getJobFieldValueByFieldName('Field_6') || '-'}
-                        fieldInfo={{ name: 'Field_6', label: getJobFieldLabel('Field_6') }}
-                        entityType="jobs"
+                        value={getJobFieldValueByFieldName(jobDescriptionField) || '-'}
+                        fieldInfo={{ name: jobDescriptionField, label: getJobFieldLabel(jobDescriptionField) }}
+                        entityType={jobAdminEntity}
                         recordId={selectedJobId}
                       />
                     </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

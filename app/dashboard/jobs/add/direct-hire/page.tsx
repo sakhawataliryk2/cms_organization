@@ -14,6 +14,16 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import EmploymentTypeHeader from "../EmploymentTypeHeader";
+import {
+  getFieldNameByLabel,
+  getHiringManagerLookupFieldName,
+  getOrganizationLookupFieldName,
+} from "@/lib/fieldDefinitionCatalog";
+
+const JOBS_ADMIN_ENTITY = "jobs-direct-hire";
+const JOB_ORG_FIELD_NAME = getOrganizationLookupFieldName(JOBS_ADMIN_ENTITY) || "Field_6";
+const JOB_HM_FIELD_NAME = getHiringManagerLookupFieldName(JOBS_ADMIN_ENTITY) || "Field_7";
+const JOB_ACCOUNT_MANAGER_FIELD_NAME = getFieldNameByLabel(JOBS_ADMIN_ENTITY, "Account Manager");
 
 // Define field type for typesafety
 interface FormField {
@@ -428,10 +438,10 @@ export default function AddDirectHireJob() {
   }, [hiringManagerOptions, hiringManagerValue]);
 
   // Resolve Field_2 and Field_22 labels as requested
-  const field2Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_2"), [customFields]);
-  const field22Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_22"), [customFields]);
+  const field2Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, JOB_ORG_FIELD_NAME), [customFields]);
+  const field22Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, JOB_HM_FIELD_NAME), [customFields]);
 
-  // Pre-populate Organization (Field_2) and Hiring Manager (Field_22) from URL
+  // Pre-populate Organization and Hiring Manager from URL
   useEffect(() => {
     if (jobId || customFieldsLoading || customFields.length === 0) return;
 
@@ -440,15 +450,15 @@ export default function AddDirectHireJob() {
       let changed = false;
 
       if (organizationIdFromUrl) {
-        if (prev["Field_2"] !== organizationIdFromUrl) {
-          next["Field_2"] = organizationIdFromUrl;
+        if (prev[JOB_ORG_FIELD_NAME] !== organizationIdFromUrl) {
+          next[JOB_ORG_FIELD_NAME] = organizationIdFromUrl;
           changed = true;
         }
       }
 
       if (hiringManagerIdFromUrl) {
-        if (prev["Field_22"] !== hiringManagerIdFromUrl) {
-          next["Field_22"] = hiringManagerIdFromUrl;
+        if (prev[JOB_HM_FIELD_NAME] !== hiringManagerIdFromUrl) {
+          next[JOB_HM_FIELD_NAME] = hiringManagerIdFromUrl;
           changed = true;
         }
       }
@@ -670,17 +680,16 @@ export default function AddDirectHireJob() {
     }
   }, [organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
 
-  // Auto-populate Field_507 (Account Manager) with logged-in user's name
+  // Auto-populate Account Manager with logged-in user's name
   useEffect(() => {
     // Wait for customFields to load
     if (customFieldsLoading || customFields.length === 0) return;
 
-    // Find Field_507 specifically
     const accountManagerField = customFields.find(
       (f) =>
-        f.field_name === "Field_507" ||
-        f.field_name === "field_507" ||
-        f.field_name?.toLowerCase() === "field_507"
+        JOB_ACCOUNT_MANAGER_FIELD_NAME &&
+        String(f.field_name || "").toLowerCase() ===
+          String(JOB_ACCOUNT_MANAGER_FIELD_NAME).toLowerCase()
     );
 
     if (accountManagerField) {
@@ -697,7 +706,7 @@ export default function AddDirectHireJob() {
                 [accountManagerField.field_name]: userData.name,
               }));
               console.log(
-                "Auto-populated Field_507 (Account Manager) with current user:",
+                "Auto-populated Account Manager with current user:",
                 userData.name
               );
             }
@@ -1408,8 +1417,8 @@ export default function AddDirectHireJob() {
                       );
                     }
 
-                    const isAutoFilledOrg = field.field_name === "Field_2" && !!organizationIdFromUrl && !isEditMode;
-                    const isAutoFilledHM = field.field_name === "Field_22" && !!hiringManagerIdFromUrl && !isEditMode;
+                    const isAutoFilledOrg = field.field_name === JOB_ORG_FIELD_NAME && !!organizationIdFromUrl && !isEditMode;
+                    const isAutoFilledHM = field.field_name === JOB_HM_FIELD_NAME && !!hiringManagerIdFromUrl && !isEditMode;
                     const effectiveField = (isAutoFilledOrg || isAutoFilledHM)
                       ? { ...field, is_read_only: true }
                       : field;

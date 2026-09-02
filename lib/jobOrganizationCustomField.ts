@@ -1,14 +1,10 @@
 import { getCustomFieldLabel } from "./getCustomFieldLabel";
+import { jobOrganizationCatalogEntries, getOrganizationLookupFieldName } from "./fieldDefinitionCatalog";
 
 /**
- * Organization lookup on jobs — field_names from Admin Center (see AGENTS.md).
- * Contract uses Field_2; Direct Hire and Executive Search use Field_6.
+ * Organization lookup on jobs — field_names from the dumped Admin Center catalog.
  */
-export const JOB_ORGANIZATION_CUSTOM_FIELDS = [
-  { entityType: "jobs", fieldName: "Field_2" },
-  { entityType: "jobs-direct-hire", fieldName: "Field_6" },
-  { entityType: "jobs-executive-search", fieldName: "Field_6" },
-] as const;
+export const JOB_ORGANIZATION_CUSTOM_FIELDS = jobOrganizationCatalogEntries();
 
 /** Current Admin Center labels often used for the job → organization lookup. */
 export const JOB_ORGANIZATION_LABEL_FALLBACKS = [
@@ -16,13 +12,12 @@ export const JOB_ORGANIZATION_LABEL_FALLBACKS = [
   "Company",
   "Organization / Company",
   "Company / Organization",
+  "Client Company",
   "Organisation",
 ] as const;
 
-export function jobOrganizationFieldNameForEntityType(entityType: string): "Field_2" | "Field_6" {
-  const et = String(entityType || "").trim().toLowerCase();
-  if (et === "jobs-direct-hire" || et === "jobs-executive-search") return "Field_6";
-  return "Field_2";
+export function jobOrganizationFieldNameForEntityType(entityType: string): string {
+  return getOrganizationLookupFieldName(entityType) || "Field_2";
 }
 
 export function extractOrganizationRecordId(raw: unknown): string | null {

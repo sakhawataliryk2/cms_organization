@@ -18,6 +18,14 @@ import AddressGroupRenderer, {
   isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import {
+  getFieldNameByLabel,
+  getOrganizationLookupFieldName,
+} from "@/lib/fieldDefinitionCatalog";
+
+const JOBS_ADMIN_ENTITY = "jobs";
+const JOB_ORG_FIELD_NAME = getOrganizationLookupFieldName(JOBS_ADMIN_ENTITY) || "Field_2";
+const JOB_ACCOUNT_MANAGER_FIELD_NAME = getFieldNameByLabel(JOBS_ADMIN_ENTITY, "Account Manager");
 
 // Temporary switch: bypass all required validations on this page.
 const TEMP_DISABLE_REQUIRED_VALIDATIONS = true;
@@ -548,7 +556,7 @@ export default function AddJob() {
           // ignore
         }
 
-        const orgField = customFields.find((f) => f.field_name === "Field_3");
+        const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
         if (orgField) {
           setCustomFieldValues((prev) => {
             if (prev[orgField.field_name]) return prev;
@@ -775,14 +783,14 @@ export default function AddJob() {
     );
 
     if (foundOrg && foundOrg.name) {
-      const orgField = customFields.find((f) => f.field_name === "Field_3");
+      const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
       if (orgField) {
         setCustomFieldValues((prev) => {
           // Only set if not already set (don't override if already set by prefill effect or user)
           if (prev[orgField.field_name]) return prev;
           return {
             ...prev,
-            Field_3: foundOrg.name,
+            [JOB_ORG_FIELD_NAME]: foundOrg.name,
           };
         });
         setOrganizationName(foundOrg.name);
@@ -791,17 +799,16 @@ export default function AddJob() {
     }
   }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
 
-  // Auto-populate Field_507 (Account Manager) with logged-in user's name
+  // Auto-populate Account Manager with logged-in user's name
   useEffect(() => {
     // Wait for customFields to load
     if (customFieldsLoading || customFields.length === 0) return;
 
-    // Find Field_507 specifically
     const accountManagerField = customFields.find(
       (f) =>
-        f.field_name === "Field_507" ||
-        f.field_name === "field_507" ||
-        f.field_name?.toLowerCase() === "field_507"
+        JOB_ACCOUNT_MANAGER_FIELD_NAME &&
+        String(f.field_name || "").toLowerCase() ===
+          String(JOB_ACCOUNT_MANAGER_FIELD_NAME).toLowerCase()
     );
 
     if (accountManagerField) {
@@ -818,7 +825,7 @@ export default function AddJob() {
                 [accountManagerField.field_name]: userData.name,
               }));
               console.log(
-                "Auto-populated Field_507 (Account Manager) with current user:",
+                "Auto-populated Account Manager with current user:",
                 userData.name
               );
             }
@@ -838,9 +845,9 @@ export default function AddJob() {
   // Sync currentOrganizationId with Organization field (Field_3) value when it changes
   useEffect(() => {
     if (customFieldsLoading || customFields.length === 0) return;
-    const organizationField = customFields.find((f) => f.field_name === "Field_3");
+    const organizationField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
     if (!organizationField) return;
-    const fieldValue = customFieldValues["Field_3"] || "";
+    const fieldValue = customFieldValues[JOB_ORG_FIELD_NAME] || "";
     if (!fieldValue) return;
     const selectedOrg = organizations.find(
       (org) => org.name === fieldValue || org.id.toString() === fieldValue
@@ -849,7 +856,7 @@ export default function AddJob() {
     if (newOrgId && newOrgId !== currentOrganizationId) {
       setCurrentOrganizationId(newOrgId);
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+  }, [customFieldValues[JOB_ORG_FIELD_NAME], organizations, customFields, customFieldsLoading, currentOrganizationId]);
 
   // Prefill organizationId from URL if provided (create mode only)
   useEffect(() => {
@@ -876,14 +883,14 @@ export default function AddJob() {
           // Set Field_3 (Organization custom field) if it exists
           // Use the organization name (which matches the dropdown option values)
           if (customFields.length > 0 && orgName) {
-            const orgField = customFields.find((f) => f.field_name === "Field_3");
+            const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
             if (orgField) {
               setCustomFieldValues((prev) => {
                 // Only set if not already set (don't override user input)
                 if (prev[orgField.field_name]) return prev;
                 return {
                   ...prev,
-                  Field_3: orgName,
+                  [JOB_ORG_FIELD_NAME]: orgName,
                 };
               });
             }
@@ -904,13 +911,13 @@ export default function AddJob() {
               (org) => org.id.toString() === organizationIdFromUrl
             );
             if (foundOrg && foundOrg.name) {
-              const orgField = customFields.find((f) => f.field_name === "Field_3");
+              const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
               if (orgField) {
                 setCustomFieldValues((prev) => {
                   if (prev[orgField.field_name]) return prev;
                   return {
                     ...prev,
-                    Field_3: foundOrg.name,
+                    [JOB_ORG_FIELD_NAME]: foundOrg.name,
                   };
                 });
               }

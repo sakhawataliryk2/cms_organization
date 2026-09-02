@@ -2,6 +2,7 @@
 
 import React from "react";
 import CustomFieldRenderer from "./CustomFieldRenderer";
+import { getAddressFieldNames, normalizeAdminEntityType } from "@/lib/fieldDefinitionCatalog";
 
 interface CustomFieldDefinition {
   id: string;
@@ -25,51 +26,33 @@ interface AddressGroupRendererProps {
   isEditMode?: boolean;
 }
 
+function addressRow(entity_type: string) {
+  const parts = getAddressFieldNames(entity_type);
+  const one = (name: string | null) => (name ? [name] : []);
+  return {
+    entity_type,
+    address: one(parts.address),
+    address2: one(parts.address2),
+    city: one(parts.city),
+    state: one(parts.state),
+    zip: one(parts.zip),
+  };
+}
+
 export const ADDRESS_FIELD_NAMES = [
-  {
-    entity_type: "hiring-managers",
-    address: ["Field_12"],
-    address2: ["Field_13"],
-    city: ["Field_14"],
-    state: ["Field_15"],
-    zip: ["Field_17"],
-  },
-  {
-    entity_type: "organizations",
-    address: ["Field_8"],
-    address2: ["Field_9"],
-    city: ["Field_10"],
-    state: ["Field_11"],
-    zip: ["Field_12"],
-  },
-  {
-    entity_type: "jobs",
-    address: ["Field_12"],
-    address2: ["Field_13"],
-    city: ["Field_14"],
-    state: ["Field_15"],
-    zip: ["Field_17"],
-  },
-  {
-    entity_type: "job-seekers",
-    address: ["Field_15"],
-    address2: ["Field_16"],
-    city: ["Field_17"],
-    state: ["Field_18"],
-    zip: ["Field_19"],
-  },
-  {
-    entity_type: "leads",
-    address: ["Field_7"],
-    address2: ["Field_8"],
-    city: ["Field_9"],
-    state: ["Field_10"],
-    zip: ["Field_11"],
-  }
-];
+  "hiring-managers",
+  "organizations",
+  "jobs",
+  "jobs-direct-hire",
+  "jobs-executive-search",
+  "job-seekers",
+  "leads",
+].map(addressRow);
 
 export function getAddressFields(customFields: CustomFieldDefinition[], entityType?: string) {
-  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
+  const mapping = ADDRESS_FIELD_NAMES.find(
+    (m) => m.entity_type === normalizeAdminEntityType(entityType)
+  );
 
   if (!mapping) {
     // If no entityType provided or found in mapping, return empty array as safety
@@ -108,7 +91,9 @@ function checkAddressFieldComplete(
   }
   if (!value || String(value).trim() === "") return false;
 
-  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
+  const mapping = ADDRESS_FIELD_NAMES.find(
+    (m) => m.entity_type === normalizeAdminEntityType(entityType)
+  );
   const isZipCodeField =
     mapping?.zip.includes(field.field_name) ||
     field.field_label?.toLowerCase().includes("zip") ||
@@ -185,7 +170,9 @@ function UnderlineField({
     const hasValue = value && String(value).trim() !== "";
     if (!hasValue) return false;
 
-    const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
+    const mapping = ADDRESS_FIELD_NAMES.find(
+    (m) => m.entity_type === normalizeAdminEntityType(entityType)
+  );
     const isZipCodeField =
       mapping?.zip.includes(field.field_name) ||
       field.field_label?.toLowerCase().includes("zip") ||
@@ -258,7 +245,9 @@ export default function AddressGroupRenderer({
   isEditMode = false,
   entityType,
 }: AddressGroupRendererProps & { entityType?: string }) {
-  const mapping = ADDRESS_FIELD_NAMES.find(m => m.entity_type === entityType);
+  const mapping = ADDRESS_FIELD_NAMES.find(
+    (m) => m.entity_type === normalizeAdminEntityType(entityType)
+  );
 
   const addressField = fields.find((f) => mapping?.address.includes(f.field_name));
   const address2Field = fields.find((f) => mapping?.address2.includes(f.field_name));

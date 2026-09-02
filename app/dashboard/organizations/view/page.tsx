@@ -83,6 +83,15 @@ import AddNoteModal from "@/components/AddNoteModal";
 import CollapsibleNotesTable from "@/components/CollapsibleNotesTable";
 import NoteExpandedBody from "@/components/NoteExpandedBody";
 import { getCustomFieldLabel } from "@/lib/getCustomFieldLabel";
+import {
+  getDumpFieldLabel,
+  getFieldNameByLabel,
+  getJobDescriptionFieldName,
+  getOrganizationLookupFieldName,
+  getOwnerFieldName,
+  getStatusFieldName,
+  jobAdminEntityTypeFromJob,
+} from "@/lib/fieldDefinitionCatalog";
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 import { downloadStoredDocument } from "@/lib/documentUrl";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
@@ -157,23 +166,45 @@ const REQUIRED_HM_CONTACT_FIELD_NAMES = [
   "Field_70",
 ] as const;
 const HM_LAST_NAME_FIELD_NAME = "Field_2";
-const REQUIRED_JOB_FIELD_NAMES = [
-  "Field_1",
-  "Field_2",
-  "Field_4",
-  "Field_6",
-  "Field_69",
-  "Field_70",
-] as const;
 const JOB_TABLE_COLUMN_KEYS = [
-  "Field_1",
-  "Field_2",
-  "Field_4",
-  "Field_6",
+  "title",
+  "organization",
+  "status",
+  "description",
   "job_type",
-  "Field_69",
-  "Field_70",
+  "owner",
+  "date_added",
 ] as const;
+
+const JOB_TABLE_COLUMN_LABELS: Record<(typeof JOB_TABLE_COLUMN_KEYS)[number], string> = {
+  title: "Title",
+  organization: "Organization",
+  status: "Status",
+  description: "Description",
+  job_type: "Job Type",
+  owner: "Owner",
+  date_added: "Date Added",
+};
+
+function jobTableFieldName(job: any, columnKey: string): string | null {
+  const et = jobAdminEntityTypeFromJob(job);
+  switch (columnKey) {
+    case "title":
+      return getFieldNameByLabel(et, "Title") || getFieldNameByLabel(et, "Job Title") || "Field_1";
+    case "organization":
+      return getOrganizationLookupFieldName(et);
+    case "status":
+      return getStatusFieldName(et);
+    case "description":
+      return getJobDescriptionFieldName(et);
+    case "owner":
+      return getOwnerFieldName(et);
+    case "date_added":
+      return getFieldNameByLabel(et, "Date Added") || "Field_70";
+    default:
+      return null;
+  }
+}
 
 const isClientVisitAction = (action?: string) => {
   const normalized = (action || "").toLowerCase();
@@ -695,13 +726,26 @@ export default function OrganizationView() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const allJobFieldNames = [
-        ...REQUIRED_JOB_FIELD_NAMES,
-      ];
+      const entities = ["jobs", "jobs-direct-hire", "jobs-executive-search"] as const;
+      const names = new Set<string>();
+      for (const et of entities) {
+        [
+          getFieldNameByLabel(et, "Title") || getFieldNameByLabel(et, "Job Title"),
+          getOrganizationLookupFieldName(et),
+          getStatusFieldName(et),
+          getJobDescriptionFieldName(et),
+          getOwnerFieldName(et),
+          getFieldNameByLabel(et, "Date Added"),
+        ].forEach((n) => {
+          if (n) names.add(n);
+        });
+      }
       const labelEntries = await Promise.all(
-        allJobFieldNames.map(async (fieldName) => {
-          const label = await getCustomFieldLabel(JOBS_CUSTOM_FIELD_ENTITY, fieldName);
-          return [fieldName, label || fieldName] as const;
+        Array.from(names).map(async (fieldName) => {
+          const labels = await Promise.all(
+            entities.map((et) => getCustomFieldLabel(et, fieldName))
+          );
+          return [fieldName, labels.find(Boolean) || fieldName] as const;
         })
       );
       if (!cancelled) {
@@ -2491,7 +2535,9 @@ export default function OrganizationView() {
 
   const getJobCustomFieldValue = (job: any, fieldName: string) => {
     const customFields = parseJobCustomFields(job?.custom_fields ?? job?.customFields);
-    const resolvedLabel = jobFieldLabels[fieldName] || fieldName;
+    const et = jobAdminEntityTypeFromJob(job);
+    const resolvedLabel =
+      getDumpFieldLabel(et, fieldName) || jobFieldLabels[fieldName] || fieldName;
     const byLabel = customFields?.[resolvedLabel];
     if (byLabel != null && String(byLabel).trim() !== "") return byLabel;
     const byName = customFields?.[fieldName];
@@ -2521,9 +2567,9 @@ export default function OrganizationView() {
         }
         return {
           key,
-          label: jobFieldLabels[key] || key,
+          label: JOB_TABLE_COLUMN_LABELS[key] || jobFieldLabels[key] || key,
           sortable: true,
-          filterType: (key === "Field_4" ? "select" : "text") as "text" | "select",
+          filterType: (key === "status" ? "select" : "text") as "text" | "select",
         };
       }),
     [jobFieldLabels]
@@ -2539,30 +2585,38 @@ export default function OrganizationView() {
     if (key === "job_type") {
       return job.job_type || job.employment_type || "—";
     }
-    if (REQUIRED_JOB_FIELD_NAMES.includes(key as (typeof REQUIRED_JOB_FIELD_NAMES)[number])) {
-      const customValue = getJobCustomFieldValue(job, key);
-      if (key === "Field_6" && (customValue == null || customValue === "—")) {
-        const description = job.job_description || job.description;
-        if (description != null && String(description).trim() !== "") {
-          return description;
-        }
-      }
-      return customValue;
+    if (key === "job_type") {
+      return job.job_type || job.employment_type || "—";
     }
-    return "—";
+    const fieldName = jobTableFieldName(job, key);
+    if (!fieldName) return "—";
+    const customValue = getJobCustomFieldValue(job, fieldName);
+    if (key === "description" && (customValue == null || customValue === "—")) {
+      const description = job.job_description || job.description;
+      if (description != null && String(description).trim() !== "") {
+        return description;
+      }
+    }
+    return customValue;
   };
 
-  const getJobFieldInfoForRenderer = (key: string) => {
+  const getJobFieldInfoForRenderer = (job: any, key: string) => {
     if (key === "job_type") {
       return { key, name: key, label: "Job Type" };
     }
-    return { key, name: key, label: jobFieldLabels[key] || key };
+    const fieldName = jobTableFieldName(job, key);
+    return {
+      key,
+      name: fieldName || key,
+      label: JOB_TABLE_COLUMN_LABELS[key as keyof typeof JOB_TABLE_COLUMN_LABELS] || jobFieldLabels[key] || key,
+    };
   };
 
   const jobStatusOptions = useMemo(() => {
     const statuses = new Set<string>();
     jobs.forEach((job) => {
-      const status = getJobCustomFieldValue(job, "Field_4");
+      const statusField = getStatusFieldName(jobAdminEntityTypeFromJob(job));
+      const status = statusField ? getJobCustomFieldValue(job, statusField) : "—";
       if (status != null && status !== "—" && String(status).trim() !== "") {
         statuses.add(String(status).trim());
       }
@@ -2663,7 +2717,7 @@ export default function OrganizationView() {
                       onFilterChange={(value) => handleJobColumnFilter(key, value)}
                       filterType={columnInfo.filterType}
                       filterOptions={
-                        key === "Field_4" ? jobStatusOptions : undefined
+                        key === "status" ? jobStatusOptions : undefined
                       }
                     />
                   );
@@ -2689,8 +2743,8 @@ export default function OrganizationView() {
                   <td key={key} className="px-6 py-3">
                     <FieldValueRenderer
                       value={getJobColumnValue(job, key)}
-                      fieldInfo={getJobFieldInfoForRenderer(key)}
-                      entityType={JOBS_CUSTOM_FIELD_ENTITY}
+                      fieldInfo={getJobFieldInfoForRenderer(job, key)}
+                      entityType={jobAdminEntityTypeFromJob(job)}
                       stopPropagation
                     />
                   </td>

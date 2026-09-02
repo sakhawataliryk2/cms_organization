@@ -130,14 +130,14 @@ export const jobsBaseFields: FieldLockConfig[] = [
         is_read_only_locked: true,
     },
     {
-        name: "Field_5", // 	Description
+        name: "Field_5", // Job Type
         is_field_type_locked: true,
         is_required_locked: true,
         is_hidden_locked: true,
         is_read_only_locked: true,
     },
     {
-        name: "Field_6", // Job Type
+        name: "Field_6", // Description
         is_field_type_locked: true,
         is_required_locked: true,
         is_hidden_locked: true,

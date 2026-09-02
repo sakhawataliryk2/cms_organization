@@ -15,6 +15,14 @@ import CustomFieldRenderer, {
 } from "@/components/CustomFieldRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import EmploymentTypeHeader from "../EmploymentTypeHeader";
+import {
+  getHiringManagerLookupFieldName,
+  getOrganizationLookupFieldName,
+} from "@/lib/fieldDefinitionCatalog";
+
+const JOBS_ADMIN_ENTITY = "jobs-executive-search";
+const JOB_ORG_FIELD_NAME = getOrganizationLookupFieldName(JOBS_ADMIN_ENTITY) || "Field_6";
+const JOB_HM_FIELD_NAME = getHiringManagerLookupFieldName(JOBS_ADMIN_ENTITY) || "Field_7";
 
 // Define field type for typesafety
 interface FormField {
@@ -426,10 +434,10 @@ export default function AddExecutiveSearchJob() {
   }, [hiringManagerOptions, hiringManagerValue]);
 
   // Resolve Field_2 and Field_22 labels as requested
-  const field2Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_2"), [customFields]);
-  const field22Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, "Field_22"), [customFields]);
+  const field2Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, JOB_ORG_FIELD_NAME), [customFields]);
+  const field22Label = useMemo(() => labelForFieldNameFromDefinitions(customFields, JOB_HM_FIELD_NAME), [customFields]);
 
-  // Pre-populate Organization (Field_2) and Hiring Manager (Field_22) from URL
+  // Pre-populate Organization and Hiring Manager from URL
   useEffect(() => {
     if (jobId || customFieldsLoading || customFields.length === 0) return;
 
@@ -438,21 +446,15 @@ export default function AddExecutiveSearchJob() {
       let changed = false;
 
       if (organizationIdFromUrl) {
-        const foundOrg = organizations.find(
-          (org) => org.id.toString() === organizationIdFromUrl
-        );
-        if (foundOrg && foundOrg.name && prev["Field_2"] !== foundOrg.name) {
-          next["Field_2"] = foundOrg.name;
+        if (prev[JOB_ORG_FIELD_NAME] !== organizationIdFromUrl) {
+          next[JOB_ORG_FIELD_NAME] = organizationIdFromUrl;
           changed = true;
         }
       }
 
       if (hiringManagerIdFromUrl) {
-        const foundHM = hiringManagerOptions.find(
-          (hm) => hm.id.toString() === hiringManagerIdFromUrl
-        );
-        if (foundHM && foundHM.name && prev["Field_22"] !== foundHM.name) {
-          next["Field_22"] = foundHM.name;
+        if (prev[JOB_HM_FIELD_NAME] !== hiringManagerIdFromUrl) {
+          next[JOB_HM_FIELD_NAME] = hiringManagerIdFromUrl;
           changed = true;
         }
       }
@@ -511,7 +513,7 @@ export default function AddExecutiveSearchJob() {
           // ignore
         }
 
-        const orgField = customFields.find((f) => f.field_name === "Field_3");
+        const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
         if (orgField) {
           setCustomFieldValues((prev) => {
             if (prev[orgField.field_name]) return prev;
@@ -687,14 +689,14 @@ export default function AddExecutiveSearchJob() {
     );
 
     if (foundOrg && foundOrg.name) {
-      const orgField = customFields.find((f) => f.field_name === "Field_3");
+      const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
       if (orgField) {
         setCustomFieldValues((prev) => {
           // Only set if not already set (don't override if already set by prefill effect or user)
           if (prev[orgField.field_name]) return prev;
           return {
             ...prev,
-            Field_3: foundOrg.name,
+            [JOB_ORG_FIELD_NAME]: foundOrg.name,
           };
         });
         setOrganizationName(foundOrg.name);
@@ -706,9 +708,9 @@ export default function AddExecutiveSearchJob() {
   // Sync currentOrganizationId with Organization field (Field_3) value when it changes
   useEffect(() => {
     if (customFieldsLoading || customFields.length === 0) return;
-    const organizationField = customFields.find((f) => f.field_name === "Field_3");
+    const organizationField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
     if (!organizationField) return;
-    const fieldValue = customFieldValues["Field_3"] || "";
+    const fieldValue = customFieldValues[JOB_ORG_FIELD_NAME] || "";
     if (!fieldValue) return;
     const selectedOrg = organizations.find(
       (org) => org.name === fieldValue || org.id.toString() === fieldValue
@@ -717,7 +719,7 @@ export default function AddExecutiveSearchJob() {
     if (newOrgId && newOrgId !== currentOrganizationId) {
       setCurrentOrganizationId(newOrgId);
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+  }, [customFieldValues[JOB_ORG_FIELD_NAME], organizations, customFields, customFieldsLoading, currentOrganizationId]);
 
   // Prefill organizationId from URL if provided (create mode only)
   useEffect(() => {
@@ -743,14 +745,14 @@ export default function AddExecutiveSearchJob() {
 
           // Set Field_3 (Organization custom field) if it exists
           if (customFields.length > 0 && orgName) {
-            const orgField = customFields.find((f) => f.field_name === "Field_3");
+            const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
             if (orgField) {
               setCustomFieldValues((prev) => {
                 // Only set if not already set (don't override user input)
                 if (prev[orgField.field_name]) return prev;
                 return {
                   ...prev,
-                  Field_3: orgName,
+                  [JOB_ORG_FIELD_NAME]: orgName,
                 };
               });
             }
@@ -771,13 +773,13 @@ export default function AddExecutiveSearchJob() {
               (org) => org.id.toString() === organizationIdFromUrl
             );
             if (foundOrg && foundOrg.name) {
-              const orgField = customFields.find((f) => f.field_name === "Field_3");
+              const orgField = customFields.find((f) => f.field_name === JOB_ORG_FIELD_NAME);
               if (orgField) {
                 setCustomFieldValues((prev) => {
                   if (prev[orgField.field_name]) return prev;
                   return {
                     ...prev,
-                    Field_3: foundOrg.name,
+                    [JOB_ORG_FIELD_NAME]: foundOrg.name,
                   };
                 });
               }
@@ -1335,8 +1337,8 @@ export default function AddExecutiveSearchJob() {
 
                     const fieldValue = customFieldValues[field.field_name] || "";
 
-                    const isAutoFilledOrg = field.field_name === "Field_2" && !!organizationIdFromUrl && !isEditMode;
-                    const isAutoFilledHM = field.field_name === "Field_22" && !!hiringManagerIdFromUrl && !isEditMode;
+                    const isAutoFilledOrg = field.field_name === JOB_ORG_FIELD_NAME && !!organizationIdFromUrl && !isEditMode;
+                    const isAutoFilledHM = field.field_name === JOB_HM_FIELD_NAME && !!hiringManagerIdFromUrl && !isEditMode;
                     const effectiveField = (isAutoFilledOrg || isAutoFilledHM)
                       ? { ...field, is_read_only: true }
                       : field;
