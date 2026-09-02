@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import { isSuperUserType } from '@/lib/permissions/superUser';
-import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2, FiMonitor } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2, FiRefreshCw } from 'react-icons/fi';
 import { useRouter } from 'nextjs-toploader/app';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -1205,7 +1205,7 @@ export default function Dashboard() {
                     aria-label="Refresh dashboard"
                     title="Refresh dashboard"
                 >
-                    <FiMonitor size={22} />
+                    <FiRefreshCw size={22} className={isRefreshingDashboard ? 'animate-spin' : undefined} />
                 </button>
 
                 <Link

@@ -4092,18 +4092,16 @@ Best regards`;
     return 0;
   };
 
+  const isPrescreenNoteAction = (value: unknown) =>
+    /pre\s*-?\s*screen|prescreen/.test(String(value ?? "").trim().toLowerCase());
+
   const getQuickTabCount = (tabId: string): number => {
     const cf = jobSeeker?.customFields || {};
 
     if (tabId === "prescreen") {
-      const fromNotes = notes.filter((n) => {
-        const actionOrType = String(
-          (n as any).action ?? (n as any).note_type ?? ""
-        )
-          .trim()
-          .toLowerCase();
-        return /pre\s*screen|prescreen/.test(actionOrType);
-      }).length;
+      const fromNotes = notes.filter((n) =>
+        isPrescreenNoteAction((n as any).action ?? (n as any).note_type)
+      ).length;
       if (fromNotes > 0) return fromNotes;
       return getCustomFieldRecordCount(
         cf.prescreen ?? cf.prescreens ?? cf.preScreen ?? cf.preScreens
@@ -4166,7 +4164,9 @@ Best regards`;
     const sortedFilteredNotes = notes
       .filter((note) => {
         const matchesAction = noteActionFilter
-          ? (note.action === noteActionFilter)
+          ? isPrescreenNoteAction(noteActionFilter)
+            ? isPrescreenNoteAction(note.action || (note as any).note_type)
+            : note.action === noteActionFilter
           : true;
         const matchesAuthor = noteAuthorFilter
           ? (note.created_by_name || "Unknown User") === noteAuthorFilter
@@ -5263,7 +5263,20 @@ Best regards`;
               <button
                 key={action.id}
                 className={buttonClasses}
-                onClick={() => setActiveQuickTab(action.id)}
+                onClick={() => {
+                  setActiveQuickTab(action.id);
+                  const prescreenNote = notes.find((n) =>
+                    isPrescreenNoteAction((n as any).action ?? (n as any).note_type)
+                  );
+                  setNoteActionFilter(
+                    String(
+                      prescreenNote?.action ||
+                        prescreenNote?.note_type ||
+                        "Pre-Screen"
+                    )
+                  );
+                  setActiveTab("notes");
+                }}
               >
                 <span className={dotClasses} />
                 <span>
@@ -5295,69 +5308,6 @@ Best regards`;
           );
         })}
       </div>
-
-      {/* Quick tab details – show prescreen notes when Prescreen is selected */}
-      {activeQuickTab === "prescreen" &&
-        getQuickTabCount("prescreen") > 0 && (
-          <div className="bg-white border border-green-200 mx-2 sm:mx-4 mt-2 p-3 rounded shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-green-800">
-                Prescreen Notes ({getQuickTabCount("prescreen")})
-              </h3>
-              <button
-                type="button"
-                className="text-xs text-blue-600 hover:underline"
-                onClick={() => {
-                  setActiveTab("notes");
-                  setNoteActionFilter("Pre Screen");
-                }}
-              >
-                View in Notes tab
-              </button>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-2 text-sm">
-              {notes
-                .filter((n) => {
-                  const actionOrType = String(
-                    (n as any).action ?? (n as any).note_type ?? ""
-                  )
-                    .trim()
-                    .toLowerCase();
-                  return /pre\s*screen|prescreen/.test(actionOrType);
-                })
-                .sort(
-                  (a, b) => getNoteDateTimeMs(b) - getNoteDateTimeMs(a)
-                )
-                .map((note) => (
-                  <div
-                    key={note.id}
-                    className="flex justify-between items-start border-b border-gray-100 last:border-b-0 pb-2"
-                  >
-                    <div className="mr-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900">
-                          {note.created_by_name || "Unknown User"}
-                        </span>
-                        {(note.action || note.note_type) && (
-                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
-                            {note.action || note.note_type}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {getNoteDateTimeValue(note) ? formatNoteDateTime(note) : null}
-                      </div>
-                      {note.text && (
-                        <div className="mt-1 text-gray-800 line-clamp-3">
-                          <ZoomPhoneNoteBody text={note.text} compact note={note} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
 
       {/* Quick tab details – show submissions list when Submissions is selected */}
       {activeQuickTab === "submissions" && getQuickTabCount("submissions") > 0 && (

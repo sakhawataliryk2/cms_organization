@@ -95,7 +95,7 @@ import {
 import { formatNoteDateTime, getNoteDateTimeMs } from "@/lib/noteUtils";
 import { downloadStoredDocument } from "@/lib/documentUrl";
 import PermissionRouteGuard from "@/components/PermissionRouteGuard";
-import PermissionGate from "@/components/PermissionGate";
+// import PermissionGate from "@/components/PermissionGate";
 import { useOrganizationPermissions } from "@/hooks/useOrganizationPermissions";
 import { ORG_PERMISSIONS } from "@/lib/organizationPermissions";
 
