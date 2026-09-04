@@ -29,7 +29,9 @@ export type SmartMatchRow = {
   organization?: string;
   city?: string;
   state?: string;
+  zip?: string;
   location?: string;
+  distance_km?: number;
   category?: string;
   remote?: string;
   job_type?: string;
@@ -102,6 +104,7 @@ function columnsForMode(mode: SmartMatchMode): ColumnDef[] {
       { key: 'phone', label: 'Primary Phone', filterType: 'text' },
       { key: 'organization', label: 'Organization', filterType: 'text' },
       { key: 'location', label: 'Location', filterType: 'text' },
+      { key: 'distance_km', label: 'Distance', filterType: 'number' },
       { key: 'match_reason', label: 'Match Reason', filterType: 'text' },
       { key: 'score', label: 'Score', filterType: 'number' },
       { key: 'status', label: 'Status', filterType: 'select' },
@@ -113,6 +116,7 @@ function columnsForMode(mode: SmartMatchMode): ColumnDef[] {
     { key: 'category', label: 'Category', filterType: 'text' },
     { key: 'remote', label: 'Remote', filterType: 'text' },
     { key: 'location', label: 'Location', filterType: 'text' },
+    { key: 'distance_km', label: 'Distance', filterType: 'number' },
     { key: 'match_reason', label: 'Match Reason', filterType: 'text' },
     { key: 'score', label: 'Score', filterType: 'number' },
     { key: 'status', label: 'Status', filterType: 'select' },
@@ -133,7 +137,9 @@ function toRowFromSaved(item: SavedItem, mode: SmartMatchMode): SmartMatchRow | 
     organization: String(snap.organization || ''),
     city: String(snap.city || ''),
     state: String(snap.state || ''),
+    zip: String(snap.zip || ''),
     location: String(snap.location || ''),
+    distance_km: snap.distance_km != null ? Number(snap.distance_km) : undefined,
     category: String(snap.category || ''),
     remote: String(snap.remote || ''),
     job_type: String(snap.job_type || ''),
@@ -171,7 +177,9 @@ function itemPayload(row: SmartMatchRow) {
       organization: row.organization,
       city: row.city,
       state: row.state,
+      zip: row.zip,
       location: row.location,
+      distance_km: row.distance_km,
       category: row.category,
       remote: row.remote,
       job_type: row.job_type,
@@ -201,6 +209,10 @@ function getColumnValue(row: SmartMatchRow, key: string, mode: SmartMatchMode) {
       return row.organization || '';
     case 'location':
       return rowLocation(row);
+    case 'distance_km':
+      return typeof row.distance_km === 'number' && Number.isFinite(row.distance_km)
+        ? row.distance_km
+        : '';
     case 'category':
       return row.category || '';
     case 'remote':
@@ -226,6 +238,11 @@ type Props = {
 export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
   const router = useRouter();
   const [limit, setLimit] = useState<number>(20);
+  const [locationMode, setLocationMode] = useState<'any' | 'record' | 'custom'>('any');
+  const [locationCity, setLocationCity] = useState('');
+  const [locationState, setLocationState] = useState('');
+  const [locationZip, setLocationZip] = useState('');
+  const [radiusKm, setRadiusKm] = useState('');
   const [busy, setBusy] = useState<'run' | 'save' | 'submit' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fetched, setFetched] = useState<SmartMatchRow[]>([]);
@@ -295,8 +312,22 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
         if (parsed?.limit === 10 || parsed?.limit === 20 || parsed?.limit === 50) {
           setLimit(parsed.limit);
         }
+        if (parsed?.locationMode === 'record' || parsed?.locationMode === 'custom') {
+          setLocationMode(parsed.locationMode);
+        } else {
+          setLocationMode('any');
+        }
+        setLocationCity(String(parsed?.city || ''));
+        setLocationState(String(parsed?.state || ''));
+        setLocationZip(String(parsed?.zip || ''));
+        setRadiusKm(parsed?.radiusKm != null && parsed.radiusKm !== '' ? String(parsed.radiusKm) : '');
       } else {
         setFetched([]);
+        setLocationMode('any');
+        setLocationCity('');
+        setLocationState('');
+        setLocationZip('');
+        setRadiusKm('');
       }
     } catch {
       setFetched([]);
@@ -406,6 +437,15 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
 
   const runMatch = async () => {
     if (!entityId || busy) return;
+    if (locationMode === 'custom' && !locationCity.trim() && !locationState.trim() && !locationZip.trim()) {
+      toast.error('Enter a city, state, or ZIP — or switch location back to no restriction.');
+      return;
+    }
+    const radiusValue = Number(radiusKm);
+    const parsedRadius =
+      radiusKm.trim() && Number.isFinite(radiusValue) && radiusValue > 0
+        ? Math.min(radiusValue, 500)
+        : undefined;
     setBusy('run');
     setMessage(null);
     try {
@@ -419,7 +459,14 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ limit }),
+        body: JSON.stringify({
+          limit,
+          locationMode,
+          city: locationMode === 'custom' ? locationCity.trim() : undefined,
+          state: locationMode === 'custom' ? locationState.trim() : undefined,
+          zip: locationMode === 'custom' ? locationZip.trim() : undefined,
+          radiusKm: locationMode === 'any' ? undefined : parsedRadius,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -437,7 +484,16 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
       setSelected(new Set());
       localStorage.setItem(
         storageKey(mode, entityId),
-        JSON.stringify({ limit, fetchedAt: new Date().toISOString(), matches }),
+        JSON.stringify({
+          limit,
+          locationMode,
+          city: locationCity,
+          state: locationState,
+          zip: locationZip,
+          radiusKm: parsedRadius || '',
+          fetchedAt: new Date().toISOString(),
+          matches,
+        }),
       );
       if (data.message) {
         setMessage(data.message);
@@ -581,6 +637,11 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
         </button>
       );
     }
+    if (key === 'distance_km') {
+      return typeof row.distance_km === 'number' && Number.isFinite(row.distance_km)
+        ? `${row.distance_km} km`
+        : 'N/A';
+    }
     if (key === 'score') {
       return scorePct(row.score);
     }
@@ -661,6 +722,83 @@ export default function SmartMatchShortlistPanel({ mode, entityId }: Props) {
             {busy === 'submit' ? 'Submitting…' : 'Submit selected'}
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
+        <label className="text-xs text-gray-600">
+          Location
+          <select
+            value={locationMode}
+            onChange={(e) => setLocationMode(e.target.value as 'any' | 'record' | 'custom')}
+            disabled={!!busy}
+            className="mt-1 block border border-gray-300 rounded px-2 py-1 text-sm min-w-[12rem]"
+          >
+            <option value="any">No restriction</option>
+            <option value="record">
+              {mode === 'job' ? "This job's city / state" : "This candidate's city / state"}
+            </option>
+            <option value="custom">City, state, or ZIP</option>
+          </select>
+        </label>
+        {locationMode === 'custom' ? (
+          <>
+            <label className="text-xs text-gray-600">
+              City
+              <input
+                type="text"
+                value={locationCity}
+                onChange={(e) => setLocationCity(e.target.value)}
+                disabled={!!busy}
+                placeholder="Austin"
+                className="mt-1 block border border-gray-300 rounded px-2 py-1 text-sm w-40"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              State
+              <input
+                type="text"
+                value={locationState}
+                onChange={(e) => setLocationState(e.target.value)}
+                disabled={!!busy}
+                placeholder="TX"
+                className="mt-1 block border border-gray-300 rounded px-2 py-1 text-sm w-24"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              ZIP
+              <input
+                type="text"
+                value={locationZip}
+                onChange={(e) => setLocationZip(e.target.value)}
+                disabled={!!busy}
+                placeholder="78701"
+                className="mt-1 block border border-gray-300 rounded px-2 py-1 text-sm w-24"
+              />
+            </label>
+          </>
+        ) : null}
+        {locationMode !== 'any' ? (
+          <label className="text-xs text-gray-600">
+            Within km
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(e.target.value)}
+              disabled={!!busy}
+              placeholder="e.g. 20"
+              className="mt-1 block border border-gray-300 rounded px-2 py-1 text-sm w-28"
+            />
+          </label>
+        ) : null}
+        <p className="text-xs text-gray-500 max-w-xl">
+          {locationMode === 'any'
+            ? 'Rank by skills and resume only.'
+            : radiusKm.trim()
+              ? `Keep matches within ${radiusKm.trim()} km of the selected location.`
+              : 'Require the same city and/or state. Add a km value to switch to a distance range.'}
+        </p>
       </div>
 
       {message ? <p className="text-sm text-amber-800 mb-3">{message}</p> : null}

@@ -6,6 +6,11 @@ import { toast } from "sonner";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { shouldShowClickToCallButton } from "@/lib/clickToCallPhoneField";
 import {
+  fullAddressFieldInfo,
+  isFullAddressFieldKey,
+  tryResolveFullAddressValue,
+} from "@/lib/fullAddressField";
+import {
   getLookupRegistryEntry,
   normalizeLookupType,
   type LookupRegistryEntry,
@@ -299,6 +304,11 @@ export default function LookupEntityDetailsGrid({
 
   const keys = Array.from(new Set(visibleKeys || []));
   const resolver = entry.resolveValue ?? ((_o, _k, _d, _l) => "-");
+  const entityType = entry.fieldManagementEntityType;
+  const customFields =
+    record.customFields && typeof record.customFields === "object"
+      ? (record.customFields as Record<string, unknown>)
+      : {};
 
   return (
     <div className={`space-y-0 border border-gray-200 rounded ${className}`}>
@@ -309,19 +319,30 @@ export default function LookupEntityDetailsGrid({
           const stable = stableFieldNameFromDef(f);
           return stable === fieldKey || `custom:${stable}` === rowKey;
         });
-        const label = String(
-          def?.field_label || def?.fieldLabel || cat?.label || fieldKey,
-        );
-        const value = resolver(record, fieldKey, def, label);
-        const fieldInfo = {
-          key: fieldKey,
-          label,
-          name: def?.field_name ?? fieldKey,
-          fieldType: def?.field_type ?? def?.fieldType,
-          lookupType: def?.lookup_type ?? def?.lookupType,
-          multiSelectLookupType:
-            def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
-        };
+        const label = isFullAddressFieldKey(rowKey)
+          ? fullAddressFieldInfo().label
+          : String(def?.field_label || def?.fieldLabel || cat?.label || fieldKey);
+        const value =
+          tryResolveFullAddressValue(rowKey, entityType, {
+            customFields,
+            fieldDefs: visibleFieldDefs as Array<{
+              field_name?: string;
+              field_label?: string;
+            }>,
+            record,
+            emptyPlaceholder,
+          }) ?? resolver(record, fieldKey, def, label);
+        const fieldInfo = isFullAddressFieldKey(rowKey)
+          ? fullAddressFieldInfo(fieldKey)
+          : {
+              key: fieldKey,
+              label,
+              name: def?.field_name ?? fieldKey,
+              fieldType: def?.field_type ?? def?.fieldType,
+              lookupType: def?.lookup_type ?? def?.lookupType,
+              multiSelectLookupType:
+                def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
+            };
         const showCallButton = shouldShowClickToCallButton(value, {
           label,
           key: fieldKey,

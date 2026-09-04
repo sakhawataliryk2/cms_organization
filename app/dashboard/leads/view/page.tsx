@@ -26,6 +26,11 @@ import {
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
 // Drag and drop 
 import DocumentViewerModal from "@/components/DocumentViewerModal";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
@@ -877,7 +882,7 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "leads");
   }, [availableFields]);
 
   // Lead Details field catalog: from admin field definitions + record customFields only
@@ -1008,6 +1013,14 @@ out.sort((a, b) => {
         };
 
         const getContactInfoValue = (key: string): string => {
+          const fullAddress = tryResolveFullAddressValue(key, "leads", {
+            customFields: customObj as Record<string, unknown>,
+            fieldDefs: customFieldDefs,
+            record: lead as Record<string, unknown>,
+            emptyPlaceholder: "-",
+          });
+          if (fullAddress !== undefined) return fullAddress;
+
           const field = customFieldDefs.find(
             (f: any) =>
               String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
@@ -1030,7 +1043,13 @@ out.sort((a, b) => {
         const renderContactInfoRow = (row: { key: string; label: string }) => {
           const value = getContactInfoValue(row.key);
           const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
-          const fieldInfo = {
+          const fieldInfo = tryResolveFullAddressValue(row.key, "leads", {
+            customFields: customObj as Record<string, unknown>,
+            fieldDefs: customFieldDefs,
+            record: lead as Record<string, unknown>,
+          }) !== undefined
+            ? fullAddressFieldInfo(row.key)
+            : {
             key: row.key,
             label: row.label,
             fieldType: def?.field_type ?? def?.fieldType,

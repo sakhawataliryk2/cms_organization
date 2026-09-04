@@ -28,6 +28,11 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
 import RequestActionModal from '@/components/RequestActionModal';
 import { useAuth } from '@/lib/auth';
 import ClientSubmissionModal from '@/components/ClientSubmissionModal';
@@ -1374,6 +1379,32 @@ out.sort((a, b) => {
       //   );
       // }
       // Custom field
+      const fullAddress = tryResolveFullAddressValue(key, getJobFieldManagementEntityType(job), {
+        customFields: customObj as Record<string, unknown>,
+        fieldDefs: customFieldDefs,
+        record: job as Record<string, unknown>,
+        emptyPlaceholder: "-",
+      });
+      if (fullAddress !== undefined) {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+              {fullAddressFieldInfo().label}:
+            </div>
+            <div className="flex-1 p-2">
+              <FieldValueRenderer
+                value={fullAddress}
+                fieldInfo={fullAddressFieldInfo(key)}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
+                entityType={getJobFieldManagementEntityType(job)}
+                recordId={job.id}
+              />
+            </div>
+          </div>
+        );
+      }
+
       const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
@@ -1497,6 +1528,30 @@ out.sort((a, b) => {
         case "address":
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.address || "-"}</div></div>);
         default: {
+          const fullAddress = tryResolveFullAddressValue(key, "hiring-managers", {
+            customFields: customObj as Record<string, unknown>,
+            fieldDefs: customFieldDefs,
+            record: hm as Record<string, unknown>,
+            emptyPlaceholder: "-",
+          });
+          if (fullAddress !== undefined) {
+            return (
+              <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                <LabelCell />
+                <div className="flex-1 p-2 text-sm">
+                  <FieldValueRenderer
+                    value={fullAddress}
+                    fieldInfo={fullAddressFieldInfo(key)}
+                    allFields={customFieldDefs as any}
+                    valuesRecord={customObj as any}
+                    entityType="hiring-managers"
+                    recordId={hm.id}
+                  />
+                </div>
+              </div>
+            );
+          }
+
           const rawKey = stripCatalogKeyPrefix(key);
           const cv = getCustomValue(rawKey);
           const val = cv ?? (hm as any)[rawKey];
@@ -1648,7 +1703,7 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "hiring-managers");
   }, [hiringManagerAvailableFields]);
 
   const hiringManagerVisible = useMemo(() => {
@@ -1670,8 +1725,11 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
-  }, [availableFields]);
+    return withFullAddressCatalogEntry(
+      fromApi,
+      job ? getJobFieldManagementEntityType(job) : "jobs"
+    );
+  }, [availableFields, job]);
 
   const jobDetailsVisible = useMemo(() => {
     const catalogKeys = jobDetailsFieldCatalog.map((f) => f.key);
@@ -1689,7 +1747,7 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "organizations");
   }, [organizationAvailableFields]);
 
   const detailsVisible = useMemo(() => {

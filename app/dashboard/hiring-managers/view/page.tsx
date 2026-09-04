@@ -23,6 +23,11 @@ import {
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
 import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
+import {
   sendCalendarInvite,
   type CalendarEvent,
   getCalendarTimeZone,
@@ -736,7 +741,7 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "hiring-managers");
   }, [availableFields]);
 
   const organizationIdFromField3 = useMemo(
@@ -752,7 +757,7 @@ out.sort((a, b) => {
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "organizations");
   }, [organizationAvailableFields]);
 
   const visibleFields: Record<string, string[]> = useMemo(() => {
@@ -804,6 +809,14 @@ out.sort((a, b) => {
     };
 
     const getDetailsValue = (key: string): string => {
+      const fullAddress = tryResolveFullAddressValue(key, "hiring-managers", {
+        customFields: customObj,
+        fieldDefs: customFieldDefs,
+        record: hiringManager as Record<string, unknown>,
+        emptyPlaceholder: "-",
+      });
+      if (fullAddress !== undefined) return fullAddress;
+
       const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
       const fieldDef = findHmFieldDefForPanelKey(key, customFieldDefs);
       const fieldLabel = String(fieldDef?.field_label ?? fieldDef?.field_name ?? rawKey);
@@ -830,7 +843,13 @@ out.sort((a, b) => {
     const renderDetailsRow = (row: { key: string; label: string }) => {
       const value = getDetailsValue(row.key);
       const def = findHmFieldDefForPanelKey(row.key, customFieldDefs);
-      const fieldInfo = {
+      const fieldInfo = tryResolveFullAddressValue(row.key, "hiring-managers", {
+        customFields: customObj,
+        fieldDefs: customFieldDefs,
+        record: hiringManager as Record<string, unknown>,
+      }) !== undefined
+        ? fullAddressFieldInfo(row.key)
+        : {
         key: row.key,
         label: row.label,
         name: String(def?.field_name ?? row.key),

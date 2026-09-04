@@ -31,6 +31,11 @@ import {
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
   buildPinnedKey,
@@ -1209,39 +1214,43 @@ export default function PlacementView() {
 
   // Field catalogs for each summary panel (from admin field-management)
   const candidateFieldCatalog = useMemo(() => {
-    return (candidateAvailableFields || [])
+    const fromApi = (candidateAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
+    return withFullAddressCatalogEntry(fromApi, "job-seekers");
   }, [candidateAvailableFields]);
 
   const companyFieldCatalog = useMemo(() => {
-    return (companyAvailableFields || [])
+    const fromApi = (companyAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
+    return withFullAddressCatalogEntry(fromApi, "organizations");
   }, [companyAvailableFields]);
 
   const hiringManagerFieldCatalog = useMemo(() => {
-    return (hiringManagerAvailableFields || [])
+    const fromApi = (hiringManagerAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
+    return withFullAddressCatalogEntry(fromApi, "hiring-managers");
   }, [hiringManagerAvailableFields]);
 
   const jobDetailsFieldCatalog = useMemo(() => {
-    return (jobAvailableFields || [])
+    const fromApi = (jobAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
+    return withFullAddressCatalogEntry(fromApi, "jobs");
   }, [jobAvailableFields]);
 
   const syncPlacementPanelFromConfig = useCallback(
@@ -3740,21 +3749,39 @@ export default function PlacementView() {
     allFields: any[],
     valuesRecord: Record<string, unknown>,
     entityType?: string,
-    recordId?: string | number | undefined
+    recordId?: string | number | undefined,
+    record?: Record<string, unknown>
   ) => {
-    const fieldInfo = fieldDef ? {
-      key,
-      label: fieldDef.field_label || fieldDef.field_name || key,
-      fieldType: fieldDef.field_type ?? fieldDef.fieldType,
-      lookupType: fieldDef.lookup_type ?? fieldDef.lookupType,
-      multiSelectLookupType: fieldDef.multi_select_lookup_type ?? fieldDef.multiSelectLookupType,
-    } : { key, label };
+    const fullAddress =
+      entityType &&
+      tryResolveFullAddressValue(key, entityType, {
+        customFields: valuesRecord,
+        fieldDefs: allFields,
+        record,
+        emptyPlaceholder: "-",
+      });
+    const resolvedValue = fullAddress !== undefined ? fullAddress : value;
+    const fieldInfo =
+      fullAddress !== undefined
+        ? fullAddressFieldInfo(key)
+        : fieldDef
+          ? {
+              key,
+              label: fieldDef.field_label || fieldDef.field_name || key,
+              fieldType: fieldDef.field_type ?? fieldDef.fieldType,
+              lookupType: fieldDef.lookup_type ?? fieldDef.lookupType,
+              multiSelectLookupType:
+                fieldDef.multi_select_lookup_type ?? fieldDef.multiSelectLookupType,
+            }
+          : { key, label };
     return (
       <div key={`${panelPrefix}-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+        <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+          {fullAddress !== undefined ? fullAddressFieldInfo().label : label}:
+        </div>
         <div className="flex-1 p-2">
           <FieldValueRenderer
-            value={value}
+            value={resolvedValue}
             fieldInfo={fieldInfo}
             allFields={allFields as any}
             valuesRecord={valuesRecord as any}
@@ -3798,7 +3825,7 @@ export default function PlacementView() {
                 (candidate as any)[rawKey] ??
                 candidate.customFields?.[label] ??
                 candidate.customFields?.[rawKey];
-              return renderSummaryRow("candidateDetails", rawKey, index, label, value, field, allFields, candidate.customFields || {}, "job-seekers", candidate.id);
+              return renderSummaryRow("candidateDetails", rawKey, index, label, value, field, allFields, candidate.customFields || {}, "job-seekers", candidate.id, candidate as Record<string, unknown>);
             })
           )}
         </div>
@@ -3834,7 +3861,7 @@ export default function PlacementView() {
                 (company as any)[rawKey] ??
                 company.customFields?.[label] ??
                 company.customFields?.[rawKey];
-              return renderSummaryRow("companyDetails", rawKey, index, label, value, field, allFields, company.customFields || {}, "organizations", company.id);
+              return renderSummaryRow("companyDetails", rawKey, index, label, value, field, allFields, company.customFields || {}, "organizations", company.id, company as Record<string, unknown>);
             })
           )}
         </div>
@@ -3908,7 +3935,7 @@ export default function PlacementView() {
                 (billingContact as any)[rawKey === "name" ? "full_name" : rawKey] ??
                 billingContact.customFields?.[label] ??
                 billingContact.customFields?.[rawKey];
-              return renderSummaryRow("billingContactDetails", rawKey, index, label, value, field, allFields, billingContact.customFields || {}, "hiring-managers", billingContact.id);
+              return renderSummaryRow("billingContactDetails", rawKey, index, label, value, field, allFields, billingContact.customFields || {}, "hiring-managers", billingContact.id, billingContact as Record<string, unknown>);
             })
           )}
         </div>
@@ -3944,7 +3971,7 @@ export default function PlacementView() {
                 (timesheetApprover as any)[rawKey === "name" ? "full_name" : rawKey] ??
                 timesheetApprover.customFields?.[label] ??
                 timesheetApprover.customFields?.[rawKey];
-              return renderSummaryRow("timesheetApproverDetails", rawKey, index, label, value, field, allFields, timesheetApprover.customFields || {}, "hiring-managers", timesheetApprover.id);
+              return renderSummaryRow("timesheetApproverDetails", rawKey, index, label, value, field, allFields, timesheetApprover.customFields || {}, "hiring-managers", timesheetApprover.id, timesheetApprover as Record<string, unknown>);
             })
           )}
         </div>
@@ -3980,7 +4007,7 @@ export default function PlacementView() {
                 (job as any)[rawKey] ??
                 job.customFields?.[label] ??
                 job.customFields?.[rawKey];
-              return renderSummaryRow("jobDetails", rawKey, index, label, value, field, allFields, job.customFields || {}, "jobs", job.id);
+              return renderSummaryRow("jobDetails", rawKey, index, label, value, field, allFields, job.customFields || {}, "jobs", job.id, job as Record<string, unknown>);
             })
           )}
         </div>
