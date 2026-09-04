@@ -9,6 +9,51 @@ import {
   useLayoutEffect,
 } from "react";
 
+import { toast } from "sonner";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical, TbBinoculars } from "react-icons/tb";
+import {
+  FiChevronLeft,
+  FiChevronRight,
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
+  FiX,
+} from "react-icons/fi";
+import { createPortal } from "react-dom";
+import OrganizationDetailPanel from "./OrganizationDetailPanel";
+import HiringManagerDetailPanel from "./HiringManagerDetailPanel";
+import { useUserViewConfig } from "@/hooks/useUserViewConfig";
+import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
+import {
+  getCfValue,
+  isApprovedStatus,
+  parseCustomFields,
+  TBI_FIELDS,
+  firstNonEmpty,
+} from "@/lib/tbiCustomFields";
+import {
+  calculateSickTimeHours,
+  formatSickTimeHours,
+  lookupHoursToEarnSickTime,
+  type SickTimeRate,
+} from "@/lib/sickTimeCalculator";
+import {
+  DAY_KEYS,
+  formatDayLabel,
+  statusLabel,
+  toYmd,
+  type DayDetail,
+} from "@/lib/timesheetWeek";
+
 type OrganizationRecord = {
   id: number;
   name?: string;
@@ -39,49 +84,28 @@ type PlacementRecord = {
   daysGuaranteed?: number | null;
   hoursPerDay?: string | null;
   hoursOfOperation?: string | null;
-  payRate?: number | null;
+  payRate?: number | string | null;
+  billRate?: number | string | null;
   effectiveDate?: string | null;
   customFields?: Record<string, unknown> | null;
   custom_fields?: Record<string, unknown> | null;
+  job_seeker_custom_fields?: Record<string, unknown> | null;
+  organization_custom_fields?: Record<string, unknown> | null;
+  hiringManagerEmail?: string | null;
+  hiringManagerStatus?: string | null;
+  jobSeekerState?: string | null;
+  jobSeekerRecordStatus?: string | null;
+  organizationState?: string | null;
+  organizationOasisKey?: string | null;
+  workerCompCode?: string | null;
+  payrollType?: string | null;
+  payrollCycle?: string | null;
+  timesheetType?: string | null;
+  poNumber?: string | null;
+  primaryApprover?: string | null;
+  approved?: boolean;
   [key: string]: unknown;
 };
-import { toast } from "sonner";
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
-import {
-  arrayMove,
-  SortableContext,
-  horizontalListSortingStrategy,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical, TbBinoculars } from "react-icons/tb";
-import {
-  FiChevronLeft,
-  FiChevronRight,
-  FiArrowUp,
-  FiArrowDown,
-  FiFilter,
-  FiX,
-} from "react-icons/fi";
-import { createPortal } from "react-dom";
-import OrganizationDetailPanel from "./OrganizationDetailPanel";
-import HiringManagerDetailPanel from "./HiringManagerDetailPanel";
-import { useUserViewConfig } from "@/hooks/useUserViewConfig";
-import { VIEW_ENTITY_TYPES } from "@/lib/viewConfigEntityTypes";
-import {
-  calculateSickTimeHours,
-  formatSickTimeHours,
-  lookupHoursToEarnSickTime,
-  type SickTimeRate,
-} from "@/lib/sickTimeCalculator";
-import {
-  DAY_KEYS,
-  formatDayLabel,
-  statusLabel,
-  toYmd,
-  type DayDetail,
-} from "@/lib/timesheetWeek";
 
 type TimePeriodType = "week" | "customRange" | "all";
 
@@ -191,13 +215,18 @@ function timecardToTimesheetRow(
   placement: PlacementRecord | undefined,
   sickTimeRates?: SickTimeRate[],
 ): TimesheetRow {
-  const placementCf = (t.placement_custom_fields ||
-    placement?.customFields ||
-    placement?.custom_fields) as Record<string, unknown> | null;
-  const state =
-    getFromCustomFields(placementCf, ["State", "Work State"]) ||
-    getFromCustomFields(t.job_seeker_custom_fields, ["State"]) ||
-    (placement ? getFromPlacementCustomFields(placement, ["State"]) : "");
+  const placementCf = parseCustomFields(
+    t.placement_custom_fields || placement?.customFields || placement?.custom_fields,
+  );
+  const seekerCf = parseCustomFields(
+    t.job_seeker_custom_fields || placement?.job_seeker_custom_fields,
+  );
+  const state = firstNonEmpty(
+    placement?.jobSeekerState,
+    placement?.organizationState,
+    getCfValue(seekerCf, TBI_FIELDS.jobSeeker.state),
+    getCfValue(placementCf, TBI_FIELDS.organization.state),
+  );
   const total = Number(t.total_hours || 0);
   const regularHours = Math.min(total, OT_HOUR_THRESHOLD);
   const otHours = Math.max(0, total - OT_HOUR_THRESHOLD);
@@ -221,7 +250,11 @@ function timecardToTimesheetRow(
     "Regular Pay": formatMoney(regularHours * payRate),
     "Overtime Pay": formatMoney(otHours * payRate * 1.5),
     PTO: "",
-    "Timesheet Type": "Job Seeker Portal",
+    "Timesheet Type": firstNonEmpty(
+      placement?.timesheetType,
+      getCfValue(placementCf, TBI_FIELDS.placement.timesheetType),
+      "Job Seeker Portal",
+    ),
     "Regular Hours": formatHoursNum(regularHours),
     "Overtime Hours": formatHoursNum(otHours),
     "PTO Hours": "",
@@ -229,20 +262,25 @@ function timecardToTimesheetRow(
     "Bill Overtime Hours": formatHoursNum(otHours),
     "End Date": t.week_end_date || "",
     Status: statusLabel(t.status),
-    "Worker Comp Code": getFromCustomFields(placementCf, ["Worker Comp Code"]),
+    "Worker Comp Code": firstNonEmpty(
+      placement?.workerCompCode,
+      getCfValue(placementCf, TBI_FIELDS.placement.workerComp),
+    ),
     "Job Title": placement?.jobTitle ?? "",
-    "PO Number": "",
+    "PO Number": firstNonEmpty(
+      placement?.poNumber,
+      getCfValue(placementCf, TBI_FIELDS.placement.poNumber),
+    ),
     "Deduction Code": "",
     "Deduction Amount": "",
     State: state,
     "Hours to Earn Sick Time": formatSickTimeHours(hoursToEarn),
     "Sick Time": formatSickTimeHours(sickTime),
     "Pay Double Time": "",
-    "Time Card Approver(s)": getFromCustomFields(placementCf, [
-      "Primary Approver",
-      "Time Card Approver(s)",
-      "Timecard Approver",
-    ]),
+    "Time Card Approver(s)": firstNonEmpty(
+      placement?.primaryApprover,
+      getCfValue(placementCf, TBI_FIELDS.placement.approver),
+    ),
     "Bill Double Time": "",
     "Double time": "",
     Expenses: formatMoney(expenses),
@@ -388,11 +426,11 @@ function placementToTimesheetRow(
   p: PlacementRecord,
   sickTimeRates?: SickTimeRate[],
 ): TimesheetRow {
-  const state = getFromPlacementCustomFields(p, [
-    "State",
-    "Work State",
-    "Job Seeker State",
-  ]);
+  const state = firstNonEmpty(
+    p.jobSeekerState,
+    p.organizationState,
+    getFromPlacementCustomFields(p, ["State", "Work State", "Job Seeker State"]),
+  );
   const regularHoursRaw =
     getFromPlacementCustomFields(p, ["Regular Hours"]) || "";
   const hoursToEarn = lookupHoursToEarnSickTime(sickTimeRates, state);
@@ -408,7 +446,7 @@ function placementToTimesheetRow(
     "Regular Pay": "",
     "Overtime Pay": "",
     PTO: "",
-    "Timesheet Type": "",
+    "Timesheet Type": p.timesheetType ?? "",
     "Regular Hours": regularHoursRaw,
     "Overtime Hours": "",
     "PTO Hours": "",
@@ -416,16 +454,16 @@ function placementToTimesheetRow(
     "Bill Overtime Hours": "",
     "End Date": p.endDate ?? "",
     Status: p.status ?? "",
-    "Worker Comp Code": "",
+    "Worker Comp Code": p.workerCompCode ?? "",
     "Job Title": p.jobTitle ?? "",
-    "PO Number": "",
+    "PO Number": p.poNumber ?? "",
     "Deduction Code": "",
     "Deduction Amount": "",
     State: state,
     "Hours to Earn Sick Time": formatSickTimeHours(hoursToEarn),
     "Sick Time": formatSickTimeHours(sickTime),
     "Pay Double Time": "",
-    "Time Card Approver(s)": "",
+    "Time Card Approver(s)": p.primaryApprover ?? "",
     "Bill Double Time": "",
     "Double time": "",
     Expenses: "",
@@ -441,8 +479,8 @@ function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
     id: p.id,
     Name: p.hiringManagerName ?? "",
     Organization: p.organizationName ?? "",
-    Email: "",
-    Status: p.status ?? "",
+    Email: p.hiringManagerEmail ?? "",
+    Status: firstNonEmpty(p.hiringManagerStatus, p.status),
     "ID Number": p.hiringManagerId != null ? String(p.hiringManagerId) : "",
     __hiringManagerId:
       p.hiringManagerId != null ? String(p.hiringManagerId) : null,
@@ -462,9 +500,16 @@ function placementToJobSeekerRow(
     Submitted: summary ? String(summary.submitted) : "",
     Approved: summary ? String(summary.approved) : "",
     "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
-    "Payroll Type": getFromPlacementCustomFields(p, ["Payroll Type"]),
-    State: getFromPlacementCustomFields(p, ["State"]),
-    Status: p.status ?? "",
+    "Payroll Type": firstNonEmpty(
+      p.payrollType,
+      getFromPlacementCustomFields(p, ["Payroll Type", "Employee Type"]),
+    ),
+    State: firstNonEmpty(
+      p.jobSeekerState,
+      p.organizationState,
+      getFromPlacementCustomFields(p, ["State"]),
+    ),
+    Status: firstNonEmpty(p.jobSeekerRecordStatus, p.status),
   };
 }
 
@@ -484,22 +529,39 @@ function placementToPlacementsSectionRow(p: PlacementRecord): GenericRow {
     "Job Seeker": p.jobSeekerName ?? "",
     Organization: p.organizationName ?? "",
     "Status of Placement": p.status ?? "",
-    "Worker Comp Code": getFromPlacementCustomFields(p, ["Worker Comp Code"]),
-    "Placement ID": String(p.id),
+    "Worker Comp Code": firstNonEmpty(
+      p.workerCompCode,
+      getFromPlacementCustomFields(p, [
+        "Workers Compensation Code",
+        "Worker Comp Code",
+      ]),
+    ),
+    "Placement ID": String(p.recordNumber ?? p.id),
     "Start Date": p.startDate ?? "",
     "End Date": p.endDate ?? "",
     "Job Title": p.jobTitle ?? "",
-    "Timesheet Hour entry": "",
-    State: getFromPlacementCustomFields(p, ["State"]),
+    "Timesheet Hour entry": firstNonEmpty(p.timesheetType),
+    State: firstNonEmpty(
+      p.jobSeekerState,
+      p.organizationState,
+      getFromPlacementCustomFields(p, ["State"]),
+    ),
     "Pay Rate":
-      p.payRate != null
+      p.payRate != null && String(p.payRate).trim() !== ""
         ? String(p.payRate)
         : getFromPlacementCustomFields(p, ["Pay Rate"]),
-    "Bill Rate": getFromPlacementCustomFields(p, ["Bill Rate"]),
-    "Primary Approver": getFromPlacementCustomFields(p, [
-      "Primary Approver",
-      "Time Card Approver(s)",
-    ]),
+    "Bill Rate": firstNonEmpty(
+      p.billRate,
+      getFromPlacementCustomFields(p, ["Bill Rate"]),
+    ),
+    "Primary Approver": firstNonEmpty(
+      p.primaryApprover,
+      getFromPlacementCustomFields(p, [
+        "TimerCard Approver",
+        "Primary Approver",
+        "Time Card Approver(s)",
+      ]),
+    ),
     "Job Seeker Email": p.jobSeekerEmail ?? "",
   };
 }
@@ -525,7 +587,10 @@ function placementToInvoicesRow(p: PlacementRecord): GenericRow {
     Status: p.status ?? "",
     "Paid Date": "",
     Notes: "",
-    "Invoice Type": getFromPlacementCustomFields(p, ["Invoice Type"]),
+    "Invoice Type": firstNonEmpty(
+      p.timesheetType,
+      getFromPlacementCustomFields(p, ["Invoice Type", "Timesheet Type"]),
+    ),
   };
 }
 
@@ -1311,12 +1376,13 @@ export default function TbiPage() {
     selectedRow === "Job Seeker" ||
     selectedRow === "Placements" ||
     selectedRow === "Exports" ||
-    selectedRow === "Invoices";
+    selectedRow === "Invoices" ||
+    selectedRow === "Organization";
 
   const approvedPlacements = useMemo(
     () =>
       timesheetsPlacements.filter(
-        (p) => (p.status || "").toLowerCase() === "approved",
+        (p) => p.approved === true || isApprovedStatus(p.status),
       ),
     [timesheetsPlacements],
   );
@@ -1733,43 +1799,52 @@ export default function TbiPage() {
       setTimesheetsLoading(true);
       setTimesheetsError(null);
     }
-    fetch("/api/placements")
-      .then((res) => res.json())
+    fetch("/api/placements/tbi-board")
+      .then(async (res) => {
+        if (res.ok) return res.json();
+        const fallback = await fetch("/api/placements?limit=500");
+        return fallback.json();
+      })
       .then((data) => {
         if (cancelled) return;
         if (manageLoading) setTimesheetsLoading(false);
         if (data?.placements && Array.isArray(data.placements)) {
           const mappedPlacements: PlacementRecord[] = data.placements.map(
             (p: Record<string, unknown>) => ({
+              ...(p as PlacementRecord),
               id: Number(p.id),
               jobSeekerId:
                 p.jobSeekerId != null ? Number(p.jobSeekerId) : undefined,
               status: typeof p.status === "string" ? p.status : undefined,
-              startDate: p.startDate ?? p.start_date ?? undefined,
-              endDate: p.endDate ?? p.end_date ?? undefined,
-              jobSeekerName: p.jobSeekerName ?? p.job_seeker_name ?? undefined,
-              jobSeekerEmail:
-                p.jobSeekerEmail ?? p.job_seeker_email ?? undefined,
-              jobSeekerPhone:
-                p.jobSeekerPhone ?? p.job_seeker_phone ?? undefined,
-              jobTitle: p.jobTitle ?? p.job_title ?? undefined,
-              organizationName:
-                p.organizationName ?? p.organization_name ?? undefined,
+              startDate: (p.startDate ?? p.start_date) as string | undefined,
+              endDate: (p.endDate ?? p.end_date) as string | undefined,
+              jobSeekerName: (p.jobSeekerName ?? p.job_seeker_name) as
+                | string
+                | undefined,
+              jobSeekerEmail: (p.jobSeekerEmail ?? p.job_seeker_email) as
+                | string
+                | undefined,
+              jobSeekerPhone: (p.jobSeekerPhone ?? p.job_seeker_phone) as
+                | string
+                | undefined,
+              jobTitle: (p.jobTitle ?? p.job_title) as string | undefined,
+              organizationName: (p.organizationName ??
+                p.organization_name) as string | undefined,
               recordNumber:
                 p.recordNumber != null
                   ? Number(p.recordNumber)
                   : p.record_number != null
                     ? Number(p.record_number)
                     : undefined,
-              payRate:
-                p.payRate != null
-                  ? Number(p.payRate)
-                  : p.pay_rate != null
-                    ? Number(p.pay_rate)
-                    : undefined,
-              hiringManagerId: resolvePlacementHiringManagerId(p) ?? undefined,
+              payRate: (p.payRate ?? p.pay_rate) as string | number | undefined,
+              hiringManagerId:
+                (p.hiringManagerId as string | number | undefined) ??
+                resolvePlacementHiringManagerId(p) ??
+                undefined,
               hiringManagerName:
-                resolvePlacementHiringManagerName(p) ?? undefined,
+                (p.hiringManagerName as string | undefined) ??
+                resolvePlacementHiringManagerName(p) ??
+                undefined,
               customFields:
                 (p.customFields as Record<string, unknown> | undefined) ??
                 (p.custom_fields as Record<string, unknown> | undefined) ??
@@ -1778,6 +1853,9 @@ export default function TbiPage() {
                 (p.custom_fields as Record<string, unknown> | undefined) ??
                 (p.customFields as Record<string, unknown> | undefined) ??
                 null,
+              approved:
+                p.approved === true ||
+                isApprovedStatus(p.status),
             }),
           );
           setTimesheetsPlacements(mappedPlacements);
@@ -1872,20 +1950,18 @@ export default function TbiPage() {
   }, [selectedRow, timePeriod, timesheetsWeekStart]);
 
   function getOrgCellValue(org: OrganizationRecord, header: string): string {
-    const cf = org.custom_fields as Record<string, string> | undefined;
+    const cf = parseCustomFields(org.custom_fields);
     switch (header) {
       case "Name":
-        return org.name ?? "";
+        return firstNonEmpty(getCfValue(cf, TBI_FIELDS.organization.name), org.name);
       case "Organization ID":
         return org.id != null ? String(org.id) : "";
       case "Oasis Key":
-        return (cf?.["Oasis Key"] ?? cf?.oasis_key ?? "") as string;
+        return getCfValue(cf, TBI_FIELDS.organization.oasisKey);
       case "State":
-        return (cf?.["State"] ?? "") as string;
+        return firstNonEmpty(getCfValue(cf, TBI_FIELDS.organization.state), org.state);
       default:
-        return (cf?.[header] ??
-          (org as Record<string, string>)[header] ??
-          "") as string;
+        return firstNonEmpty(cf[header], (org as Record<string, unknown>)[header]);
     }
   }
 
@@ -1964,7 +2040,24 @@ export default function TbiPage() {
 
   // Filter and sort organizations data
   const filteredAndSortedOrgs = useMemo(() => {
-    let result = [...tbiOrganizations];
+    const byId = new Map<number, OrganizationRecord>();
+    for (const org of tbiOrganizations) {
+      if (org?.id != null) byId.set(Number(org.id), { ...org });
+    }
+    for (const p of approvedPlacements) {
+      const id = Number(p.organizationId);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const existing = byId.get(id) || { id, name: p.organizationName || "" };
+      byId.set(id, {
+        ...existing,
+        name: firstNonEmpty(existing.name, p.organizationName),
+        custom_fields: {
+          ...parseCustomFields(p.organization_custom_fields),
+          ...parseCustomFields(existing.custom_fields),
+        },
+      });
+    }
+    let result = [...byId.values()];
 
     // Apply filters
     Object.entries(columnFilters).forEach(([header, filterValue]) => {
@@ -2002,7 +2095,7 @@ export default function TbiPage() {
     }
 
     return result;
-  }, [tbiOrganizations, columnFilters, columnSorts]);
+  }, [tbiOrganizations, approvedPlacements, columnFilters, columnSorts]);
 
   // Use all column headers (including empty ones) - don't filter out empty columns
   // Empty columns will just show empty cells

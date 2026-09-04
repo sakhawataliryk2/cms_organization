@@ -9,6 +9,7 @@ import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { firstNonEmpty, getCfValue, TBI_FIELDS } from "@/lib/tbiCustomFields";
 
 type OrganizationRecord = {
   id: number;
@@ -317,10 +318,11 @@ function PlacementColumnHeader({
   );
 }
 
-function getCf(org: OrganizationRecord, key: string): string {
-  const cf = org.custom_fields as Record<string, string> | undefined;
-  if (!cf) return "";
-  return (cf[key] ?? (org as Record<string, string>)[key] ?? "") as string;
+function getCf(org: OrganizationRecord, specOrKey: string | { fieldName: string; aliases?: string[] }): string {
+  if (typeof specOrKey === "string") {
+    return getCfValue(org.custom_fields, { fieldName: specOrKey, aliases: [specOrKey] });
+  }
+  return getCfValue(org.custom_fields, specOrKey);
 }
 
 type Props = {
@@ -334,19 +336,40 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("edit");
 
-  const companyName = organization.name ?? "";
-  const phone = organization.contact_phone ?? getCf(organization, "Phone") ?? "";
-  const integrationId = getCf(organization, "Integration ID") || String(organization.id ?? "");
-  const contractTermsNet = getCf(organization, "Contract TERMS NET") || "30";
-  const permTermsNet = getCf(organization, "Perm TERMS NET") || "30";
-  const address = organization.address ?? getCf(organization, "Address") ?? "";
-  const address2 = organization.address2 ?? getCf(organization, "Address 2") ?? "";
-  const city = organization.city ?? getCf(organization, "City") ?? "";
-  const stateProvince = organization.state ?? getCf(organization, "State") ?? "";
-  const zipPostal = organization.zip_code ?? getCf(organization, "ZIP") ?? "";
-  const country = getCf(organization, "Country") || "United States";
-  const startDayOfWeek = getCf(organization, "Start Day of Week") || "Monday";
-  const iasisKey = getCf(organization, "Oasis Key") ?? getCf(organization, "IASIS KEY") ?? "";
+  const companyName = firstNonEmpty(
+    getCf(organization, TBI_FIELDS.organization.name),
+    organization.name,
+  );
+  const phone = firstNonEmpty(
+    organization.contact_phone,
+    getCf(organization, TBI_FIELDS.organization.phone),
+  );
+  const integrationId = String(organization.id ?? "");
+  const contractTermsNet = "30";
+  const permTermsNet = "30";
+  const address = firstNonEmpty(
+    organization.address,
+    getCf(organization, TBI_FIELDS.organization.address1),
+  );
+  const address2 = firstNonEmpty(
+    organization.address2,
+    getCf(organization, TBI_FIELDS.organization.address2),
+  );
+  const city = firstNonEmpty(
+    organization.city,
+    getCf(organization, TBI_FIELDS.organization.city),
+  );
+  const stateProvince = firstNonEmpty(
+    organization.state,
+    getCf(organization, TBI_FIELDS.organization.state),
+  );
+  const zipPostal = firstNonEmpty(
+    organization.zip_code,
+    getCf(organization, TBI_FIELDS.organization.zip),
+  );
+  const country = "United States";
+  const startDayOfWeek = "Monday";
+  const iasisKey = getCf(organization, TBI_FIELDS.organization.oasisKey);
 
   const [form, setForm] = useState({
     companyName,
