@@ -292,7 +292,7 @@ export default function HiringManagerDetailPanel({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/30"
+      className="fixed inset-0 z-[100] flex justify-end bg-black/30"
       aria-modal="true"
       role="dialog"
       onClick={onClose}

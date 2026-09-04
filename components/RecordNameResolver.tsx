@@ -302,10 +302,8 @@ export default function RecordNameResolver({
   const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
 
-  // Build display: "prefix record_number - name" when record_number is available
-  const resolvedLabel = recordNumber && name
-    ? `${recordNumber} - ${name}`
-    : recordNumber || name || null;
+  // Build display: name only when available (drop the prefix record number)
+  const resolvedLabel = name || recordNumber || null;
 
   // onlyRecordNumber mode: show just "prefix record_number" (e.g. "J 5"), no name
   const displayName = onlyRecordNumber

@@ -92,10 +92,11 @@ export default function StorageMigrationPage() {
 
   const appendLog = useCallback((level: LogLevel, message: string, raw?: unknown) => {
     logIdRef.current += 1;
+    const id = logIdRef.current;
     setLogs((prev) => [
       ...prev,
       {
-        id: logIdRef.current,
+        id,
         ts: new Date().toLocaleTimeString(),
         level,
         message,

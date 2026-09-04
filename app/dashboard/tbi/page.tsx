@@ -1093,7 +1093,7 @@ export default function TbiPage() {
   const columnWidthsConfigRef = useRef(columnWidthsConfig);
   columnWidthsConfigRef.current = columnWidthsConfig;
 
-  const [selectedRow, setSelectedRow] = useState<string | null>(null);
+  const [selectedRow, setSelectedRow] = useState<string>("Organization");
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);

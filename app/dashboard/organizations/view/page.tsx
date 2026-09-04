@@ -22,6 +22,11 @@ import {
 } from "@/lib/fieldCatalogKeys";
 import { getPanelFieldPath, setPanelFieldPath } from "@/lib/viewConfigPanelHelpers";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
 import CountdownTimer from "@/components/CountdownTimer";
 import ZoomInfoEnrichButton from "@/components/zoominfo/ZoomInfoEnrichButton";
 import {
@@ -1873,7 +1878,7 @@ export default function OrganizationView() {
         seenKeys.add(f.key);
         return true;
       });
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "organizations");
   }, [availableFields]);
 
   useEffect(() => {
@@ -3674,6 +3679,18 @@ export default function OrganizationView() {
       const getContactInfoValue = (key: string): string => {
         if (!organization) return "-";
         const o = organization as any;
+        const customFieldDefs = (availableFields || []).filter((f: any) => {
+          const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+          return !isHidden;
+        });
+        const fullAddress = tryResolveFullAddressValue(key, "organizations", {
+          customFields: o.customFields,
+          fieldDefs: customFieldDefs,
+          record: o,
+          emptyPlaceholder: "-",
+        });
+        if (fullAddress !== undefined) return fullAddress;
+
         const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
 
         let v = o[rawKey];
@@ -3714,7 +3731,9 @@ export default function OrganizationView() {
               {effectiveRows.map((row) => {
                 const value = getContactInfoValue(row.key);
                 const catalogEntry = contactInfoFieldCatalog.find((f) => f.key === row.key);
-                const fieldInfo = {
+                const fieldInfo = catalogEntry?.key === fullAddressFieldInfo().key
+                  ? fullAddressFieldInfo(row.key)
+                  : {
                   key: row.key,
                   label: row.label,
                   name: catalogEntry?.name ?? row.key,

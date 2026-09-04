@@ -31,6 +31,11 @@ import {
   remapLegacyCustomKeys,
 } from "@/lib/fieldCatalogKeys";
 import { getDefaultVisibleKeys, getEffectiveVisibleKeys } from "@/lib/defaultViewFields";
+import {
+  fullAddressFieldInfo,
+  tryResolveFullAddressValue,
+  withFullAddressCatalogEntry,
+} from "@/lib/fullAddressField";
 import OnboardingTab from "./onboarding/OnboardingTab";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
@@ -2365,7 +2370,7 @@ Best regards`;
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "job-seekers");
   }, [availableFields, jobSeeker?.customFields]);
 
   const jobSeekerDetailsVisible = useMemo(() => {
@@ -2385,7 +2390,7 @@ Best regards`;
         key: panelCatalogKeyFromField(f),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
+    return withFullAddressCatalogEntry(fromApi, "job-seekers");
   }, [availableFields, jobSeeker?.customFields]);
 
   const overviewVisible = useMemo(() => {
@@ -4554,6 +4559,34 @@ Best regards`;
     }
 
     const renderOverviewRow = (key: string) => {
+      const fullAddress = tryResolveFullAddressValue(key, "job-seekers", {
+        customFields: customObj as Record<string, unknown>,
+        fieldDefs: customFieldDefs,
+        record: jobSeeker as Record<string, unknown>,
+        emptyPlaceholder: "-",
+      });
+      if (fullAddress !== undefined) {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+              {fullAddressFieldInfo().label}:
+            </div>
+            <div className="flex-1 p-2 text-sm">
+              <FieldValueRenderer
+                value={fullAddress}
+                fieldInfo={fullAddressFieldInfo(key)}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
+                emptyPlaceholder="-"
+                clickable
+                entityType="job-seekers"
+                recordId={jobSeeker.id || ""}
+              />
+            </div>
+          </div>
+        );
+      }
+
       const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
@@ -4740,6 +4773,34 @@ Best regards`;
     }
 
     const renderJobSeekerDetailsRow = (key: string) => {
+      const fullAddress = tryResolveFullAddressValue(key, "job-seekers", {
+        customFields: customObj as Record<string, unknown>,
+        fieldDefs: customFieldDefs,
+        record: jobSeeker as Record<string, unknown>,
+        emptyPlaceholder: "-",
+      });
+      if (fullAddress !== undefined) {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+              {fullAddressFieldInfo().label}:
+            </div>
+            <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
+              <FieldValueRenderer
+                value={fullAddress}
+                fieldInfo={fullAddressFieldInfo(key)}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
+                emptyPlaceholder="-"
+                clickable
+                entityType="job-seekers"
+                recordId={jobSeeker.id || ""}
+              />
+            </div>
+          </div>
+        );
+      }
+
       const rawKey = stripCatalogKeyPrefix(key);
       const field = customFieldDefs.find(
         (f: any) =>
